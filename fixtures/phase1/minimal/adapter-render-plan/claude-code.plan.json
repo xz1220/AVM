@@ -1,0 +1,56 @@
+{
+  "fixture_schema": "avm.phase1.adapter-render-plan.v1",
+  "runtime": "claude-code",
+  "active": {
+    "kind": "env",
+    "name": "coding"
+  },
+  "agent_name": "backend-coder",
+  "managed_paths": [
+    {
+      "path": "<PROJECT_ROOT>/.claude/agents/backend-coder.md",
+      "owner": "avm",
+      "description": "Claude Code agent definition rendered from the AVM profile.",
+      "required": true,
+      "merge_mode": "whole-file"
+    },
+    {
+      "path": "<PROJECT_ROOT>/.mcp.json",
+      "owner": "shared-section",
+      "description": "Project MCP server entries managed by AVM.",
+      "required": true,
+      "merge_mode": "structured-section"
+    }
+  ],
+  "operations": [
+    {
+      "op": "write_file",
+      "path": "<PROJECT_ROOT>/.claude/agents/backend-coder.md"
+    },
+    {
+      "op": "merge_structured",
+      "path": "<PROJECT_ROOT>/.mcp.json",
+      "section": "mcpServers.github"
+    }
+  ],
+  "mappings": [
+    {
+      "source_path": "agents.backend-coder.instructions",
+      "target_path": ".claude/agents/backend-coder.md",
+      "status": "native",
+      "reason": ""
+    },
+    {
+      "source_path": "agents.backend-coder.capabilities.mcps.github",
+      "target_path": ".mcp.json mcpServers.github",
+      "status": "native",
+      "reason": ""
+    },
+    {
+      "source_path": "agents.backend-coder.memory_refs",
+      "target_path": ".claude/agents/backend-coder.md frontmatter memory",
+      "status": "native",
+      "reason": ""
+    }
+  ]
+}

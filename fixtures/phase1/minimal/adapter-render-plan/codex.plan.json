@@ -1,0 +1,67 @@
+{
+  "fixture_schema": "avm.phase1.adapter-render-plan.v1",
+  "runtime": "codex",
+  "active": {
+    "kind": "env",
+    "name": "coding"
+  },
+  "agent_name": "backend-coder",
+  "managed_paths": [
+    {
+      "path": "<CODEX_HOME>/config.toml",
+      "owner": "shared-section",
+      "description": "Active AVM profile, MCP server, and role registration.",
+      "required": true,
+      "merge_mode": "structured-section"
+    },
+    {
+      "path": "<CODEX_HOME>/agents/backend-coder.toml",
+      "owner": "avm",
+      "description": "Codex role configuration rendered from the AVM agent profile.",
+      "required": true,
+      "merge_mode": "whole-file"
+    }
+  ],
+  "operations": [
+    {
+      "op": "merge_structured",
+      "path": "<CODEX_HOME>/config.toml",
+      "section": "profiles.avm-coding"
+    },
+    {
+      "op": "merge_structured",
+      "path": "<CODEX_HOME>/config.toml",
+      "section": "mcp_servers.github"
+    },
+    {
+      "op": "write_file",
+      "path": "<CODEX_HOME>/agents/backend-coder.toml"
+    }
+  ],
+  "mappings": [
+    {
+      "source_path": "agents.backend-coder.model_run",
+      "target_path": "profiles.avm-coding",
+      "status": "native",
+      "reason": ""
+    },
+    {
+      "source_path": "agents.backend-coder.instructions.developer",
+      "target_path": "agents.backend-coder.developer_instructions",
+      "status": "native",
+      "reason": ""
+    },
+    {
+      "source_path": "agents.backend-coder.capabilities.skills",
+      "target_path": "agents.backend-coder.developer_instructions",
+      "status": "rendered_as_instructions",
+      "reason": "Codex has no native AVM skill registry mount in Phase 1."
+    },
+    {
+      "source_path": "agents.backend-coder.memory_refs",
+      "target_path": "agents.backend-coder.developer_instructions",
+      "status": "rendered_as_instructions",
+      "reason": "Codex has no native portable memory scope in Phase 1."
+    }
+  ]
+}
