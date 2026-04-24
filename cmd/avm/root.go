@@ -19,7 +19,7 @@ func newRootCommand() *cobra.Command {
 		Version:       version.String(),
 	}
 	cmd.SetVersionTemplate("avm {{.Version}}\n")
-	cmd.AddCommand(newInitCommand())
+	addCommands(cmd)
 	return cmd
 }
 
