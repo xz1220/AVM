@@ -28,7 +28,7 @@ avm use backend-coder
 
 ## 文档
 
-详见 [项目文档](../../ai-startup/projects/agent-vm/)
+详见 [docs/README.md](./docs/README.md)。
 
 ## 开发
 
