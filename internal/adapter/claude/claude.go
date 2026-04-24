@@ -1,0 +1,1098 @@
+// Package claude renders AVM agents into Claude Code project configuration.
+package claude
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"sort"
+	"strconv"
+	"strings"
+	"unicode"
+
+	"github.com/xz1220/agent-vm/internal/adapter"
+	"github.com/xz1220/agent-vm/internal/adapter/renderplan"
+)
+
+const (
+	runtimeName       = "claude-code"
+	claudeBinaryName  = "claude"
+	claudeDirName     = ".claude"
+	agentsDirName     = "agents"
+	mcpFileName       = ".mcp.json"
+	agentOperationID  = "claude-agent"
+	mcpOperationID    = "claude-mcp"
+	avmMetadataKey    = "_avm"
+	avmMetadataSubkey = "claude-code"
+)
+
+// Adapter renders the conservative Phase 1 Claude Code path.
+type Adapter struct {
+	configDir   string
+	projectRoot string
+}
+
+type Option func(*Adapter)
+
+func New(opts ...Option) *Adapter {
+	a := &Adapter{}
+	for _, opt := range opts {
+		opt(a)
+	}
+	return a
+}
+
+func WithConfigDir(configDir string) Option {
+	return func(a *Adapter) {
+		a.configDir = configDir
+	}
+}
+
+func WithProjectRoot(projectRoot string) Option {
+	return func(a *Adapter) {
+		a.projectRoot = projectRoot
+	}
+}
+
+func (a *Adapter) Name() string {
+	return runtimeName
+}
+
+func (a *Adapter) Detect(ctx adapter.Context) adapter.Detection {
+	configDir := a.claudeHome()
+
+	found := false
+	if _, err := os.Stat(configDir); err == nil {
+		found = true
+	}
+	for _, name := range []string{"settings.json", agentsDirName, "skills"} {
+		if _, err := os.Stat(filepath.Join(configDir, name)); err == nil {
+			found = true
+			break
+		}
+	}
+
+	version := ""
+	if path, err := exec.LookPath(claudeBinaryName); err == nil {
+		found = true
+		version = claudeVersion(ctx, path)
+	}
+
+	return adapter.Detection{
+		Runtime:   runtimeName,
+		Found:     found,
+		Version:   version,
+		ConfigDir: filepath.ToSlash(configDir),
+	}
+}
+
+func (a *Adapter) Import(ctx adapter.Context) (*adapter.ImportResult, error) {
+	_ = ctx
+
+	agents := []adapter.ImportedAgent{}
+	warnings := []string{}
+	for _, dir := range []string{
+		filepath.Join(a.defaultProjectRoot(), claudeDirName, agentsDirName),
+		filepath.Join(a.claudeHome(), agentsDirName),
+	} {
+		imported, err := importAgents(dir)
+		if err != nil {
+			warnings = append(warnings, err.Error())
+			continue
+		}
+		agents = append(agents, imported...)
+	}
+
+	sort.SliceStable(agents, func(i, j int) bool {
+		if agents[i].SourcePath != agents[j].SourcePath {
+			return agents[i].SourcePath < agents[j].SourcePath
+		}
+		return agents[i].Name < agents[j].Name
+	})
+
+	return &adapter.ImportResult{
+		Runtime:  runtimeName,
+		Agents:   agents,
+		Warnings: warnings,
+	}, nil
+}
+
+func (a *Adapter) Plan(ctx adapter.Context, input adapter.RenderInput) (*adapter.RenderPlan, error) {
+	_ = ctx
+
+	runtime := input.Runtime
+	if runtime == "" {
+		runtime = runtimeName
+	}
+	if runtime != runtimeName {
+		return nil, fmt.Errorf("claude-code adapter cannot plan runtime %q", runtime)
+	}
+
+	agentName := firstNonEmpty(input.Agent.Name, input.Active.Name, "agent")
+	agentFileName := slug(agentName)
+	projectRoot := firstNonEmpty(input.ProjectRoot, a.projectRoot, ".")
+	agentPath := filepath.ToSlash(filepath.Join(projectRoot, claudeDirName, agentsDirName, agentFileName+".md"))
+	mcpPath := filepath.ToSlash(filepath.Join(projectRoot, mcpFileName))
+
+	render := renderContext{
+		input:         input,
+		agentName:     agentName,
+		agentFileName: agentFileName,
+		agentPath:     agentPath,
+		mcpPath:       mcpPath,
+	}
+
+	managedPaths := []adapter.ManagedPath{
+		{
+			Path:        agentPath,
+			Owner:       "avm",
+			Description: "Claude Code agent definition rendered from the AVM profile.",
+			Required:    true,
+			MergeMode:   adapter.MergeModeWholeFile,
+		},
+	}
+	operations := []adapter.RenderOperation{
+		{
+			ID:          agentOperationID,
+			Action:      adapter.OperationWriteFile,
+			Path:        agentPath,
+			Content:     []byte(render.renderAgentFile()),
+			Description: "write Claude Code AVM-managed agent file",
+			Required:    true,
+		},
+	}
+
+	if len(render.renderableMCPServers()) > 0 {
+		managedPaths = append(managedPaths, adapter.ManagedPath{
+			Path:        mcpPath,
+			Owner:       "shared-section",
+			Description: "Claude Code project MCP server entries managed by AVM.",
+			Required:    true,
+			MergeMode:   adapter.MergeModeStructuredSection,
+		})
+		operations = append(operations, adapter.RenderOperation{
+			ID:          mcpOperationID,
+			Action:      adapter.OperationStructuredSet,
+			Path:        mcpPath,
+			Content:     []byte(render.renderMCPDocument()),
+			Description: "merge Claude Code AVM-managed MCP server entries",
+			Required:    true,
+		})
+	}
+
+	plan := &adapter.RenderPlan{
+		Runtime:      runtimeName,
+		Active:       input.Active,
+		AgentName:    agentName,
+		ManagedPaths: managedPaths,
+		Operations:   operations,
+		Mappings:     render.mappings(),
+		Warnings:     render.warnings(),
+	}
+	return renderplan.Normalize(plan), nil
+}
+
+func (a *Adapter) Render(ctx adapter.Context, plan *adapter.RenderPlan) (*adapter.RenderResult, error) {
+	_ = ctx
+
+	normalized := renderplan.Normalize(plan)
+	if normalized == nil {
+		return nil, fmt.Errorf("claude-code adapter render plan is nil")
+	}
+	if normalized.Runtime != "" && normalized.Runtime != runtimeName {
+		return nil, fmt.Errorf("claude-code adapter cannot render runtime %q", normalized.Runtime)
+	}
+
+	managed := managedPathIndex(normalized.ManagedPaths)
+	for _, operation := range normalized.Operations {
+		if _, ok := managed[operation.Path]; !ok {
+			return nil, fmt.Errorf("claude-code render operation %q targets unmanaged path %s", operation.ID, operation.Path)
+		}
+	}
+
+	results := make([]adapter.RenderOperationResult, 0, len(normalized.Operations))
+	for _, operation := range normalized.Operations {
+		managedPath := managed[operation.Path]
+		changed, err := applyOperation(operation, managedPath)
+		if err != nil {
+			return nil, err
+		}
+		results = append(results, adapter.RenderOperationResult{
+			OperationID: operation.ID,
+			Action:      operation.Action,
+			Path:        operation.Path,
+			Changed:     changed,
+		})
+	}
+
+	return &adapter.RenderResult{
+		Runtime:      runtimeName,
+		Operations:   results,
+		ManagedPaths: append([]adapter.ManagedPath(nil), normalized.ManagedPaths...),
+		Mappings:     append([]adapter.FieldMapping(nil), normalized.Mappings...),
+		Warnings:     append([]string(nil), normalized.Warnings...),
+	}, nil
+}
+
+func (a *Adapter) ManagedPaths(ctx adapter.Context, plan *adapter.RenderPlan) []adapter.ManagedPath {
+	_ = ctx
+
+	normalized := renderplan.Normalize(plan)
+	if normalized == nil {
+		return nil
+	}
+	return append([]adapter.ManagedPath(nil), normalized.ManagedPaths...)
+}
+
+func (a *Adapter) claudeHome() string {
+	if a.configDir != "" {
+		return a.configDir
+	}
+	if value := os.Getenv("CLAUDE_CONFIG_DIR"); value != "" {
+		return value
+	}
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		return filepath.Join(home, ".claude")
+	}
+	return ".claude"
+}
+
+func (a *Adapter) defaultProjectRoot() string {
+	if a.projectRoot != "" {
+		return a.projectRoot
+	}
+	if cwd, err := os.Getwd(); err == nil && cwd != "" {
+		return cwd
+	}
+	return "."
+}
+
+func claudeVersion(ctx context.Context, path string) string {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	cmd := exec.CommandContext(ctx, path, "--version")
+	output, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(output))
+}
+
+type renderContext struct {
+	input         adapter.RenderInput
+	agentName     string
+	agentFileName string
+	agentPath     string
+	mcpPath       string
+}
+
+func (r renderContext) renderAgentFile() string {
+	var b strings.Builder
+	b.WriteString("---\n")
+	writeYAMLString(&b, "name", r.agentFileName)
+	writeYAMLString(&b, "description", r.description())
+	writeYAMLString(&b, "model", r.input.Agent.Model.Model)
+	writeYAMLString(&b, "effort", r.input.Agent.Model.ReasoningEffort)
+	writeYAMLStringList(&b, "tools", sortedStrings(r.input.Agent.Permissions.Allow))
+	writeYAMLStringList(&b, "disallowedTools", sortedStrings(r.input.Agent.Permissions.Deny))
+	writeYAMLStringList(&b, "skills", capabilityNames(r.input.Capabilities.Skills))
+	writeYAMLStringList(&b, "mcpServers", mcpServerNames(r.renderableMCPServers()))
+	writeYAMLStringList(&b, "hooks", capabilityNames(r.input.Capabilities.Hooks))
+	if scope, ok := nativeMemoryScope(r.input.Agent.MemoryRefs); ok {
+		writeYAMLString(&b, "memory", scope)
+	}
+	b.WriteString("---\n\n")
+	b.WriteString(r.agentInstructions())
+	b.WriteByte('\n')
+	return b.String()
+}
+
+func (r renderContext) renderMCPDocument() string {
+	servers := make(map[string]mcpServerConfig)
+	for _, server := range r.renderableMCPServers() {
+		servers[server.Name] = mcpServerConfigFromAdapter(server)
+	}
+	data, err := marshalJSON(map[string]any{"mcpServers": servers})
+	if err != nil {
+		return "{\n  \"mcpServers\": {}\n}\n"
+	}
+	return string(data)
+}
+
+func (r renderContext) description() string {
+	return firstNonEmpty(r.input.Agent.Description, "AVM agent "+r.agentName)
+}
+
+func (r renderContext) agentInstructions() string {
+	var sections []string
+	if r.input.Agent.Instructions.System != "" {
+		sections = append(sections, section("System instructions", r.input.Agent.Instructions.System))
+	}
+	if r.input.Agent.Instructions.Developer != "" {
+		sections = append(sections, section("Developer instructions", r.input.Agent.Instructions.Developer))
+	}
+	if len(r.input.Agent.Instructions.References) > 0 {
+		sections = append(sections, bulletSection("Instruction references", sortedStrings(r.input.Agent.Instructions.References)))
+	}
+	if len(r.input.Capabilities.Skills) > 0 {
+		sections = append(sections, bulletSection("Active AVM skills", skillLines(r.input.Capabilities.Skills)))
+	}
+	if len(r.input.Agent.MemoryRefs) > 0 {
+		sections = append(sections, bulletSection("AVM memory refs", memoryRefLines(r.input.Agent.MemoryRefs)))
+	}
+	if len(r.input.Memory) > 0 {
+		sections = append(sections, bulletSection("Portable memory", portableMemoryLines(r.input.Memory)))
+	}
+	if r.input.Agent.Permissions.Approval != "" {
+		sections = append(sections, section("Permission approval policy", r.input.Agent.Permissions.Approval))
+	}
+	if r.input.Agent.Permissions.Sandbox != "" {
+		sections = append(sections, section("Sandbox mode", r.input.Agent.Permissions.Sandbox))
+	}
+	if r.input.Agent.Model.Verbosity != "" {
+		sections = append(sections, section("Response verbosity", r.input.Agent.Model.Verbosity))
+	}
+	if len(r.input.Capabilities.Toolsets) > 0 {
+		sections = append(sections, bulletSection("Requested toolsets", toolsetLines(r.input.Capabilities.Toolsets)))
+	}
+	if len(r.input.Capabilities.Commands) > 0 {
+		sections = append(sections, bulletSection("Requested AVM commands", capabilityLines(r.input.Capabilities.Commands)))
+	}
+	if len(sections) == 0 {
+		return "Follow the AVM agent profile for " + r.agentName + "."
+	}
+	return strings.Join(sections, "\n\n")
+}
+
+func (r renderContext) mappings() []adapter.FieldMapping {
+	targetAgent := r.agentPath
+	targetBody := targetAgent + "#body"
+	targetFrontmatter := targetAgent + "#frontmatter"
+	mappings := []adapter.FieldMapping{
+		{SourcePath: "active", TargetPath: targetAgent, Status: adapter.MappingNative},
+		{SourcePath: "agent.name", TargetPath: targetFrontmatter + ".name", Status: adapter.MappingNative},
+		{SourcePath: "agent.description", TargetPath: targetFrontmatter + ".description", Status: adapter.MappingNative},
+		{SourcePath: "agent.instructions.system", TargetPath: targetBody, Status: adapter.MappingNative},
+		{SourcePath: "agent.instructions.developer", TargetPath: targetBody, Status: adapter.MappingNative},
+		{SourcePath: "agent.model.model", TargetPath: targetFrontmatter + ".model", Status: adapter.MappingNative},
+		{SourcePath: "agent.model.reasoning_effort", TargetPath: targetFrontmatter + ".effort", Status: adapter.MappingNative},
+		{SourcePath: "agent.permissions.allow", TargetPath: targetFrontmatter + ".tools", Status: adapter.MappingNative},
+		{SourcePath: "agent.permissions.deny", TargetPath: targetFrontmatter + ".disallowedTools", Status: adapter.MappingNative},
+		{
+			SourcePath: "agent.permissions.approval",
+			TargetPath: targetBody,
+			Status:     adapter.MappingRenderedAsInstructions,
+			Reason:     "Claude Code permission modes do not exactly match AVM approval policies in Phase 1.",
+		},
+		{
+			SourcePath: "agent.permissions.sandbox",
+			TargetPath: targetBody,
+			Status:     adapter.MappingRenderedAsInstructions,
+			Reason:     "Claude Code sandbox settings are not written by the project agent file in Phase 1.",
+		},
+		{SourcePath: "capabilities.skills", TargetPath: targetFrontmatter + ".skills", Status: adapter.MappingNative},
+		{
+			SourcePath: "project.CLAUDE.md",
+			Status:     adapter.MappingIgnored,
+			Reason:     "Claude project instructions are user-owned; the Claude Code adapter does not overwrite CLAUDE.md.",
+		},
+	}
+
+	if len(r.input.Agent.MemoryRefs) > 0 {
+		status := adapter.MappingRenderedAsInstructions
+		targetPath := targetBody
+		reason := "Claude Code native memory content is not written during avm use; AVM memory refs are rendered as agent instructions."
+		if _, ok := nativeMemoryScope(r.input.Agent.MemoryRefs); ok {
+			status = adapter.MappingNative
+			targetPath = targetFrontmatter + ".memory"
+			reason = "Claude Code can express this AVM memory scope in agent frontmatter; memory content remains read-only during avm use."
+		}
+		mappings = append(mappings, adapter.FieldMapping{
+			SourcePath: "agent.memory_refs",
+			TargetPath: targetPath,
+			Status:     status,
+			Reason:     reason,
+		})
+	}
+	if len(r.input.Agent.Instructions.References) > 0 {
+		mappings = append(mappings, adapter.FieldMapping{
+			SourcePath: "agent.instructions.references",
+			TargetPath: targetBody,
+			Status:     adapter.MappingRenderedAsInstructions,
+			Reason:     "Claude Code agent files do not have a separate references field in Phase 1.",
+		})
+	}
+	if r.input.Agent.Model.Verbosity != "" {
+		mappings = append(mappings, adapter.FieldMapping{
+			SourcePath: "agent.model.verbosity",
+			TargetPath: targetBody,
+			Status:     adapter.MappingRenderedAsInstructions,
+			Reason:     "Claude Code Phase 1 does not expose an AVM verbosity field; it is preserved as agent guidance.",
+		})
+	}
+	if r.input.Agent.Model.Temperature != nil {
+		mappings = append(mappings, adapter.FieldMapping{
+			SourcePath: "agent.model.temperature",
+			Status:     adapter.MappingUnsupported,
+			Reason:     "Claude Code adapter Phase 1 does not support temperature.",
+		})
+	}
+	if len(r.input.Agent.Permissions.AdditionalDirectories) > 0 {
+		mappings = append(mappings, adapter.FieldMapping{
+			SourcePath: "agent.permissions.additional_directories",
+			Status:     adapter.MappingUnsupported,
+			Reason:     "Claude Code adapter Phase 1 does not modify settings additionalDirectories.",
+		})
+	}
+	if len(r.input.Memory) > 0 {
+		mappings = append(mappings, adapter.FieldMapping{
+			SourcePath: "memory",
+			TargetPath: targetBody,
+			Status:     adapter.MappingRenderedAsInstructions,
+			Reason:     "Portable memory content is referenced from Claude Code agent instructions in Phase 1.",
+		})
+	}
+	if len(r.input.Capabilities.Commands) > 0 {
+		mappings = append(mappings, adapter.FieldMapping{
+			SourcePath: "capabilities.commands",
+			TargetPath: targetBody,
+			Status:     adapter.MappingRenderedAsInstructions,
+			Reason:     "Claude Code adapter Phase 1 preserves AVM command capability names as instructions only.",
+		})
+	}
+	if len(r.input.Capabilities.Hooks) > 0 {
+		mappings = append(mappings, adapter.FieldMapping{
+			SourcePath: "capabilities.hooks",
+			TargetPath: targetFrontmatter + ".hooks",
+			Status:     adapter.MappingNative,
+		})
+	}
+	if len(r.input.Capabilities.Toolsets) > 0 {
+		mappings = append(mappings, adapter.FieldMapping{
+			SourcePath: "capabilities.toolsets",
+			TargetPath: targetBody,
+			Status:     adapter.MappingRenderedAsInstructions,
+			Reason:     "Claude Code adapter Phase 1 does not enforce AVM toolset modes natively.",
+		})
+	}
+	for _, server := range sortedMCPServers(r.input.Capabilities.MCPServers) {
+		source := "capabilities.mcp_servers." + server.Name
+		if mcpServerRenderable(server) {
+			mappings = append(mappings, adapter.FieldMapping{
+				SourcePath: source,
+				TargetPath: r.mcpPath + "#mcpServers." + server.Name,
+				Status:     adapter.MappingNative,
+			})
+			continue
+		}
+		mappings = append(mappings, adapter.FieldMapping{
+			SourcePath: source,
+			Status:     adapter.MappingUnsupported,
+			Reason:     "Claude Code MCP rendering requires command or URL.",
+		})
+	}
+	return mappings
+}
+
+func (r renderContext) warnings() []string {
+	var warnings []string
+	for _, server := range sortedMCPServers(r.input.Capabilities.MCPServers) {
+		if !mcpServerRenderable(server) {
+			warnings = append(warnings, fmt.Sprintf("mcp server %q was not rendered because command or URL is missing", server.Name))
+		}
+	}
+	if len(r.input.Agent.MemoryRefs) > 0 {
+		if _, ok := nativeMemoryScope(r.input.Agent.MemoryRefs); !ok {
+			warnings = append(warnings, "memory refs were rendered as instructions because their scopes cannot be represented by one Claude Code memory scope")
+		}
+	}
+	return warnings
+}
+
+func (r renderContext) renderableMCPServers() []adapter.MCPServer {
+	servers := sortedMCPServers(r.input.Capabilities.MCPServers)
+	out := make([]adapter.MCPServer, 0, len(servers))
+	for _, server := range servers {
+		if mcpServerRenderable(server) {
+			out = append(out, server)
+		}
+	}
+	return out
+}
+
+func applyOperation(operation adapter.RenderOperation, managed adapter.ManagedPath) (bool, error) {
+	switch operation.Action {
+	case adapter.OperationWriteFile:
+		if managed.MergeMode != adapter.MergeModeWholeFile {
+			return false, fmt.Errorf("claude-code write operation %q requires whole-file managed path %s", operation.ID, operation.Path)
+		}
+		return writeFileAtomic(operation.Path, operation.Content)
+	case adapter.OperationStructuredSet:
+		if managed.MergeMode != adapter.MergeModeStructuredSection {
+			return false, fmt.Errorf("claude-code structured operation %q requires structured-section managed path %s", operation.ID, operation.Path)
+		}
+		if operation.ID != mcpOperationID {
+			return false, fmt.Errorf("claude-code adapter cannot apply structured operation %q at %s", operation.ID, operation.Path)
+		}
+		return mergeMCPDocument(operation.Path, operation.Content)
+	default:
+		return false, fmt.Errorf("claude-code adapter cannot apply %s operation %q at %s", operation.Action, operation.ID, operation.Path)
+	}
+}
+
+func writeFileAtomic(path string, content []byte) (bool, error) {
+	existing, err := os.ReadFile(path)
+	if err == nil && bytes.Equal(existing, content) {
+		return false, nil
+	}
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return false, err
+	}
+
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return false, err
+	}
+	temp, err := os.CreateTemp(filepath.Dir(path), ".avm-*.tmp")
+	if err != nil {
+		return false, err
+	}
+	tempName := temp.Name()
+	defer os.Remove(tempName)
+
+	if _, err := temp.Write(content); err != nil {
+		temp.Close()
+		return false, err
+	}
+	if err := temp.Chmod(0o600); err != nil {
+		temp.Close()
+		return false, err
+	}
+	if err := temp.Close(); err != nil {
+		return false, err
+	}
+	if err := os.Rename(tempName, path); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func mergeMCPDocument(path string, desiredContent []byte) (bool, error) {
+	var desired mcpDocument
+	if err := json.Unmarshal(desiredContent, &desired); err != nil {
+		return false, fmt.Errorf("parse desired Claude Code MCP content: %w", err)
+	}
+
+	root := make(map[string]any)
+	existing, err := os.ReadFile(path)
+	if err == nil && len(bytes.TrimSpace(existing)) > 0 {
+		if err := json.Unmarshal(existing, &root); err != nil {
+			return false, fmt.Errorf("parse existing Claude Code MCP file %s: %w", path, err)
+		}
+	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return false, err
+	}
+
+	servers, err := objectField(root, "mcpServers")
+	if err != nil {
+		return false, err
+	}
+	previousManaged, err := managedMCPServerSet(root)
+	if err != nil {
+		return false, err
+	}
+	for name := range previousManaged {
+		delete(servers, name)
+	}
+
+	desiredNames := sortedMCPServerConfigNames(desired.MCPServers)
+	for _, name := range desiredNames {
+		if _, exists := servers[name]; exists {
+			return false, fmt.Errorf("claude-code MCP server %q already exists and is not AVM-managed", name)
+		}
+		servers[name] = desired.MCPServers[name]
+	}
+	root["mcpServers"] = servers
+	setManagedMCPServers(root, desiredNames)
+
+	next, err := marshalJSON(root)
+	if err != nil {
+		return false, err
+	}
+	return writeFileAtomic(path, next)
+}
+
+func objectField(root map[string]any, key string) (map[string]any, error) {
+	if value, ok := root[key]; ok {
+		object, ok := value.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("Claude Code MCP field %q must be an object", key)
+		}
+		return object, nil
+	}
+	object := make(map[string]any)
+	root[key] = object
+	return object, nil
+}
+
+func managedMCPServerSet(root map[string]any) (map[string]struct{}, error) {
+	out := make(map[string]struct{})
+	runtimeMeta, err := runtimeMetadata(root)
+	if err != nil {
+		return nil, err
+	}
+	if runtimeMeta == nil {
+		return out, nil
+	}
+	value, ok := runtimeMeta["managedMCPServers"]
+	if !ok {
+		return out, nil
+	}
+	items, ok := value.([]any)
+	if !ok {
+		return nil, fmt.Errorf("Claude Code AVM metadata managedMCPServers must be an array")
+	}
+	for _, item := range items {
+		name, ok := item.(string)
+		if !ok {
+			return nil, fmt.Errorf("Claude Code AVM metadata managedMCPServers entries must be strings")
+		}
+		out[name] = struct{}{}
+	}
+	return out, nil
+}
+
+func runtimeMetadata(root map[string]any) (map[string]any, error) {
+	avm, ok := root[avmMetadataKey]
+	if !ok {
+		return nil, nil
+	}
+	avmObject, ok := avm.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("Claude Code AVM metadata field %q must be an object", avmMetadataKey)
+	}
+	runtime, ok := avmObject[avmMetadataSubkey]
+	if !ok {
+		return nil, nil
+	}
+	runtimeObject, ok := runtime.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("Claude Code AVM metadata field %q.%s must be an object", avmMetadataKey, avmMetadataSubkey)
+	}
+	return runtimeObject, nil
+}
+
+func setManagedMCPServers(root map[string]any, names []string) {
+	avmObject, ok := root[avmMetadataKey].(map[string]any)
+	if !ok {
+		avmObject = make(map[string]any)
+		root[avmMetadataKey] = avmObject
+	}
+	runtimeObject, ok := avmObject[avmMetadataSubkey].(map[string]any)
+	if !ok {
+		runtimeObject = make(map[string]any)
+		avmObject[avmMetadataSubkey] = runtimeObject
+	}
+	runtimeObject["managedMCPServers"] = names
+}
+
+func marshalJSON(value any) ([]byte, error) {
+	var buf bytes.Buffer
+	encoder := json.NewEncoder(&buf)
+	encoder.SetEscapeHTML(false)
+	encoder.SetIndent("", "  ")
+	if err := encoder.Encode(value); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+type mcpDocument struct {
+	MCPServers map[string]mcpServerConfig `json:"mcpServers,omitempty"`
+}
+
+type mcpServerConfig struct {
+	Command string            `json:"command,omitempty"`
+	Args    []string          `json:"args,omitempty"`
+	Env     map[string]string `json:"env,omitempty"`
+	URL     string            `json:"url,omitempty"`
+}
+
+func mcpServerConfigFromAdapter(server adapter.MCPServer) mcpServerConfig {
+	config := mcpServerConfig{
+		Command: server.Command,
+		Args:    append([]string(nil), server.Args...),
+		URL:     server.URL,
+	}
+	if len(server.Env) > 0 {
+		env := append([]adapter.EnvVar(nil), server.Env...)
+		sort.SliceStable(env, func(i, j int) bool {
+			return env[i].Name < env[j].Name
+		})
+		config.Env = make(map[string]string, len(env))
+		for _, item := range env {
+			if item.Name != "" {
+				config.Env[item.Name] = item.Value
+			}
+		}
+		if len(config.Env) == 0 {
+			config.Env = nil
+		}
+	}
+	return config
+}
+
+func importAgents(dir string) ([]adapter.ImportedAgent, error) {
+	info, err := os.Stat(dir)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if !info.IsDir() {
+		return nil, fmt.Errorf("Claude Code agents path %s is not a directory", dir)
+	}
+
+	var agents []adapter.ImportedAgent
+	err = filepath.WalkDir(dir, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() || filepath.Ext(path) != ".md" {
+			return nil
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		agents = append(agents, parseImportedAgent(path, data))
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return agents, nil
+}
+
+func parseImportedAgent(path string, data []byte) adapter.ImportedAgent {
+	sourcePath := filepath.ToSlash(path)
+	name := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+	description := ""
+	body := string(data)
+
+	if fields, rest, ok := splitFrontmatter(body); ok {
+		if value := fields["name"]; value != "" {
+			name = value
+		}
+		description = fields["description"]
+		body = rest
+	}
+
+	return adapter.ImportedAgent{
+		Name:        name,
+		Description: description,
+		SourcePath:  sourcePath,
+		Instructions: adapter.Instructions{
+			Developer: strings.TrimSpace(body),
+		},
+		Mappings: []adapter.FieldMapping{
+			{SourcePath: sourcePath + "#frontmatter.name", TargetPath: "agent.name", Status: adapter.MappingNative},
+			{SourcePath: sourcePath + "#frontmatter.description", TargetPath: "agent.description", Status: adapter.MappingNative},
+			{SourcePath: sourcePath + "#body", TargetPath: "agent.instructions.developer", Status: adapter.MappingNative},
+		},
+	}
+}
+
+func splitFrontmatter(content string) (map[string]string, string, bool) {
+	if !strings.HasPrefix(content, "---\n") {
+		return nil, content, false
+	}
+	end := strings.Index(content[4:], "\n---")
+	if end < 0 {
+		return nil, content, false
+	}
+	frontmatter := content[4 : 4+end]
+	restStart := 4 + end + len("\n---")
+	if restStart < len(content) && content[restStart] == '\r' {
+		restStart++
+	}
+	if restStart < len(content) && content[restStart] == '\n' {
+		restStart++
+	}
+
+	fields := make(map[string]string)
+	for _, line := range strings.Split(frontmatter, "\n") {
+		key, value, ok := strings.Cut(line, ":")
+		if !ok {
+			continue
+		}
+		key = strings.TrimSpace(key)
+		value = strings.Trim(strings.TrimSpace(value), `"'`)
+		if key != "" {
+			fields[key] = value
+		}
+	}
+	return fields, content[restStart:], true
+}
+
+func managedPathIndex(paths []adapter.ManagedPath) map[string]adapter.ManagedPath {
+	managed := make(map[string]adapter.ManagedPath, len(paths))
+	for _, path := range paths {
+		managed[path.Path] = path
+	}
+	return managed
+}
+
+func writeLine(builder *strings.Builder, format string, args ...any) {
+	builder.WriteString(fmt.Sprintf(format, args...))
+	builder.WriteByte('\n')
+}
+
+func writeYAMLString(builder *strings.Builder, key, value string) {
+	if value == "" {
+		return
+	}
+	writeLine(builder, "%s: %s", key, strconv.Quote(value))
+}
+
+func writeYAMLStringList(builder *strings.Builder, key string, values []string) {
+	if len(values) == 0 {
+		return
+	}
+	writeLine(builder, "%s:", key)
+	for _, value := range values {
+		writeLine(builder, "  - %s", strconv.Quote(value))
+	}
+}
+
+func section(title, body string) string {
+	return title + ":\n" + strings.TrimSpace(body)
+}
+
+func bulletSection(title string, lines []string) string {
+	var b strings.Builder
+	b.WriteString(title)
+	b.WriteString(":\n")
+	for _, line := range lines {
+		b.WriteString("- ")
+		b.WriteString(line)
+		b.WriteByte('\n')
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
+func skillLines(refs []adapter.CapabilityRef) []string {
+	lines := make([]string, 0, len(refs))
+	for _, ref := range refs {
+		if ref.Name == "" {
+			continue
+		}
+		line := ref.Name
+		if ref.Path != "" {
+			line += " (" + ref.Path + ")"
+		}
+		lines = append(lines, line)
+	}
+	sort.Strings(lines)
+	return lines
+}
+
+func capabilityLines(refs []adapter.CapabilityRef) []string {
+	lines := make([]string, 0, len(refs))
+	for _, ref := range refs {
+		if ref.Name == "" {
+			continue
+		}
+		line := ref.Name
+		if ref.Path != "" {
+			line += " (" + ref.Path + ")"
+		}
+		lines = append(lines, line)
+	}
+	sort.Strings(lines)
+	return lines
+}
+
+func capabilityNames(refs []adapter.CapabilityRef) []string {
+	names := make([]string, 0, len(refs))
+	for _, ref := range refs {
+		if ref.Name != "" {
+			names = append(names, ref.Name)
+		}
+	}
+	sort.Strings(names)
+	return names
+}
+
+func memoryRefLines(refs []adapter.MemoryRef) []string {
+	lines := make([]string, 0, len(refs))
+	for _, ref := range refs {
+		if ref.ID == "" {
+			continue
+		}
+		var parts []string
+		if ref.Scope != "" {
+			parts = append(parts, "scope="+ref.Scope)
+		}
+		if ref.Mode != "" {
+			parts = append(parts, "mode="+ref.Mode)
+		}
+		if ref.Path != "" {
+			parts = append(parts, "path="+ref.Path)
+		}
+		line := ref.ID
+		if len(parts) > 0 {
+			line += " (" + strings.Join(parts, ", ") + ")"
+		}
+		lines = append(lines, line)
+	}
+	sort.Strings(lines)
+	return lines
+}
+
+func portableMemoryLines(memory []adapter.PortableMemory) []string {
+	lines := make([]string, 0, len(memory))
+	for _, item := range memory {
+		if item.ID == "" {
+			continue
+		}
+		var parts []string
+		if item.Scope != "" {
+			parts = append(parts, "scope="+item.Scope)
+		}
+		if item.Mode != "" {
+			parts = append(parts, "mode="+item.Mode)
+		}
+		if item.Path != "" {
+			parts = append(parts, "path="+item.Path)
+		}
+		line := item.ID
+		if len(parts) > 0 {
+			line += " (" + strings.Join(parts, ", ") + ")"
+		}
+		if item.Content != "" {
+			line += ": " + strings.TrimSpace(item.Content)
+		}
+		lines = append(lines, line)
+	}
+	sort.Strings(lines)
+	return lines
+}
+
+func toolsetLines(toolsets []adapter.Toolset) []string {
+	lines := make([]string, 0, len(toolsets))
+	for _, toolset := range toolsets {
+		if toolset.Name == "" {
+			continue
+		}
+		line := toolset.Name
+		if toolset.Mode != "" {
+			line += "=" + toolset.Mode
+		}
+		lines = append(lines, line)
+	}
+	sort.Strings(lines)
+	return lines
+}
+
+func sortedStrings(values []string) []string {
+	out := append([]string(nil), values...)
+	sort.Strings(out)
+	return out
+}
+
+func sortedMCPServers(servers []adapter.MCPServer) []adapter.MCPServer {
+	out := append([]adapter.MCPServer(nil), servers...)
+	sort.SliceStable(out, func(i, j int) bool {
+		return out[i].Name < out[j].Name
+	})
+	return out
+}
+
+func sortedMCPServerConfigNames(servers map[string]mcpServerConfig) []string {
+	names := make([]string, 0, len(servers))
+	for name := range servers {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+func mcpServerNames(servers []adapter.MCPServer) []string {
+	names := make([]string, 0, len(servers))
+	for _, server := range servers {
+		if server.Name != "" {
+			names = append(names, server.Name)
+		}
+	}
+	sort.Strings(names)
+	return names
+}
+
+func mcpServerRenderable(server adapter.MCPServer) bool {
+	return server.Name != "" && (server.Command != "" || server.URL != "")
+}
+
+func nativeMemoryScope(refs []adapter.MemoryRef) (string, bool) {
+	if len(refs) == 0 {
+		return "", false
+	}
+	scope := ""
+	for _, ref := range refs {
+		if ref.Scope == "" {
+			return "", false
+		}
+		switch ref.Scope {
+		case "user", "project", "local":
+		default:
+			return "", false
+		}
+		if scope == "" {
+			scope = ref.Scope
+			continue
+		}
+		if scope != ref.Scope {
+			return "", false
+		}
+	}
+	return scope, true
+}
+
+func slug(value string) string {
+	value = strings.TrimSpace(strings.ToLower(value))
+	var builder strings.Builder
+	lastDash := false
+	for _, r := range value {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			builder.WriteRune(r)
+			lastDash = false
+			continue
+		}
+		if r == '-' || r == '_' || unicode.IsSpace(r) {
+			if !lastDash && builder.Len() > 0 {
+				builder.WriteByte('-')
+				lastDash = true
+			}
+		}
+	}
+	slugged := strings.Trim(builder.String(), "-")
+	if slugged == "" {
+		return "agent"
+	}
+	return slugged
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
+}
