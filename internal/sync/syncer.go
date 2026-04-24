@@ -99,6 +99,11 @@ func (s *Syncer) SyncActivation(ctx context.Context, resolved *config.ResolvedAc
 		if err := state.SaveSyncState(opts.StatePath, syncState); err != nil {
 			return result, err
 		}
+		if opts.UpdateActive {
+			if err := config.UpdateActive(resolved.Active); err != nil {
+				return result, err
+			}
+		}
 	}
 
 	if err := resultError(result); err != nil {

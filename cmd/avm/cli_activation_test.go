@@ -2,7 +2,9 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -14,6 +16,7 @@ func TestUseStatusDeactivateCommands(t *testing.T) {
 	home := t.TempDir()
 	project := t.TempDir()
 	t.Setenv("HOME", home)
+	codexHome := setupCodexHome(t, home)
 	chdir(t, project)
 
 	if _, err := executeCommand("init"); err != nil {
@@ -28,13 +31,14 @@ func TestUseStatusDeactivateCommands(t *testing.T) {
 		t.Fatalf("use returned error: %v", err)
 	}
 	wantUse := "active: profile:backend-coder\n" +
-		"sync: unavailable\n" +
+		"sync: completed\n" +
 		"targets:\n" +
 		"  claude-code: skipped\n" +
-		"  codex: skipped\n" +
 		"  cline: skipped\n" +
+		"  codex: synced\n" +
 		"warnings:\n" +
-		"  - sync API unavailable; active config updated without runtime render\n"
+		"  - claude-code: target has no resolved agent\n" +
+		"  - cline: target has no resolved agent\n"
 	if useOut != wantUse {
 		t.Fatalf("unexpected use output:\n got: %q\nwant: %q", useOut, wantUse)
 	}
@@ -52,21 +56,39 @@ func TestUseStatusDeactivateCommands(t *testing.T) {
 	if err != nil {
 		t.Fatalf("status returned error: %v", err)
 	}
-	wantStatus := "active: profile:backend-coder\n" +
-		"runtime status:\n" +
-		"  claude-code: unknown\n" +
-		"  codex: unknown\n" +
-		"  cline: unknown\n" +
-		"managed paths:\n" +
-		"  claude-code: none\n" +
-		"  codex: none\n" +
-		"  cline: none\n" +
-		"mapping status:\n" +
-		"  claude-code: none\n" +
-		"  codex: none\n" +
-		"  cline: none\n" +
-		"warnings:\n" +
-		"  - sync-state not found\n"
+	rolePath := filepath.ToSlash(filepath.Join(codexHome, "agents", "backend-coder.toml"))
+	configPath := filepath.ToSlash(filepath.Join(codexHome, "config.toml"))
+	wantStatus := fmt.Sprintf("active: profile:backend-coder\n"+
+		"runtime status:\n"+
+		"  claude-code: skipped\n"+
+		"  cline: skipped\n"+
+		"  codex: synced (agent backend-coder)\n"+
+		"managed paths:\n"+
+		"  claude-code: none\n"+
+		"  cline: none\n"+
+		"  codex:\n"+
+		"    - %s owner=avm merge=whole-file\n"+
+		"    - %s owner=shared-section merge=structured-section\n"+
+		"mapping status:\n"+
+		"  claude-code: none\n"+
+		"  cline: none\n"+
+		"  codex:\n"+
+		"    - active -> profiles.avm-backend-coder: native\n"+
+		"    - agent.description -> agents.backend-coder.description: native\n"+
+		"    - agent.instructions.developer -> %s#developer_instructions: native\n"+
+		"    - agent.instructions.system -> %s#developer_instructions: rendered_as_instructions (Codex role files have developer instructions but no separate AVM system instruction field in Phase 1.)\n"+
+		"    - agent.memory_refs -> %s#developer_instructions: rendered_as_instructions (Codex has no native portable memory scope in Phase 1.)\n"+
+		"    - agent.model.model -> profiles.avm-backend-coder.model: native\n"+
+		"    - agent.model.reasoning_effort -> profiles.avm-backend-coder.model_reasoning_effort: native\n"+
+		"    - agent.model.verbosity -> %s#developer_instructions: rendered_as_instructions (Codex Phase 1 does not expose an AVM verbosity field; it is preserved as role guidance.)\n"+
+		"    - agent.name -> agents.backend-coder.name: native\n"+
+		"    - agent.permissions.approval -> profiles.avm-backend-coder.approval_policy: native\n"+
+		"    - agent.permissions.sandbox -> profiles.avm-backend-coder.sandbox_mode: native\n"+
+		"    - capabilities.skills -> %s#developer_instructions: rendered_as_instructions (Codex has no native AVM skill registry mount in Phase 1.)\n"+
+		"    - project.AGENTS.md: ignored (Codex project instructions are user-owned; the Codex adapter does not overwrite AGENTS.md.)\n"+
+		"warnings:\n"+
+		"  - claude-code: target has no resolved agent\n"+
+		"  - cline: target has no resolved agent\n", rolePath, configPath, rolePath, rolePath, rolePath, rolePath, rolePath)
 	if statusOut != wantStatus {
 		t.Fatalf("unexpected status output:\n got: %q\nwant: %q", statusOut, wantStatus)
 	}
@@ -76,13 +98,14 @@ func TestUseStatusDeactivateCommands(t *testing.T) {
 		t.Fatalf("deactivate returned error: %v", err)
 	}
 	wantDeactivate := "active: profile:default\n" +
-		"sync: unavailable\n" +
+		"sync: completed\n" +
 		"targets:\n" +
 		"  claude-code: skipped\n" +
-		"  codex: skipped\n" +
 		"  cline: skipped\n" +
+		"  codex: synced\n" +
 		"warnings:\n" +
-		"  - sync API unavailable; active config updated without runtime render\n"
+		"  - claude-code: target has no resolved agent\n" +
+		"  - cline: target has no resolved agent\n"
 	if deactivateOut != wantDeactivate {
 		t.Fatalf("unexpected deactivate output:\n got: %q\nwant: %q", deactivateOut, wantDeactivate)
 	}
@@ -93,6 +116,7 @@ func TestStatusShowsSyncStateDetails(t *testing.T) {
 	home := t.TempDir()
 	project := t.TempDir()
 	t.Setenv("HOME", home)
+	setupCodexHome(t, home)
 	chdir(t, project)
 
 	if _, err := executeCommand("init"); err != nil {
@@ -152,6 +176,7 @@ func TestUseKindEnvAndAutoPrefersProfile(t *testing.T) {
 	home := t.TempDir()
 	project := t.TempDir()
 	t.Setenv("HOME", home)
+	setupCodexHome(t, home)
 	chdir(t, project)
 
 	if _, err := executeCommand("init"); err != nil {
@@ -180,11 +205,11 @@ func TestUseKindEnvAndAutoPrefersProfile(t *testing.T) {
 		t.Fatalf("env use returned error: %v", err)
 	}
 	wantEnv := "active: env:coding\n" +
-		"sync: unavailable\n" +
+		"sync: completed\n" +
 		"targets:\n" +
-		"  codex: skipped\n" +
+		"  codex: synced\n" +
 		"warnings:\n" +
-		"  - sync API unavailable; active config updated without runtime render\n"
+		"  none\n"
 	if envOut != wantEnv {
 		t.Fatalf("unexpected env use output:\n got: %q\nwant: %q", envOut, wantEnv)
 	}
@@ -194,6 +219,7 @@ func TestUseMissingActivationStableErrors(t *testing.T) {
 	home := t.TempDir()
 	project := t.TempDir()
 	t.Setenv("HOME", home)
+	setupCodexHome(t, home)
 	chdir(t, project)
 
 	if _, err := executeCommand("init"); err != nil {
@@ -233,4 +259,15 @@ func assertCurrentActive(t *testing.T, want string) {
 	if got := strings.TrimSpace(string(data)); got != want {
 		t.Fatalf("unexpected current active:\n got: %q\nwant: %q", got, want)
 	}
+}
+
+func setupCodexHome(t *testing.T, home string) string {
+	t.Helper()
+
+	codexHome := filepath.Join(home, ".codex-test")
+	if err := os.MkdirAll(codexHome, 0o700); err != nil {
+		t.Fatalf("create codex home: %v", err)
+	}
+	t.Setenv("CODEX_HOME", codexHome)
+	return codexHome
 }

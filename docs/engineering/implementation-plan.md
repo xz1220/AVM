@@ -45,6 +45,8 @@ PRD 已明确：Phase 1 不做 `sync --watch`，不做 `workspace_isolation` 主
 | Round 1 | `DONE` | `origin/feat/config`、`origin/feat/adapter-contract`、`origin/feat/cli-skeleton`、`origin/feat/fixtures` | `go test ./...`、`go vet ./...`、关键 CLI help、fixture JSON/YAML 校验、路径扫描 |
 | Round 2 | `DONE` | `origin/feat/config-resolve`、`origin/feat/agent-cli`、`origin/feat/memory-import` | `go test ./...`、`go vet ./...`、临时 HOME first vertical slice smoke |
 | Round 3 P0 | `DONE` | adapter/config projection、sync/state contract、fake adapter apply render operations | `go test ./...`、`go vet ./...` |
+| Round 3 P1-P3 | `DONE` | `origin/feat/sync-activation`、`origin/feat/cli-activation`、`origin/feat/codex-adapter` | `go test ./...`、`go vet ./...` |
+| Round 3 P4 | `DONE` | CLI 接入真实 sync、Codex adapter 注册、临时 HOME/CODEX_HOME activation smoke | `go test ./...`、`go vet ./...`、CLI smoke |
 
 Round 1 合并后的能力基线：
 
@@ -54,27 +56,27 @@ Round 1 合并后的能力基线：
 - Fixtures 已有 Phase 1 minimal layout。
 - First vertical slice 已可用：`avm init`、`avm agent create/list/show`、`avm env create`、`avm memory import --from <file> --dry-run`。
 
-### 下一阶段：Round 3 Activation Pipeline
+### 当前阶段：Runtime Adapter Completion
 
-状态：`R3-P0 DONE`，可以启动 `R3-P1/R3-P2/R3-P3`。
+状态：Round 3 first activation path 已合入 `main`。下一步进入 Stage 4，补齐 Claude Code / Cline / Cursor adapters，并继续硬化 Codex adapter。
 
-Round 3 才开始写 runtime managed paths，但仍不做 `sync --watch`。先用 fake adapter 打通 active rebuild、state、backup、conflict detection，再并发 concrete runtime adapters。
+Round 3 已开始写 runtime managed paths，但仍不做 `sync --watch`。当前 `avm use` 会重建 active、调用 sync、写 sync-state，并通过 Codex adapter 写入 AVM-managed Codex config sections / role files。
 
-Lead 已锁定的 R3-P0 边界：
+已锁定的 Round 3 边界：
 
 - `adapter.RenderInputFromResolved` / `RenderInputsFromResolved` 负责把 `config.ResolvedActivation` 投影为 adapter 输入。
-- `internal/sync` 已有 `Options`、`AdapterRegistry`、`Result`、`TargetResult` 最小 contract。
-- `internal/state` 已有 `SyncState`、`RuntimeState`、managed path/mapping state contract。
+- `internal/sync` 已有 `Syncer.SyncActivation`、`Options`、`AdapterRegistry`、`Result`、`TargetResult`。
+- `internal/state` 已有 `SyncState`、`RuntimeState`、managed path/mapping state contract 和 JSON store。
 - fake adapter `Render` 会实际 apply `ensure_dir`、`write_file`、`remove_file`，并回填真实 `changed`。
-- `merge_section` / `structured_set` 暂未 apply，fake adapter 会显式报错，后续由 concrete adapter 或 sync 层定义更细语义。
+- Codex adapter 已支持 structured managed block 和 role TOML whole-file render。
 
 执行顺序：
 
 1. `R3-P0 Lead prep` 已完成：adapter/config/sync/state 边界已落地。
-2. `R3-P1 Sync Agent` 并发：实现 active rebuild、state、backup、conflict detection、fake adapter render。
-3. `R3-P2 CLI Activation Agent` 并发：实现 `avm use`、`avm status`、`avm deactivate`。
-4. `R3-P3 Runtime Adapter Agents` 并发：先启动 Codex adapter，Claude/Cline/Cursor 等 fake e2e 稳定后再扩。
-5. `R3-P4 Lead integration` 串行：合并后跑 fake adapter e2e，再决定是否进入 runtime completion。
+2. `R3-P1 Sync Agent` 已完成：active rebuild、state、backup、conflict detection、fake adapter render。
+3. `R3-P2 CLI Activation Agent` 已完成：`avm use`、`avm status`、`avm deactivate`。
+4. `R3-P3 Codex Adapter Agent` 已完成：Codex first path。
+5. `R3-P4 Lead integration` 已完成：合并分支、CLI 接真实 sync、注册 Codex adapter、跑 smoke。
 
 Round 3 退出条件：
 
@@ -363,7 +365,7 @@ testdata/
 
 ### Stage 3：Activation Pipeline
 
-标记：`IN_PROGRESS`
+标记：`DONE`
 
 可同时启动：
 
@@ -379,7 +381,7 @@ testdata/
 
 ### Stage 4：Runtime Adapter Completion
 
-标记：`PARALLEL`
+标记：`NEXT`
 
 任务：
 
@@ -458,166 +460,31 @@ R3-P0 Lead prep (DONE)
   - Align adapter.RenderInput with config.ResolvedActivation / AgentProfile.
   - Lock sync input/output structs and fake adapter call path.
 
-R3-P1 Sync Agent (PARALLEL after R3-P0)
+R3-P1 Sync Agent (DONE)
   - internal/sync/**, internal/state/**, internal/backup/**
   - active rebuild, state/current-active, sync-state.json, backups, conflict detection
 
-R3-P2 CLI Activation Agent (PARALLEL after R3-P0)
+R3-P2 CLI Activation Agent (DONE)
   - cmd/avm/use*.go, status*.go, deactivate*.go, tests
   - avm use, avm status, avm deactivate
 
-R3-P3 Runtime Adapter Agents (PARALLEL after R3-P0)
+R3-P3 Codex Adapter Agent (DONE)
   - internal/adapter/codex/**
+
+Stage 4 Runtime Adapter Agents (NEXT)
   - internal/adapter/claude/**
   - internal/adapter/cline/**
   - internal/adapter/cursor/**
 
-R3-P4 Lead integration (SERIAL)
+R3-P4 Lead integration (DONE)
   - merge branches
-  - run fake adapter activation e2e
+  - run sync fake tests and Codex activation smoke
   - update this plan with Round 3 result
 ```
 
-### Round 3 Agent prompts
+### Round 3 archived prompts
 
-#### R3-P1 Sync Agent prompt
-
-```text
-你是 Agent VM 的 R3-P1 Sync Agent。请从最新 origin/main 创建独立 worktree 后开发、提交、推送。
-
-准备：
-cd /Users/danielxing/code/agent-vm
-git fetch origin main
-git worktree add ../agent-vm-sync -b feat/sync-activation origin/main
-cd ../agent-vm-sync
-
-Owner：
-- internal/sync/**
-- internal/state/**
-- internal/backup/**
-- 可新增对应 tests/testdata
-
-不要修改：
-- go.mod/go.sum
-- cmd/avm/**
-- internal/config/models.go、internal/config/resolve.go
-- internal/adapter/adapter.go
-- concrete runtime adapter 目录
-
-任务：
-- 实现 sync activation 主流程，使用 adapter.RenderInputsFromResolved(resolved, opts) 作为 config 到 adapter 的唯一入口。
-- 通过 AdapterRegistry 获取 adapter；missing runtime 要返回 skipped/failed target result，不要 panic。
-- 对每个可用 runtime 调用 Plan，再按 managed path 做冲突检测/backup，最后 Render。
-- 实现 active rebuild 到 ~/.avm/active/**，失败时不能破坏旧 active。
-- 实现 sync-state.json 的读写，沿用 internal/state 的 SyncState/RuntimeState contract。
-- 支持 dry-run：生成计划和状态结果，但不写 active、不写 runtime managed paths。
-- 只处理 ManagedPaths，不做 sync --watch，不做 runtime native memory 写入。
-
-验收：
-- go test ./...
-- go vet ./...
-- 单测覆盖 fake adapter render 成功、dry-run 不写文件、冲突检测、active rebuild 失败回滚或保留旧 active、sync-state round-trip。
-- 提交前 git status --short 只能包含 Owner 范围文件。
-
-完成后：
-git push -u origin feat/sync-activation
-git status --short
-cd /Users/danielxing/code/agent-vm
-git worktree remove ../agent-vm-sync
-回复修改文件、测试结果、commit hash、远程分支，以及仍需 Lead/CLI 接入的点。
-```
-
-#### R3-P2 CLI Activation Agent prompt
-
-```text
-你是 Agent VM 的 R3-P2 CLI Activation Agent。请从最新 origin/main 创建独立 worktree 后开发、提交、推送。
-
-准备：
-cd /Users/danielxing/code/agent-vm
-git fetch origin main
-git worktree add ../agent-vm-cli-activation -b feat/cli-activation origin/main
-cd ../agent-vm-cli-activation
-
-Owner：
-- cmd/avm/use*.go
-- cmd/avm/status*.go
-- cmd/avm/deactivate*.go
-- cmd/avm/shell*.go（只在必须接 activation 状态时改）
-- cmd/avm/*activation*_test.go 或相关 command tests
-
-不要修改：
-- go.mod/go.sum
-- cmd/avm/root.go、cmd/avm/commands.go
-- internal/config 核心模型
-- internal/adapter contract
-- internal/sync/internal/state 实现文件；如果 sync API 不够，先记录需求，不要跨 owner 造接口
-
-任务：
-- 实现 avm use <profile-or-env>，支持 --kind profile|env；未指定 kind 时先尝试 profile，再尝试 env，错误信息要稳定。
-- use 调用 config.ResolveActivation，再调用 sync 层 API；如果 sync API 暂未合入，保留最小编排 helper 和清晰 TODO，保证可编译。
-- 实现 avm status，展示 active、runtime status、managed paths、mapping status、warnings。
-- 实现 avm deactivate，回到 default active，并调用 sync 或至少更新 config active，行为需和 sync 接口兼容。
-- 命令层只编排，不直接写 runtime config。
-
-验收：
-- go test ./...
-- go vet ./...
-- 临时 HOME 下覆盖 avm use/status/deactivate 的 command tests。
-- 输出稳定，适合 golden tests。
-- 提交前 git status --short 只能包含 Owner 范围文件。
-
-完成后：
-git push -u origin feat/cli-activation
-git status --short
-cd /Users/danielxing/code/agent-vm
-git worktree remove ../agent-vm-cli-activation
-回复修改文件、测试结果、commit hash、远程分支，以及等待 sync API 合并的点。
-```
-
-#### R3-P3 Codex Adapter Agent prompt
-
-```text
-你是 Agent VM 的 R3-P3 Codex Adapter Agent。请从最新 origin/main 创建独立 worktree 后开发、提交、推送。本轮只做 Codex adapter，不做 Claude/Cline/Cursor。
-
-准备：
-cd /Users/danielxing/code/agent-vm
-git fetch origin main
-git worktree add ../agent-vm-codex-adapter -b feat/codex-adapter origin/main
-cd ../agent-vm-codex-adapter
-
-Owner：
-- internal/adapter/codex/**
-- fixtures/phase1/codex/** 或 testdata/adapter/codex/**
-- 可新增 codex adapter tests
-
-不要修改：
-- go.mod/go.sum
-- internal/adapter/adapter.go
-- internal/config/**
-- cmd/avm/**
-- sync/state/backup
-
-任务：
-- 实现 Codex adapter 的 Plan/Render/ManagedPaths/Detect 最小可用路径。
-- Plan 从 adapter.RenderInput 生成 deterministic RenderPlan，至少覆盖 agent instructions、model/reasoning、permissions、skills/memory refs 的渲染策略。
-- Render 只写 adapter 声明的 ManagedPaths，不能覆盖用户未声明路径；不能展开 ${ENV_VAR}。
-- 对不能原生表达的字段写 FieldMapping：rendered_as_instructions / ignored / unsupported，不能 silent drop。
-- 保持 Phase 1 保守：先打通一个 Codex first path，不引入额外依赖。
-
-验收：
-- go test ./...
-- go vet ./...
-- Plan/Render 单测覆盖 deterministic plan、managed path 写入、mapping status、不会触碰未声明路径。
-- fixture 与 fixtures/phase1 convention 对齐。
-- 提交前 git status --short 只能包含 Owner 范围文件。
-
-完成后：
-git push -u origin feat/codex-adapter
-git status --short
-cd /Users/danielxing/code/agent-vm
-git worktree remove ../agent-vm-codex-adapter
-回复修改文件、测试结果、commit hash、远程分支，以及 partial/unsupported mapping 清单。
-```
+Round 3 分工 prompt 已执行完毕，对应分支和结果记录在上方状态表。后续不要再启动这些旧 prompt。
 
 ---
 

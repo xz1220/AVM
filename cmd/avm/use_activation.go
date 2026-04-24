@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -11,15 +12,15 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/xz1220/agent-vm/internal/config"
+	avmruntime "github.com/xz1220/agent-vm/internal/runtime"
 	avmsync "github.com/xz1220/agent-vm/internal/sync"
 )
 
-const syncUnavailableWarning = "sync API unavailable; active config updated without runtime render"
-
 type activationResult struct {
-	Active   config.ActiveRef
-	Targets  []activationTargetResult
-	Warnings []string
+	Active     config.ActiveRef
+	SyncStatus string
+	Targets    []activationTargetResult
+	Warnings   []string
 }
 
 type activationTargetResult struct {
@@ -123,38 +124,40 @@ func applyActivation(resolved *config.ResolvedActivation, cwd string) (*activati
 	if resolved == nil {
 		return nil, fmt.Errorf("resolved activation is nil")
 	}
-	// TODO(R3-P1 sync): replace this fallback with the public internal/sync
-	// activation entry point once it lands. These options mirror the intended
-	// command-to-sync handoff and keep the command layer from writing runtime
-	// config directly.
 	syncOpts := activationSyncOptions(resolved, cwd)
+	syncer := avmsync.NewSyncer(avmruntime.NewRegistry())
 
-	if err := config.UpdateActive(resolved.Active); err != nil {
+	syncResult, err := syncer.SyncActivation(context.Background(), resolved, syncOpts)
+	if syncResult == nil {
 		return nil, err
 	}
-	if err := writeCurrentActive(resolved.Active); err != nil {
-		return nil, err
+	if !syncOpts.DryRun {
+		if currentErr := writeCurrentActive(syncResult.Active); currentErr != nil {
+			return nil, currentErr
+		}
 	}
+	return activationResultFromSync(syncResult), err
+}
 
-	targets := append([]string(nil), syncOpts.Targets...)
-	if len(targets) == 0 {
-		targets = runtimeAgentKeys(resolved.RuntimeAgents)
+func activationResultFromSync(result *avmsync.Result) *activationResult {
+	out := &activationResult{
+		Active:     result.Active,
+		SyncStatus: "completed",
+		Warnings:   append([]string(nil), result.Warnings...),
 	}
-	results := make([]activationTargetResult, 0, len(targets))
-	for _, target := range targets {
-		results = append(results, activationTargetResult{
-			Runtime: target,
-			Status:  avmsync.TargetStatusSkipped,
+	for _, target := range result.Targets {
+		out.Targets = append(out.Targets, activationTargetResult{
+			Runtime: target.Runtime,
+			Status:  target.Status,
 		})
+		for _, warning := range target.Warnings {
+			out.Warnings = append(out.Warnings, fmt.Sprintf("%s: %s", target.Runtime, warning))
+		}
+		if target.Error != "" {
+			out.Warnings = append(out.Warnings, fmt.Sprintf("%s: %s", target.Runtime, target.Error))
+		}
 	}
-
-	warnings := append([]string(nil), resolved.Warnings...)
-	warnings = append(warnings, syncUnavailableWarning)
-	return &activationResult{
-		Active:   resolved.Active,
-		Targets:  results,
-		Warnings: warnings,
-	}, nil
+	return out
 }
 
 func activationSyncOptions(resolved *config.ResolvedActivation, cwd string) avmsync.Options {
@@ -168,7 +171,11 @@ func activationSyncOptions(resolved *config.ResolvedActivation, cwd string) avms
 
 func printActivationResult(out io.Writer, result *activationResult) {
 	fmt.Fprintf(out, "active: %s\n", formatActiveRef(result.Active))
-	fmt.Fprintln(out, "sync: unavailable")
+	syncStatus := result.SyncStatus
+	if syncStatus == "" {
+		syncStatus = "unknown"
+	}
+	fmt.Fprintf(out, "sync: %s\n", syncStatus)
 	fmt.Fprintln(out, "targets:")
 	if len(result.Targets) == 0 {
 		fmt.Fprintln(out, "  none")
