@@ -1,0 +1,10 @@
+.DS_Store
+
+# Go
+/bin/
+/dist/
+*.test
+coverage.out
+
+# AVM local state
+/.avm/

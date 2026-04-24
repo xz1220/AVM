@@ -1,0 +1,35 @@
+package main
+
+import (
+	"github.com/spf13/cobra"
+	"github.com/xz1220/agent-vm/internal/version"
+)
+
+func Execute() error {
+	return newRootCommand().Execute()
+}
+
+func newRootCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:           "avm",
+		Short:         "Manage portable AI agent profiles across runtimes",
+		Long:          "Agent VM (AVM) manages portable AI agent profiles, capabilities, memory refs, and runtime render plans.",
+		SilenceUsage:  true,
+		SilenceErrors: true,
+		Version:       version.String(),
+	}
+	cmd.SetVersionTemplate("avm {{.Version}}\n")
+	cmd.AddCommand(newInitCommand())
+	return cmd
+}
+
+func newInitCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "init",
+		Short: "Initialize an AVM home directory",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return cmd.Help()
+		},
+	}
+	return cmd
+}
