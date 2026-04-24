@@ -15,6 +15,7 @@ docs/
 │   ├── architecture.md
 │   ├── data-model.md
 │   ├── file-layout.md
+│   ├── fixture-conventions.md
 │   ├── workflows.md
 │   ├── acceptance.md
 │   ├── implementation-plan.md
@@ -35,3 +36,4 @@ docs/
 3. [engineering/implementation-plan.md](./engineering/implementation-plan.md) — coding 路径、并发 lane 和文件所有权。
 4. [engineering/acceptance.md](./engineering/acceptance.md) — Phase 1 验收标准。
 5. [research/runtime-mapping.md](./research/runtime-mapping.md) — runtime 配置映射调研。
+6. [engineering/fixture-conventions.md](./engineering/fixture-conventions.md) — fixture layout、路径占位符和 runtime convention。

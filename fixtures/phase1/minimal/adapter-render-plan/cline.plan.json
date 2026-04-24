@@ -1,0 +1,56 @@
+{
+  "fixture_schema": "avm.phase1.adapter-render-plan.v1",
+  "runtime": "cline",
+  "active": {
+    "kind": "env",
+    "name": "coding"
+  },
+  "agent_name": "backend-coder",
+  "managed_paths": [
+    {
+      "path": "<CLINE_DATA_HOME>/settings/cline_mcp_settings.json",
+      "owner": "shared-section",
+      "description": "Cline MCP server entries managed by AVM.",
+      "required": true,
+      "merge_mode": "structured-section"
+    },
+    {
+      "path": "<PROJECT_ROOT>/.clinerules/avm/backend-coder.md",
+      "owner": "avm",
+      "description": "Cline rules rendered from AVM agent instructions.",
+      "required": true,
+      "merge_mode": "whole-file"
+    }
+  ],
+  "operations": [
+    {
+      "op": "merge_structured",
+      "path": "<CLINE_DATA_HOME>/settings/cline_mcp_settings.json",
+      "section": "mcpServers.github"
+    },
+    {
+      "op": "write_file",
+      "path": "<PROJECT_ROOT>/.clinerules/avm/backend-coder.md"
+    }
+  ],
+  "mappings": [
+    {
+      "source_path": "agents.backend-coder.capabilities.mcps.github",
+      "target_path": "cline_mcp_settings.json mcpServers.github",
+      "status": "native",
+      "reason": ""
+    },
+    {
+      "source_path": "agents.backend-coder.instructions",
+      "target_path": ".clinerules/avm/backend-coder.md",
+      "status": "rendered_as_instructions",
+      "reason": "Cline has no stable local Agent Profile file in Phase 1."
+    },
+    {
+      "source_path": "agents.backend-coder.memory_refs",
+      "target_path": ".clinerules/avm/backend-coder.md",
+      "status": "rendered_as_instructions",
+      "reason": "Portable memory references are rendered as rules for Cline."
+    }
+  ]
+}

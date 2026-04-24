@@ -1,0 +1,57 @@
+{
+  "fixture_schema": "avm.phase1.adapter-render-plan.v1",
+  "runtime": "cursor",
+  "status": "partial",
+  "active": {
+    "kind": "env",
+    "name": "coding"
+  },
+  "agent_name": "backend-coder",
+  "managed_paths": [
+    {
+      "path": "<PROJECT_ROOT>/.cursor/mcp.json",
+      "owner": "shared-section",
+      "description": "Cursor MCP server entries managed by AVM.",
+      "required": true,
+      "merge_mode": "structured-section"
+    },
+    {
+      "path": "<PROJECT_ROOT>/.cursor/rules/avm-backend-coder.md",
+      "owner": "avm",
+      "description": "Cursor rule rendered from AVM agent instructions.",
+      "required": true,
+      "merge_mode": "whole-file"
+    }
+  ],
+  "operations": [
+    {
+      "op": "merge_structured",
+      "path": "<PROJECT_ROOT>/.cursor/mcp.json",
+      "section": "mcpServers.github"
+    },
+    {
+      "op": "write_file",
+      "path": "<PROJECT_ROOT>/.cursor/rules/avm-backend-coder.md"
+    }
+  ],
+  "mappings": [
+    {
+      "source_path": "agents.backend-coder.capabilities.mcps.github",
+      "target_path": ".cursor/mcp.json mcpServers.github",
+      "status": "native",
+      "reason": ""
+    },
+    {
+      "source_path": "agents.backend-coder.instructions",
+      "target_path": ".cursor/rules/avm-backend-coder.md",
+      "status": "rendered_as_instructions",
+      "reason": "Cursor Phase 1 support is file-level PoC only."
+    },
+    {
+      "source_path": "agents.backend-coder.permissions",
+      "target_path": "",
+      "status": "unsupported",
+      "reason": "Cursor PoC does not promise permission mapping."
+    }
+  ]
+}
