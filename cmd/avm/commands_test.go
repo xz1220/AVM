@@ -92,10 +92,7 @@ func TestSkeletonCommandsReturnNotImplemented(t *testing.T) {
 		want string
 	}{
 		{name: "memory import", args: []string{"memory", "import"}, want: "avm memory import: not implemented"},
-		{name: "use", args: []string{"use", "backend-coder"}, want: "avm use: not implemented"},
-		{name: "status", args: []string{"status"}, want: "avm status: not implemented"},
 		{name: "shell init", args: []string{"shell", "init", "zsh"}, want: "avm shell init: not implemented"},
-		{name: "deactivate", args: []string{"deactivate"}, want: "avm deactivate: not implemented"},
 	}
 
 	for _, tt := range tests {
