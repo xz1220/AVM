@@ -17,6 +17,10 @@
   <img src="https://img.shields.io/badge/language-Go-00ADD8" alt="Go">
 </p>
 
+<p align="center">
+  English | <a href="README.zh-CN.md">简体中文</a>
+</p>
+
 Agent VM, or `avm`, is a local control plane for AI coding agent profiles. It
 lets you define an agent once, then render that profile into runtimes such as
 Codex, Claude Code, Cline, and Cursor.
