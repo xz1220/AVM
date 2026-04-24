@@ -8,6 +8,8 @@ import (
 type Options struct {
 	ProjectRoot  string
 	ActiveDir    string
+	StatePath    string
+	BackupDir    string
 	UpdateActive bool
 	DryRun       bool
 	Targets      []string
