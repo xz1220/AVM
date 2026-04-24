@@ -1,0 +1,13 @@
+id: backend-standards
+scope: project
+format: markdown
+path: ~/.avm/memory/project/backend-standards.md
+description: Backend project standards
+mode: read
+tags:
+  - backend
+origin:
+  type: file
+write_policy:
+  allow_push: false
+  require_confirmation: true

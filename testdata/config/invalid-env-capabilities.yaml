@@ -1,0 +1,10 @@
+name: bad-env
+version: "1.0.0"
+runtime_agents:
+  codex:
+    primary: backend-coder
+targets:
+  - codex
+capabilities:
+  skills:
+    - git
