@@ -1,0 +1,470 @@
+package claude_test
+
+import (
+	"context"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"reflect"
+	"strings"
+	"testing"
+
+	"github.com/xz1220/agent-vm/internal/adapter"
+	"github.com/xz1220/agent-vm/internal/adapter/claude"
+)
+
+func TestAdapterImplementsContract(t *testing.T) {
+	var _ adapter.Adapter = (*claude.Adapter)(nil)
+}
+
+func TestDetectUsesConfiguredClaudeHome(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "settings.json"), []byte("{}\n"), 0o600); err != nil {
+		t.Fatalf("write settings: %v", err)
+	}
+
+	detection := claude.New(claude.WithConfigDir(dir)).Detect(ctx)
+
+	if detection.Runtime != "claude-code" {
+		t.Fatalf("runtime = %q, want claude-code", detection.Runtime)
+	}
+	if !detection.Found {
+		t.Fatalf("expected configured Claude Code home to be found")
+	}
+	if detection.ConfigDir != filepath.ToSlash(dir) {
+		t.Fatalf("config dir = %q, want %q", detection.ConfigDir, filepath.ToSlash(dir))
+	}
+}
+
+func TestImportReadsClaudeAgentFiles(t *testing.T) {
+	projectRoot := t.TempDir()
+	agentsDir := filepath.Join(projectRoot, ".claude", "agents")
+	if err := os.MkdirAll(agentsDir, 0o700); err != nil {
+		t.Fatalf("mkdir agents: %v", err)
+	}
+	agentPath := filepath.Join(agentsDir, "reviewer.md")
+	content := "---\nname: reviewer\ndescription: Review changes\n---\n\nCheck correctness.\n"
+	if err := os.WriteFile(agentPath, []byte(content), 0o600); err != nil {
+		t.Fatalf("write agent: %v", err)
+	}
+
+	result, err := claude.New(claude.WithProjectRoot(projectRoot), claude.WithConfigDir(filepath.Join(projectRoot, "empty-home"))).Import(context.Background())
+	if err != nil {
+		t.Fatalf("import failed: %v", err)
+	}
+
+	if len(result.Agents) != 1 {
+		t.Fatalf("imported agents = %d, want 1: %#v", len(result.Agents), result.Agents)
+	}
+	got := result.Agents[0]
+	if got.Name != "reviewer" || got.Description != "Review changes" {
+		t.Fatalf("imported agent mismatch: %#v", got)
+	}
+	if got.Instructions.Developer != "Check correctness." {
+		t.Fatalf("developer instructions = %q", got.Instructions.Developer)
+	}
+}
+
+func TestPlanIsDeterministic(t *testing.T) {
+	ctx := context.Background()
+	a := claude.New()
+	input := richInput("/repo")
+
+	first, err := a.Plan(ctx, input)
+	if err != nil {
+		t.Fatalf("first plan failed: %v", err)
+	}
+	second, err := a.Plan(ctx, input)
+	if err != nil {
+		t.Fatalf("second plan failed: %v", err)
+	}
+
+	if !reflect.DeepEqual(first, second) {
+		t.Fatalf("plans are not deterministic:\nfirst: %#v\nsecond:%#v", first, second)
+	}
+
+	agentContent := operationContent(t, first, "claude-agent")
+	for _, expected := range []string{
+		"skills:\n  - \"git\"\n  - \"test\"",
+		"mcpServers:\n  - \"github\"\n  - \"postgres\"",
+		"Active AVM skills:\n- git (/active/skills/git/SKILL.md)\n- test (/active/skills/test/SKILL.md)",
+		"AVM memory refs:\n- a-memory (scope=project, mode=read, path=/active/memory/a.md)\n- z-memory (scope=project, mode=read, path=/active/memory/z.md)",
+		"Permission approval policy:\non-request",
+	} {
+		if !strings.Contains(agentContent, expected) {
+			t.Fatalf("agent content missing deterministic block %q:\n%s", expected, agentContent)
+		}
+	}
+
+	mcpContent := operationContent(t, first, "claude-mcp")
+	if !strings.Contains(mcpContent, "\"GITHUB_TOKEN\": \"${GITHUB_TOKEN}\"") {
+		t.Fatalf("mcp content expanded or omitted env reference:\n%s", mcpContent)
+	}
+	if strings.Index(mcpContent, "\"github\"") > strings.Index(mcpContent, "\"postgres\"") {
+		t.Fatalf("mcp servers were not sorted deterministically:\n%s", mcpContent)
+	}
+}
+
+func TestPlanMappingsCoverNativeRenderedIgnoredAndUnsupportedFields(t *testing.T) {
+	temperature := 0.2
+	input := richInput("/repo")
+	input.Agent.Model.Temperature = &temperature
+	input.Agent.Permissions.AdditionalDirectories = []string{"/outside"}
+	input.Capabilities.Commands = []adapter.CapabilityRef{{Name: "deploy"}}
+	input.Capabilities.Hooks = []adapter.CapabilityRef{{Name: "preflight"}}
+	input.Capabilities.MCPServers = append(input.Capabilities.MCPServers, adapter.MCPServer{Name: "missing"})
+
+	plan, err := claude.New().Plan(context.Background(), input)
+	if err != nil {
+		t.Fatalf("plan failed: %v", err)
+	}
+
+	for _, mapping := range plan.Mappings {
+		if !mapping.Status.Valid() {
+			t.Fatalf("mapping %s used invalid status %q", mapping.SourcePath, mapping.Status)
+		}
+	}
+
+	assertMapping(t, plan, "agent.model.model", adapter.MappingNative)
+	assertMapping(t, plan, "capabilities.skills", adapter.MappingNative)
+	assertMapping(t, plan, "agent.memory_refs", adapter.MappingNative)
+	assertMapping(t, plan, "agent.instructions.references", adapter.MappingRenderedAsInstructions)
+	assertMapping(t, plan, "agent.permissions.approval", adapter.MappingRenderedAsInstructions)
+	assertMapping(t, plan, "project.CLAUDE.md", adapter.MappingIgnored)
+	assertMapping(t, plan, "agent.model.temperature", adapter.MappingUnsupported)
+	assertMapping(t, plan, "agent.permissions.additional_directories", adapter.MappingUnsupported)
+	assertMapping(t, plan, "capabilities.mcp_servers.missing", adapter.MappingUnsupported)
+}
+
+func TestPlanRendersUnsupportedMemoryRefsAsInstructions(t *testing.T) {
+	input := richInput("/repo")
+	input.Agent.MemoryRefs = append(input.Agent.MemoryRefs, adapter.MemoryRef{
+		ID:    "team-memory",
+		Scope: "team",
+		Path:  "/active/memory/team.md",
+		Mode:  "read",
+	})
+
+	plan, err := claude.New().Plan(context.Background(), input)
+	if err != nil {
+		t.Fatalf("plan failed: %v", err)
+	}
+
+	assertMapping(t, plan, "agent.memory_refs", adapter.MappingRenderedAsInstructions)
+	if !strings.Contains(strings.Join(plan.Warnings, "\n"), "memory refs were rendered as instructions") {
+		t.Fatalf("expected memory scope warning, got %#v", plan.Warnings)
+	}
+}
+
+func TestRenderWritesManagedPathsPreservesUserMCPAndIsIdempotent(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	a := claude.New()
+	input := richInput(dir)
+
+	mcpPath := filepath.Join(dir, ".mcp.json")
+	unmanagedPath := filepath.Join(dir, "CLAUDE.md")
+	existingMCP := `{
+  "mcpServers": {
+    "stale": {
+      "command": "old-avm"
+    },
+    "user": {
+      "command": "user-owned",
+      "env": {
+        "USER_TOKEN": "${DO_NOT_EXPAND}"
+      }
+    }
+  },
+  "_avm": {
+    "claude-code": {
+      "managedMCPServers": [
+        "stale"
+      ]
+    }
+  }
+}
+`
+	if err := os.WriteFile(mcpPath, []byte(existingMCP), 0o600); err != nil {
+		t.Fatalf("write existing mcp: %v", err)
+	}
+	if err := os.WriteFile(unmanagedPath, []byte("user-owned\n"), 0o600); err != nil {
+		t.Fatalf("write unmanaged file: %v", err)
+	}
+
+	plan, err := a.Plan(ctx, input)
+	if err != nil {
+		t.Fatalf("plan failed: %v", err)
+	}
+
+	result, err := a.Render(ctx, plan)
+	if err != nil {
+		t.Fatalf("render failed: %v", err)
+	}
+	if !operationChanged(result, "claude-agent") {
+		t.Fatalf("claude-agent should report changed")
+	}
+	if !operationChanged(result, "claude-mcp") {
+		t.Fatalf("claude-mcp should report changed")
+	}
+
+	agentPath := filepath.Join(dir, ".claude", "agents", "backend-coder.md")
+	agentContent := readFile(t, agentPath)
+	for _, expected := range []string{
+		"---\nname: \"backend-coder\"",
+		"description: \"Backend implementation agent\"",
+		"memory: \"project\"",
+		"Developer instructions:\nPrefer small, reviewable changes.",
+	} {
+		if !strings.Contains(agentContent, expected) {
+			t.Fatalf("rendered agent missing %q:\n%s", expected, agentContent)
+		}
+	}
+
+	mcpContent := readFile(t, mcpPath)
+	for _, expected := range []string{
+		"\"user\"",
+		"\"USER_TOKEN\": \"${DO_NOT_EXPAND}\"",
+		"\"github\"",
+		"\"GITHUB_TOKEN\": \"${GITHUB_TOKEN}\"",
+		"\"managedMCPServers\"",
+	} {
+		if !strings.Contains(mcpContent, expected) {
+			t.Fatalf("rendered mcp missing %q:\n%s", expected, mcpContent)
+		}
+	}
+	if strings.Contains(mcpContent, "\"stale\"") {
+		t.Fatalf("stale AVM-managed MCP entry was not removed:\n%s", mcpContent)
+	}
+	if got := readFile(t, unmanagedPath); got != "user-owned\n" {
+		t.Fatalf("unmanaged file changed: %q", got)
+	}
+
+	second, err := a.Render(ctx, plan)
+	if err != nil {
+		t.Fatalf("second render failed: %v", err)
+	}
+	for _, id := range []string{"claude-agent", "claude-mcp"} {
+		if operationChanged(second, id) {
+			t.Fatalf("%s should be unchanged on second render", id)
+		}
+	}
+}
+
+func TestRenderRejectsOperationsOutsideManagedPaths(t *testing.T) {
+	dir := t.TempDir()
+	a := claude.New()
+	managedPath := filepath.Join(dir, ".claude", "agents", "backend-coder.md")
+	unmanagedPath := filepath.Join(dir, "unmanaged.md")
+	if err := os.WriteFile(unmanagedPath, []byte("keep\n"), 0o600); err != nil {
+		t.Fatalf("write unmanaged file: %v", err)
+	}
+
+	plan := &adapter.RenderPlan{
+		Runtime:   "claude-code",
+		AgentName: "backend-coder",
+		ManagedPaths: []adapter.ManagedPath{
+			{Path: managedPath, Owner: "avm", Required: true, MergeMode: adapter.MergeModeWholeFile},
+		},
+		Operations: []adapter.RenderOperation{
+			{ID: "rogue", Action: adapter.OperationWriteFile, Path: unmanagedPath, Content: []byte("changed\n"), Required: true},
+		},
+	}
+
+	_, err := a.Render(context.Background(), plan)
+	if err == nil {
+		t.Fatalf("render unexpectedly accepted unmanaged operation")
+	}
+	if got := readFile(t, unmanagedPath); got != "keep\n" {
+		t.Fatalf("unmanaged file changed despite render error: %q", got)
+	}
+}
+
+func TestRenderRejectsUserOwnedMCPServerCollision(t *testing.T) {
+	dir := t.TempDir()
+	a := claude.New()
+	input := richInput(dir)
+	mcpPath := filepath.Join(dir, ".mcp.json")
+	existing := `{
+  "mcpServers": {
+    "github": {
+      "command": "user-owned"
+    }
+  }
+}
+`
+	if err := os.WriteFile(mcpPath, []byte(existing), 0o600); err != nil {
+		t.Fatalf("write existing mcp: %v", err)
+	}
+
+	plan, err := a.Plan(context.Background(), input)
+	if err != nil {
+		t.Fatalf("plan failed: %v", err)
+	}
+	_, err = a.Render(context.Background(), plan)
+	if err == nil {
+		t.Fatalf("render unexpectedly overwrote user-owned MCP server")
+	}
+	if got := readFile(t, mcpPath); got != existing {
+		t.Fatalf("mcp file changed despite collision error:\n%s", got)
+	}
+}
+
+func TestManagedPathsReturnsCopy(t *testing.T) {
+	a := claude.New()
+	plan, err := a.Plan(context.Background(), richInput("/repo"))
+	if err != nil {
+		t.Fatalf("plan failed: %v", err)
+	}
+
+	paths := a.ManagedPaths(context.Background(), plan)
+	if len(paths) == 0 {
+		t.Fatalf("expected managed paths")
+	}
+	paths[0].Path = "mutated"
+
+	again := a.ManagedPaths(context.Background(), plan)
+	if again[0].Path == "mutated" {
+		t.Fatalf("ManagedPaths returned mutable plan backing slice")
+	}
+}
+
+func TestFixturePlanShape(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "..", "testdata", "adapter", "claude", "phase1_render_plan.json"))
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+
+	var fixture struct {
+		Schema       string                 `json:"fixture_schema"`
+		Runtime      string                 `json:"runtime"`
+		ManagedPaths []adapter.ManagedPath  `json:"managed_paths"`
+		Mappings     []adapter.FieldMapping `json:"mappings"`
+	}
+	if err := json.Unmarshal(data, &fixture); err != nil {
+		t.Fatalf("unmarshal fixture: %v", err)
+	}
+	if fixture.Schema != "avm.phase1.adapter-render-plan.v1" {
+		t.Fatalf("fixture schema = %q", fixture.Schema)
+	}
+	if fixture.Runtime != "claude-code" {
+		t.Fatalf("fixture runtime = %q", fixture.Runtime)
+	}
+	if len(fixture.ManagedPaths) == 0 {
+		t.Fatalf("fixture has no managed paths")
+	}
+	for _, mapping := range fixture.Mappings {
+		if !mapping.Status.Valid() {
+			t.Fatalf("fixture mapping %s has invalid status %q", mapping.SourcePath, mapping.Status)
+		}
+	}
+}
+
+func richInput(projectRoot string) adapter.RenderInput {
+	return adapter.RenderInput{
+		Active:  adapter.ActiveRef{Kind: "env", Name: "coding"},
+		Runtime: "claude-code",
+		Agent: adapter.Agent{
+			Name:        "backend-coder",
+			Description: "Backend implementation agent",
+			Instructions: adapter.Instructions{
+				System:    "You implement backend changes with tests.",
+				Developer: "Prefer small, reviewable changes.",
+				References: []string{
+					"/active/memory/z.md",
+					"/active/memory/a.md",
+				},
+			},
+			Model: adapter.ModelConfig{
+				Model:           "gpt-5.4",
+				ReasoningEffort: "medium",
+				Verbosity:       "normal",
+			},
+			Permissions: adapter.PermissionConfig{
+				Approval: "on-request",
+				Sandbox:  "workspace-write",
+				Allow: []string{
+					"Bash(go test ./...)",
+					"Bash(git status --short)",
+				},
+				Deny: []string{
+					"Bash(rm -rf *)",
+				},
+			},
+			MemoryRefs: []adapter.MemoryRef{
+				{ID: "z-memory", Scope: "project", Path: "/active/memory/z.md", Mode: "read"},
+				{ID: "a-memory", Scope: "project", Path: "/active/memory/a.md", Mode: "read"},
+			},
+		},
+		Capabilities: adapter.CapabilitySet{
+			Skills: []adapter.CapabilityRef{
+				{Name: "test", Path: "/active/skills/test/SKILL.md"},
+				{Name: "git", Path: "/active/skills/git/SKILL.md"},
+			},
+			MCPServers: []adapter.MCPServer{
+				{Name: "postgres", Command: "postgres-mcp"},
+				{
+					Name:    "github",
+					Command: "npx",
+					Args:    []string{"-y", "@modelcontextprotocol/server-github"},
+					Env:     []adapter.EnvVar{{Name: "GITHUB_TOKEN", Value: "${GITHUB_TOKEN}"}},
+				},
+			},
+			Toolsets: []adapter.Toolset{
+				{Name: "browser", Mode: "disabled"},
+				{Name: "shell", Mode: "limited"},
+			},
+		},
+		Memory: []adapter.PortableMemory{
+			{ID: "z-memory", Scope: "project", Path: "/active/memory/z.md", Mode: "read"},
+			{ID: "a-memory", Scope: "project", Path: "/active/memory/a.md", Mode: "read"},
+		},
+		ProjectRoot: projectRoot,
+	}
+}
+
+func operationContent(t *testing.T, plan *adapter.RenderPlan, id string) string {
+	t.Helper()
+
+	for _, operation := range plan.Operations {
+		if operation.ID == id {
+			return string(operation.Content)
+		}
+	}
+	t.Fatalf("operation %q not found", id)
+	return ""
+}
+
+func assertMapping(t *testing.T, plan *adapter.RenderPlan, sourcePath string, status adapter.MappingStatus) {
+	t.Helper()
+
+	for _, mapping := range plan.Mappings {
+		if mapping.SourcePath == sourcePath {
+			if mapping.Status != status {
+				t.Fatalf("mapping %s status = %q, want %q", sourcePath, mapping.Status, status)
+			}
+			return
+		}
+	}
+	t.Fatalf("mapping %s not found in %#v", sourcePath, plan.Mappings)
+}
+
+func operationChanged(result *adapter.RenderResult, operationID string) bool {
+	for _, operation := range result.Operations {
+		if operation.OperationID == operationID {
+			return operation.Changed
+		}
+	}
+	return false
+}
+
+func readFile(t *testing.T, path string) string {
+	t.Helper()
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	return string(data)
+}
