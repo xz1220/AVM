@@ -1,0 +1,79 @@
+# GitHub Launch Checklist
+
+Use this checklist before making the repository public or announcing it.
+
+## Repository Metadata
+
+Recommended description:
+
+```text
+Local control plane for portable AI coding agent profiles across Codex, Claude Code, Cline, and Cursor.
+```
+
+Recommended topics:
+
+```text
+ai-agents, coding-agents, codex, claude-code, cline, cursor, mcp, agent-profiles, cli, golang, developer-tools
+```
+
+Recommended website:
+
+```text
+https://github.com/xz1220/Agent-VM#readme
+```
+
+## Required Before Public Launch
+
+- [ ] Choose and add an open-source license.
+- [ ] Make the repository public.
+- [ ] Add repository description and topics.
+- [ ] Enable GitHub private vulnerability reporting if available.
+- [ ] Add a social preview image.
+- [ ] Tag the first preview release after `avm use`, `status`, and `deactivate`
+      are implemented.
+
+## First Public Release Bar
+
+Do not present AVM as installable until these work end to end:
+
+- [ ] `avm init`
+- [ ] `avm agent create/list/show`
+- [ ] `avm use <profile>`
+- [ ] `avm status`
+- [ ] `avm deactivate`
+- [ ] one concrete runtime adapter path, preferably Codex or Claude Code
+- [ ] clear backup/conflict behavior for managed runtime files
+
+## Demo Assets
+
+Create a short terminal recording that shows:
+
+1. `avm init`
+2. creating `backend-coder`
+3. attaching one skill, one MCP ref, and one memory ref
+4. `avm use backend-coder`
+5. `avm status` showing native, rendered, unsupported, and ignored mappings
+6. the generated runtime config diff
+
+Keep the recording under 60 seconds. The viewer should understand the product
+without reading the full README.
+
+## Launch Message
+
+Short version:
+
+```text
+I am building Agent VM: a local control plane for AI coding agent profiles.
+
+Instead of syncing scattered prompt files and MCP configs by hand, AVM makes the
+agent itself a portable object: role, tools, permissions, model settings, and
+memory refs. The first target is developers who use multiple coding agents such
+as Codex, Claude Code, Cline, and Cursor.
+```
+
+Call to action:
+
+```text
+If you manage more than one AI coding tool, I would love feedback on the Agent
+Profile model and the runtime adapter roadmap.
+```
