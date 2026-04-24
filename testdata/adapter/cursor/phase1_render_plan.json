@@ -25,69 +25,66 @@
   ],
   "operations": [
     {
-      "op": "merge_structured",
+      "id": "cursor-avm-mcp",
+      "action": "structured_set",
       "path": "<PROJECT_ROOT>/.cursor/mcp.json",
-      "section": "mcpServers.github"
+      "description": "merge Cursor AVM-managed MCP server entries",
+      "required": true
     },
     {
-      "op": "write_file",
-      "path": "<PROJECT_ROOT>/.cursor/rules/avm-backend-coder.md"
+      "id": "cursor-avm-rule",
+      "action": "write_file",
+      "path": "<PROJECT_ROOT>/.cursor/rules/avm-backend-coder.md",
+      "description": "write Cursor AVM-managed rule file",
+      "required": true
     }
   ],
   "mappings": [
     {
       "source_path": "active",
-      "target_path": "",
       "status": "ignored",
       "reason": "Cursor Phase 1 PoC has no active profile selector; AVM only renders project files."
     },
     {
-      "source_path": "agents.backend-coder.profile",
-      "target_path": "",
+      "source_path": "agent.profile",
       "status": "unsupported",
       "reason": "Cursor Phase 1 has no stable local Agent Profile format."
     },
     {
-      "source_path": "agents.backend-coder.capabilities.mcps.github",
-      "target_path": ".cursor/mcp.json#mcpServers.github",
-      "status": "native",
-      "reason": ""
-    },
-    {
-      "source_path": "agents.backend-coder.instructions",
-      "target_path": ".cursor/rules/avm-backend-coder.md",
+      "source_path": "agent.instructions.system",
+      "target_path": "<PROJECT_ROOT>/.cursor/rules/avm-backend-coder.md#instructions",
       "status": "rendered_as_instructions",
-      "reason": "Cursor Phase 1 support is file-level PoC only."
+      "reason": "Cursor Phase 1 renders AVM instructions as project rules."
     },
     {
-      "source_path": "agents.backend-coder.model_run",
-      "target_path": "",
+      "source_path": "agent.model.model",
       "status": "unsupported",
-      "reason": "Cursor PoC does not reliably set model, reasoning, verbosity, or temperature."
+      "reason": "Cursor Phase 1 PoC does not reliably set the selected model."
     },
     {
-      "source_path": "agents.backend-coder.permissions",
-      "target_path": "",
+      "source_path": "agent.permissions.approval",
       "status": "unsupported",
-      "reason": "Cursor PoC does not promise permission mapping."
+      "reason": "Cursor Phase 1 PoC cannot enforce AVM approval policy."
     },
     {
-      "source_path": "agents.backend-coder.memory_refs",
-      "target_path": "",
+      "source_path": "agent.memory_refs",
       "status": "unsupported",
-      "reason": "Cursor PoC does not provide reliable portable memory scoping."
+      "reason": "Cursor Phase 1 PoC does not provide reliable portable memory scoping."
     },
     {
-      "source_path": "agents.backend-coder.capabilities.skills",
-      "target_path": "",
+      "source_path": "capabilities.skills",
       "status": "unsupported",
-      "reason": "Cursor PoC does not install or mount AVM skills."
+      "reason": "Cursor Phase 1 PoC does not install or mount AVM skills."
+    },
+    {
+      "source_path": "capabilities.mcp_servers.github",
+      "target_path": "<PROJECT_ROOT>/.cursor/mcp.json#mcpServers.github",
+      "status": "native"
     },
     {
       "source_path": "project..cursorrules",
-      "target_path": "",
       "status": "ignored",
-      "reason": "Cursor user and team rules remain user-owned."
+      "reason": "Cursor user and team rules are user-owned; the Cursor adapter writes only AVM-owned rule files."
     }
   ],
   "warnings": [
