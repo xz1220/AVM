@@ -17,7 +17,7 @@
     {
       "path": "<PROJECT_ROOT>/.clinerules/avm/backend-coder.md",
       "owner": "avm",
-      "description": "Cline rules rendered from AVM agent instructions.",
+      "description": "Cline rules rendered from the AVM agent profile.",
       "required": true,
       "merge_mode": "whole-file"
     }
