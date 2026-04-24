@@ -254,6 +254,11 @@ Maintain:
 
 - `README.md` as the primary English entry.
 - `README.zh-CN.md` as the Simplified Chinese entry.
+- `README.ja.md` as the Japanese entry.
+- `README.ko.md` as the Korean entry.
+- `README.es.md` as the Spanish entry.
+- `README.pt-BR.md` as the Brazilian Portuguese entry.
+- `README.fr.md` as the French entry.
 
 Both files must stay aligned on:
 
@@ -263,8 +268,8 @@ Both files must stay aligned on:
 - safety model
 - roadmap phase names
 
-Chinese copy may be more direct and product-oriented. It does not need to be a
-literal translation, but it must not promise more than the English README.
+Localized copy may be more direct and product-oriented. It does not need to be
+a literal translation, but it must not promise more than the English README.
 
 ## 9. SVG Quality Checklist
 

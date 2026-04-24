@@ -29,7 +29,7 @@ https://github.com/xz1220/Agent-VM#readme
 - [ ] Add repository description and topics.
 - [ ] Enable GitHub private vulnerability reporting if available.
 - [ ] Add a social preview image.
-- [ ] Keep `README.md` and `README.zh-CN.md` aligned on implemented vs planned behavior.
+- [ ] Keep all localized README files aligned on implemented vs planned behavior.
 - [ ] Tag the first preview release after `avm use`, `status`, and `deactivate`
       are implemented.
 
