@@ -173,22 +173,42 @@ func (a *Adapter) Render(ctx adapter.Context, plan *adapter.RenderPlan) (*adapte
 		return nil, fmt.Errorf("codex adapter cannot render runtime %q", normalized.Runtime)
 	}
 
-	managed := managedPathIndex(normalized.ManagedPaths)
-	results := make([]adapter.RenderOperationResult, 0, len(normalized.Operations))
+	managed, err := managedPathIndex(normalized.ManagedPaths, a.codexHome())
+	if err != nil {
+		return nil, err
+	}
+
+	pending := make([]plannedOperation, 0, len(normalized.Operations))
 	for _, operation := range normalized.Operations {
+		cleanPath, err := cleanRenderPath(operation.Path)
+		if err != nil {
+			return nil, fmt.Errorf("codex render operation %q has invalid path %q: %w", operation.ID, operation.Path, err)
+		}
+		operation.Path = cleanPath
+
 		managedPath, ok := managed[operation.Path]
 		if !ok {
 			return nil, fmt.Errorf("codex render operation %q targets unmanaged path %s", operation.ID, operation.Path)
 		}
+		if err := validateOperation(operation, managedPath); err != nil {
+			return nil, err
+		}
+		if err := preflightOperation(operation); err != nil {
+			return nil, err
+		}
+		pending = append(pending, plannedOperation{operation: operation, managed: managedPath})
+	}
 
-		changed, err := applyOperation(operation, managedPath)
+	results := make([]adapter.RenderOperationResult, 0, len(pending))
+	for _, item := range pending {
+		changed, err := applyOperation(item.operation, item.managed)
 		if err != nil {
 			return nil, err
 		}
 		results = append(results, adapter.RenderOperationResult{
-			OperationID: operation.ID,
-			Action:      operation.Action,
-			Path:        operation.Path,
+			OperationID: item.operation.ID,
+			Action:      item.operation.Action,
+			Path:        item.operation.Path,
 			Changed:     changed,
 		})
 	}
@@ -519,17 +539,46 @@ func (r renderContext) warnings() []string {
 	return warnings
 }
 
-func applyOperation(operation adapter.RenderOperation, managed adapter.ManagedPath) (bool, error) {
+type plannedOperation struct {
+	operation adapter.RenderOperation
+	managed   adapter.ManagedPath
+}
+
+func validateOperation(operation adapter.RenderOperation, managed adapter.ManagedPath) error {
 	switch operation.Action {
 	case adapter.OperationWriteFile:
 		if managed.MergeMode != adapter.MergeModeWholeFile {
-			return false, fmt.Errorf("codex write operation %q requires whole-file managed path %s", operation.ID, operation.Path)
+			return fmt.Errorf("codex write operation %q requires whole-file managed path %s", operation.ID, operation.Path)
 		}
-		return writeFileAtomic(operation.Path, operation.Content)
 	case adapter.OperationStructuredSet:
 		if managed.MergeMode != adapter.MergeModeStructuredSection {
-			return false, fmt.Errorf("codex structured operation %q requires structured-section managed path %s", operation.ID, operation.Path)
+			return fmt.Errorf("codex structured operation %q requires structured-section managed path %s", operation.ID, operation.Path)
 		}
+		if operation.ID == "" {
+			return fmt.Errorf("codex structured operation for %s must have an id", operation.Path)
+		}
+	default:
+		return fmt.Errorf("codex adapter cannot apply %s operation %q at %s", operation.Action, operation.ID, operation.Path)
+	}
+	return nil
+}
+
+func preflightOperation(operation adapter.RenderOperation) error {
+	if operation.Action != adapter.OperationStructuredSet {
+		return nil
+	}
+	return validateMarkedBlock(operation.Path, operation.ID)
+}
+
+func applyOperation(operation adapter.RenderOperation, managed adapter.ManagedPath) (bool, error) {
+	if err := validateOperation(operation, managed); err != nil {
+		return false, err
+	}
+
+	switch operation.Action {
+	case adapter.OperationWriteFile:
+		return writeFileAtomic(operation.Path, operation.Content)
+	case adapter.OperationStructuredSet:
 		return mergeMarkedBlock(operation.Path, operation.ID, operation.Content)
 	default:
 		return false, fmt.Errorf("codex adapter cannot apply %s operation %q at %s", operation.Action, operation.ID, operation.Path)
@@ -577,9 +626,9 @@ func mergeMarkedBlock(path, operationID string, content []byte) (bool, error) {
 		return false, fmt.Errorf("codex structured operation for %s must have an id", path)
 	}
 
-	begin := "# >>> avm:codex:" + operationID
-	end := "# <<< avm:codex:" + operationID
-	block := []byte(begin + "\n" + strings.TrimRight(string(content), "\n") + "\n" + end + "\n")
+	begin := []byte("# >>> avm:codex:" + operationID)
+	end := []byte("# <<< avm:codex:" + operationID)
+	block := []byte(string(begin) + "\n" + strings.TrimRight(string(content), "\n") + "\n" + string(end) + "\n")
 
 	existing, err := os.ReadFile(path)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -588,26 +637,39 @@ func mergeMarkedBlock(path, operationID string, content []byte) (bool, error) {
 
 	next := block
 	if err == nil {
-		next = replaceOrAppendMarkedBlock(existing, []byte(begin), []byte(end), block)
+		next, err = replaceOrAppendMarkedBlock(existing, begin, end, block)
+		if err != nil {
+			return false, err
+		}
 	}
 	return writeFileAtomic(path, next)
 }
 
-func replaceOrAppendMarkedBlock(existing, begin, end, block []byte) []byte {
-	start := bytes.Index(existing, begin)
-	if start >= 0 {
-		endStart := bytes.Index(existing[start:], end)
-		if endStart >= 0 {
-			endEnd := start + endStart + len(end)
-			for endEnd < len(existing) && (existing[endEnd] == '\r' || existing[endEnd] == '\n') {
-				endEnd++
-			}
-			out := make([]byte, 0, len(existing)-endEnd+start+len(block))
-			out = append(out, existing[:start]...)
-			out = append(out, block...)
-			out = append(out, existing[endEnd:]...)
-			return out
-		}
+func validateMarkedBlock(path, operationID string) error {
+	begin := []byte("# >>> avm:codex:" + operationID)
+	end := []byte("# <<< avm:codex:" + operationID)
+	existing, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	_, _, _, err = markedBlockSpan(existing, begin, end)
+	return err
+}
+
+func replaceOrAppendMarkedBlock(existing, begin, end, block []byte) ([]byte, error) {
+	start, stop, found, err := markedBlockSpan(existing, begin, end)
+	if err != nil {
+		return nil, err
+	}
+	if found {
+		out := make([]byte, 0, len(existing)-stop+start+len(block))
+		out = append(out, existing[:start]...)
+		out = append(out, block...)
+		out = append(out, existing[stop:]...)
+		return out, nil
 	}
 
 	out := append([]byte(nil), existing...)
@@ -618,15 +680,108 @@ func replaceOrAppendMarkedBlock(existing, begin, end, block []byte) []byte {
 		out = append(out, '\n')
 	}
 	out = append(out, block...)
-	return out
+	return out, nil
 }
 
-func managedPathIndex(paths []adapter.ManagedPath) map[string]adapter.ManagedPath {
+func markedBlockSpan(existing, begin, end []byte) (int, int, bool, error) {
+	startOffset := -1
+	stopOffset := -1
+	for lineStart := 0; lineStart < len(existing); {
+		lineEnd := lineStart
+		for lineEnd < len(existing) && existing[lineEnd] != '\n' {
+			lineEnd++
+		}
+		nextLineStart := lineEnd
+		if nextLineStart < len(existing) && existing[nextLineStart] == '\n' {
+			nextLineStart++
+		}
+
+		line := bytes.TrimRight(existing[lineStart:lineEnd], "\r")
+		switch {
+		case bytes.Equal(line, begin):
+			if startOffset >= 0 && stopOffset < 0 {
+				return 0, 0, false, fmt.Errorf("malformed Codex AVM block: duplicate begin marker %q", string(begin))
+			}
+			if stopOffset >= 0 {
+				return 0, 0, false, fmt.Errorf("malformed Codex AVM block: multiple blocks for marker %q", string(begin))
+			}
+			startOffset = lineStart
+		case bytes.Equal(line, end):
+			if startOffset < 0 {
+				return 0, 0, false, fmt.Errorf("malformed Codex AVM block: end marker %q appears before begin marker", string(end))
+			}
+			if stopOffset >= 0 {
+				return 0, 0, false, fmt.Errorf("malformed Codex AVM block: duplicate end marker %q", string(end))
+			}
+			stopOffset = nextLineStart
+		}
+
+		lineStart = nextLineStart
+	}
+
+	switch {
+	case startOffset < 0 && stopOffset < 0:
+		return 0, 0, false, nil
+	case startOffset >= 0 && stopOffset >= 0:
+		return startOffset, stopOffset, true, nil
+	default:
+		return 0, 0, false, fmt.Errorf("malformed Codex AVM block: marker pair %q / %q is incomplete", string(begin), string(end))
+	}
+}
+
+func managedPathIndex(paths []adapter.ManagedPath, configDir string) (map[string]adapter.ManagedPath, error) {
 	managed := make(map[string]adapter.ManagedPath, len(paths))
 	for _, path := range paths {
-		managed[path.Path] = path
+		cleanPath, err := cleanRenderPath(path.Path)
+		if err != nil {
+			return nil, fmt.Errorf("codex managed path %q is invalid: %w", path.Path, err)
+		}
+		if err := validateCodexManagedPath(cleanPath, configDir); err != nil {
+			return nil, err
+		}
+		if _, exists := managed[cleanPath]; exists {
+			return nil, fmt.Errorf("codex managed path %s declared more than once", cleanPath)
+		}
+		path.Path = cleanPath
+		managed[cleanPath] = path
 	}
-	return managed
+	return managed, nil
+}
+
+func cleanRenderPath(path string) (string, error) {
+	if strings.TrimSpace(path) == "" {
+		return "", fmt.Errorf("path is empty")
+	}
+	native := filepath.FromSlash(path)
+	clean := filepath.Clean(native)
+	if clean != native {
+		return "", fmt.Errorf("path must be clean")
+	}
+	return clean, nil
+}
+
+func validateCodexManagedPath(path, configDir string) error {
+	home, err := filepath.Abs(filepath.Clean(filepath.FromSlash(configDir)))
+	if err != nil {
+		return err
+	}
+	target, err := filepath.Abs(path)
+	if err != nil {
+		return err
+	}
+
+	configPath := filepath.Join(home, configFileName)
+	if target == configPath {
+		return nil
+	}
+
+	agentsDir := filepath.Join(home, agentsDirName)
+	rel, err := filepath.Rel(agentsDir, target)
+	if err == nil && rel != "." && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && filepath.Dir(rel) == "." && filepath.Ext(rel) == ".toml" {
+		return nil
+	}
+
+	return fmt.Errorf("codex managed path %s is outside adapter ownership; allowed paths are %s and %s", path, configPath, filepath.Join(agentsDir, "*.toml"))
 }
 
 func writeLine(builder *strings.Builder, format string, args ...any) {
