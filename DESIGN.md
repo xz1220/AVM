@@ -46,7 +46,7 @@ Key characteristics:
 - cyan and blue gradients for "routing" and "activation"
 - amber accents for memory refs and state
 - dark terminal cards with mono text
-- clean runtime pills for Codex, Claude Code, Cline, Cursor
+- clean runtime pills for Codex, Claude Code, OpenClaw, Hermes Agent
 - precise alignment; no text should touch or overflow a card edge
 
 Avoid:
@@ -79,8 +79,8 @@ Avoid:
 | `avm-cyan` | `#5EEAD4` | activation, command prompts, primary accent |
 | `avm-blue` | `#93C5FD` | Codex, links, cool gradient midpoint |
 | `avm-amber` | `#FDE68A` | memory refs, warnings, highlight state |
-| `avm-green` | `#10B981` | Cline, success, available |
-| `avm-violet` | `#A78BFA` | Cursor, secondary runtime |
+| `avm-green` | `#10B981` | OpenClaw, success, available |
+| `avm-violet` | `#A78BFA` | Hermes Agent, secondary runtime |
 | `avm-orange` | `#F59E0B` | Claude Code, caution, warm contrast |
 
 ### Light Surfaces
@@ -186,8 +186,8 @@ Runtime colors:
 | --- | --- | --- | --- |
 | Codex | `#102033` | `#3B82F6` | `#DBEAFE` |
 | Claude Code | `#211A10` | `#F59E0B` | `#FEF3C7` |
-| Cline | `#0D241D` | `#10B981` | `#D1FAE5` |
-| Cursor | `#1F1B2E` | `#A78BFA` | `#EDE9FE` |
+| OpenClaw | `#0D241D` | `#10B981` | `#D1FAE5` |
+| Hermes Agent | `#1F1B2E` | `#A78BFA` | `#EDE9FE` |
 
 ### Profile Card
 

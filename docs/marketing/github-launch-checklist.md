@@ -7,13 +7,13 @@ Use this checklist before making the repository public or announcing it.
 Recommended description:
 
 ```text
-Local control plane for portable AI coding agent profiles across Codex, Claude Code, Cline, and Cursor.
+Local control plane for portable AI coding agent profiles across Codex, Claude Code, OpenClaw, and Hermes Agent.
 ```
 
 Recommended topics:
 
 ```text
-ai-agents, coding-agents, codex, claude-code, cline, cursor, mcp, agent-profiles, cli, golang, developer-tools
+ai-agents, coding-agents, codex, claude-code, openclaw, hermes-agent, mcp, agent-profiles, cli, golang, developer-tools
 ```
 
 Recommended website:
@@ -75,7 +75,7 @@ I am building Agent VM: a local control plane for AI coding agent profiles.
 Instead of syncing scattered prompt files and MCP configs by hand, AVM makes the
 agent itself a portable object: role, tools, permissions, model settings, and
 memory refs. The first target is developers who use multiple coding agents such
-as Codex, Claude Code, Cline, and Cursor.
+as Codex, Claude Code, OpenClaw, and Hermes Agent.
 ```
 
 Call to action:

@@ -13,7 +13,7 @@
 <p align="center">
   <a href="https://github.com/xz1220/Agent-VM/actions/workflows/ci.yml"><img src="https://github.com/xz1220/Agent-VM/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <img src="https://img.shields.io/badge/status-early_preview-0f766e" alt="Status: early preview">
-  <img src="https://img.shields.io/badge/runtime-Codex%20%7C%20Claude%20Code%20%7C%20Cline%20%7C%20Cursor-1d4ed8" alt="Runtime targets">
+  <img src="https://img.shields.io/badge/runtime-Codex%20%7C%20Claude%20Code%20%7C%20OpenClaw%20%7C%20Hermes%20Agent-1d4ed8" alt="Runtime targets">
   <img src="https://img.shields.io/badge/language-Go-00ADD8" alt="Go">
 </p>
 
@@ -21,9 +21,7 @@
   <a href="README.md">English</a> | <a href="README.zh-CN.md">简体中文</a> | <a href="README.ja.md">日本語</a> | <a href="README.ko.md">한국어</a> | Español | <a href="README.pt-BR.md">Português</a> | <a href="README.fr.md">Français</a>
 </p>
 
-Agent VM, o `avm`, es un control plane local para perfiles de agentes de IA de programación. Defines un agente una vez y renderizas ese perfil hacia runtimes como Codex, Claude Code, Cline y Cursor.
-
-La apuesta: los desarrolladores no se van a estandarizar en un único coding agent. Falta un objeto portable que describa quién es el agente, qué puede usar, qué modelo prefiere, qué permisos tiene y qué memoria de largo plazo debe cargar.
+Agent VM, o `avm`, es un control plane local para perfiles de agentes de IA de programación. Mantiene el rol, las herramientas, los permisos, las preferencias de modelo y las memory refs en un perfil portable, y luego lo renderiza hacia runtimes como Codex, Claude Code, OpenClaw y Hermes Agent.
 
 <p align="center">
   <img src="assets/avm-before-after.svg" alt="Before AVM config is scattered; after AVM one profile activates an agent" width="100%">
@@ -42,8 +40,8 @@ backend-coder.yaml
   -> avm use backend-coder
     -> Codex profile
     -> Claude Code agent
-    -> Cline rules
-    -> Cursor rules
+    -> OpenClaw workspace
+    -> Hermes Agent profile
 ```
 
 ## Diferencias
@@ -62,7 +60,7 @@ Cada adapter debe reportar cómo se mapea cada campo: `native`, `rendered_as_ins
 | Capa | Ejemplo |
 | --- | --- |
 | Identity | `backend-coder`, `pr-reviewer`, `incident-runner` |
-| Runtime | `codex`, `claude-code`, `cline`, `cursor` |
+| Runtime | `codex`, `claude-code`, `openclaw`, `hermes-agent` |
 | Model run | model name, reasoning effort, verbosity |
 | Capabilities | skills, commands, hooks, MCP servers, toolsets |
 | Permissions | approval mode, sandbox intent, allow/deny policy |

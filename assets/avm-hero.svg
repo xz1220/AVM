@@ -1,6 +1,6 @@
 <svg width="1200" height="630" viewBox="0 0 1200 630" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
   <title id="title">Agent VM hero</title>
-  <desc id="desc">A portable agent profile routed from Agent VM into Codex, Claude Code, Cline, and Cursor.</desc>
+  <desc id="desc">A portable agent profile routed from Agent VM into Codex, Claude Code, OpenClaw, and Hermes Agent.</desc>
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1200" y2="630" gradientUnits="userSpaceOnUse">
       <stop stop-color="#050814"/>
@@ -83,10 +83,10 @@
       <text x="347" y="305" fill="#FEF3C7" font-size="16">Claude Code</text>
 
       <rect x="42" y="350" width="146" height="56" rx="15" fill="#0D241D" stroke="#10B981"/>
-      <text x="115" y="385" fill="#D1FAE5" font-size="18">Cline</text>
+      <text x="115" y="385" fill="#D1FAE5" font-size="18">OpenClaw</text>
 
       <rect x="274" y="350" width="146" height="56" rx="15" fill="#1F1B2E" stroke="#A78BFA"/>
-      <text x="347" y="385" fill="#EDE9FE" font-size="18">Cursor</text>
+      <text x="347" y="385" fill="#EDE9FE" font-size="15">Hermes Agent</text>
     </g>
   </g>
 </svg>
