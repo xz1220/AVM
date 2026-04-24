@@ -22,14 +22,3 @@ func newRootCommand() *cobra.Command {
 	addCommands(cmd)
 	return cmd
 }
-
-func newInitCommand() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "init",
-		Short: "Initialize an AVM home directory",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return cmd.Help()
-		},
-	}
-	return cmd
-}

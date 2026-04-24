@@ -91,10 +91,6 @@ func TestSkeletonCommandsReturnNotImplemented(t *testing.T) {
 		args []string
 		want string
 	}{
-		{name: "agent create", args: []string{"agent", "create", "backend-coder"}, want: "avm agent create: not implemented"},
-		{name: "agent list", args: []string{"agent", "list"}, want: "avm agent list: not implemented"},
-		{name: "agent show", args: []string{"agent", "show", "backend-coder"}, want: "avm agent show: not implemented"},
-		{name: "env create", args: []string{"env", "create", "backend-dev"}, want: "avm env create: not implemented"},
 		{name: "memory import", args: []string{"memory", "import"}, want: "avm memory import: not implemented"},
 		{name: "use", args: []string{"use", "backend-coder"}, want: "avm use: not implemented"},
 		{name: "status", args: []string{"status"}, want: "avm status: not implemented"},
