@@ -84,6 +84,7 @@ func (s *Syncer) SyncActivation(ctx context.Context, resolved *config.ResolvedAc
 			Active:   resolved.Active,
 			Warnings: []string{"target has no resolved agent"},
 		}
+		targetResult = normalizeTargetResult(targetResult)
 		result.Targets = append(result.Targets, targetResult)
 		syncState.Runtimes[runtime] = runtimeStateFromTarget(targetResult, nil, syncState.Runtimes[runtime], now)
 	}
@@ -91,9 +92,11 @@ func (s *Syncer) SyncActivation(ctx context.Context, resolved *config.ResolvedAc
 	for _, input := range inputs {
 		prior := syncState.Runtimes[input.Runtime]
 		targetResult := s.renderTarget(ctx, input, resolved.Active, prior, opts, now)
+		targetResult = normalizeTargetResult(targetResult)
 		result.Targets = append(result.Targets, targetResult)
 		syncState.Runtimes[input.Runtime] = runtimeStateFromTarget(targetResult, targetResult.ManagedPaths, prior, now)
 	}
+	result.Warnings = uniqueNonEmptyStrings(result.Warnings)
 
 	if !opts.DryRun {
 		if err := state.SaveSyncState(opts.StatePath, syncState); err != nil {
@@ -193,6 +196,33 @@ func (s *Syncer) renderTarget(ctx context.Context, input adapter.RenderInput, ac
 	targetResult.Warnings = append(targetResult.Warnings, renderResult.Warnings...)
 	targetResult.Status = TargetStatusSynced
 	return targetResult
+}
+
+func normalizeTargetResult(result TargetResult) TargetResult {
+	result.Warnings = uniqueNonEmptyStrings(result.Warnings)
+	if result.RenderResult != nil {
+		result.RenderResult.Warnings = uniqueNonEmptyStrings(result.RenderResult.Warnings)
+	}
+	return result
+}
+
+func uniqueNonEmptyStrings(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(values))
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	return out
 }
 
 func runtimeStateFromTarget(target TargetResult, managedPaths []adapter.ManagedPath, prior state.RuntimeState, now time.Time) state.RuntimeState {
