@@ -521,6 +521,9 @@ Owner：
 
 完成后：
 git push -u origin feat/sync-activation
+git status --short
+cd /Users/danielxing/code/agent-vm
+git worktree remove ../agent-vm-sync
 回复修改文件、测试结果、commit hash、远程分支，以及仍需 Lead/CLI 接入的点。
 ```
 
@@ -565,6 +568,9 @@ Owner：
 
 完成后：
 git push -u origin feat/cli-activation
+git status --short
+cd /Users/danielxing/code/agent-vm
+git worktree remove ../agent-vm-cli-activation
 回复修改文件、测试结果、commit hash、远程分支，以及等待 sync API 合并的点。
 ```
 
@@ -607,6 +613,9 @@ Owner：
 
 完成后：
 git push -u origin feat/codex-adapter
+git status --short
+cd /Users/danielxing/code/agent-vm
+git worktree remove ../agent-vm-codex-adapter
 回复修改文件、测试结果、commit hash、远程分支，以及 partial/unsupported mapping 清单。
 ```
 
