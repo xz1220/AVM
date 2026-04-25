@@ -69,7 +69,10 @@ func initAVMHome(force bool) error {
 	if err := config.WriteEnvironment(defaultEnvironment()); err != nil {
 		return err
 	}
-	return state.SaveSyncState(syncStatePath(), state.NewSyncState(defaultGlobalConfig().Active))
+	if err := state.SaveSyncState(syncStatePath(), state.NewSyncState(defaultGlobalConfig().Active)); err != nil {
+		return err
+	}
+	return refreshInitImportReport()
 }
 
 func cacheDir() string {

@@ -39,6 +39,7 @@ func TestInitCreatesBaseDirsAndInitialState(t *testing.T) {
 	assertFileExists(t, config.GlobalConfigPath())
 	assertFileExists(t, config.AgentPath("default"))
 	assertFileExists(t, config.EnvPath("default"))
+	assertFileExists(t, initImportReportPath())
 
 	syncState, err := state.LoadSyncState(syncStatePath())
 	if err != nil {
