@@ -1,14 +1,52 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/xz1220/agent-vm/internal/adapter"
 	"github.com/xz1220/agent-vm/internal/config"
+	avmruntime "github.com/xz1220/agent-vm/internal/runtime"
 	"gopkg.in/yaml.v3"
 )
+
+type agentMappingPreviewRegistry interface {
+	Get(runtime string) (adapter.Adapter, bool)
+}
+
+type agentMappingPreview struct {
+	Runtime      string                    `yaml:"runtime"`
+	Agent        string                    `yaml:"agent"`
+	ManagedPaths []agentPreviewManagedPath `yaml:"managed_paths"`
+	Warnings     []string                  `yaml:"warnings"`
+	Mappings     agentPreviewMappingGroups `yaml:"mappings"`
+}
+
+type agentPreviewManagedPath struct {
+	Path        string `yaml:"path"`
+	Owner       string `yaml:"owner"`
+	MergeMode   string `yaml:"merge_mode"`
+	Required    bool   `yaml:"required"`
+	Description string `yaml:"description,omitempty"`
+}
+
+type agentPreviewMappingGroups struct {
+	Native                 []agentPreviewMapping `yaml:"native"`
+	RenderedAsInstructions []agentPreviewMapping `yaml:"rendered_as_instructions"`
+	Ignored                []agentPreviewMapping `yaml:"ignored"`
+	Unsupported            []agentPreviewMapping `yaml:"unsupported"`
+}
+
+type agentPreviewMapping struct {
+	Source string `yaml:"source"`
+	Target string `yaml:"target,omitempty"`
+	Reason string `yaml:"reason,omitempty"`
+}
 
 func newAgentCommand() *cobra.Command {
 	cmd := &cobra.Command{
@@ -175,13 +213,218 @@ func runAgentShow(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("invalid runtime %q", runtime)
 	}
 
-	agent, err := config.ReadAgent(args[0], scope, cwd)
+	agent, err := readAgentForShow(args[0], scope, cwd)
 	if err != nil {
 		return err
 	}
+	if runtime != "" {
+		preview, err := buildAgentMappingPreview(context.Background(), agent, runtime, cwd, avmruntime.NewRegistry())
+		if err != nil {
+			return err
+		}
+		return encodeYAML(cmd, preview)
+	}
+	return encodeYAML(cmd, agent)
+}
+
+func readAgentForShow(name string, scope config.Scope, cwd string) (*config.AgentProfile, error) {
+	agent, err := config.ReadAgent(name, scope, cwd)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, fmt.Errorf("profile %q not found", name)
+		}
+		return nil, err
+	}
+	return agent, nil
+}
+
+func buildAgentMappingPreview(ctx context.Context, agent *config.AgentProfile, runtime, cwd string, registry agentMappingPreviewRegistry) (*agentMappingPreview, error) {
+	if agent == nil {
+		return nil, fmt.Errorf("agent profile is nil")
+	}
+	if registry == nil {
+		return nil, fmt.Errorf("runtime %q adapter not registered", runtime)
+	}
+
+	adp, ok := registry.Get(runtime)
+	if !ok || adp == nil {
+		return nil, fmt.Errorf("runtime %q adapter not registered", runtime)
+	}
+
+	resolved := resolvedActivationForAgentPreview(agent, runtime)
+	input, err := adapter.RenderInputFromResolved(resolved, runtime, adapter.RenderInputOptions{
+		ProjectRoot: cwd,
+		ActiveDir:   config.ActiveDir(),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("runtime %q mapping input failed: %w", runtime, err)
+	}
+
+	plan, err := adp.Plan(ctx, input)
+	if err != nil {
+		return nil, fmt.Errorf("runtime %q mapping preview failed: %w", runtime, err)
+	}
+	if plan == nil {
+		return nil, fmt.Errorf("runtime %q mapping preview failed: adapter returned nil render plan", runtime)
+	}
+
+	managedPaths := adp.ManagedPaths(ctx, plan)
+	if len(managedPaths) == 0 {
+		managedPaths = append([]adapter.ManagedPath(nil), plan.ManagedPaths...)
+	}
+	return mappingPreviewFromPlan(runtime, input.Agent.Name, managedPaths, plan.Mappings, plan.Warnings), nil
+}
+
+func resolvedActivationForAgentPreview(agent *config.AgentProfile, runtime string) *config.ResolvedActivation {
+	profile := *agent
+	return &config.ResolvedActivation{
+		Active: config.ActiveRef{
+			Kind: config.ActiveKindProfile,
+			Name: profile.Name,
+		},
+		RuntimeAgents: map[string]config.AgentProfile{
+			runtime: profile,
+		},
+		Capabilities: map[string]config.ResolvedCapabilities{
+			runtime: resolvedCapabilitiesForAgentPreview(profile),
+		},
+		Targets: []string{runtime},
+	}
+}
+
+func resolvedCapabilitiesForAgentPreview(agent config.AgentProfile) config.ResolvedCapabilities {
+	toolsets := make(map[string]string, len(agent.Capabilities.Toolsets))
+	for name, mode := range agent.Capabilities.Toolsets {
+		toolsets[name] = mode
+	}
+	if len(toolsets) == 0 {
+		toolsets = nil
+	}
+
+	return config.ResolvedCapabilities{
+		Skills:   append([]string(nil), agent.Capabilities.Skills...),
+		MCPs:     append([]string(nil), agent.Capabilities.MCPs...),
+		Commands: append([]string(nil), agent.Capabilities.Commands...),
+		Hooks:    append([]string(nil), agent.Capabilities.Hooks...),
+		Toolsets: toolsets,
+	}
+}
+
+func mappingPreviewFromPlan(runtime, agentName string, managedPaths []adapter.ManagedPath, mappings []adapter.FieldMapping, warnings []string) *agentMappingPreview {
+	return &agentMappingPreview{
+		Runtime:      runtime,
+		Agent:        agentName,
+		ManagedPaths: previewManagedPaths(managedPaths),
+		Warnings:     uniqueSortedStrings(warnings),
+		Mappings:     previewMappingGroups(mappings),
+	}
+}
+
+func previewManagedPaths(paths []adapter.ManagedPath) []agentPreviewManagedPath {
+	out := make([]agentPreviewManagedPath, 0, len(paths))
+	for _, path := range paths {
+		out = append(out, agentPreviewManagedPath{
+			Path:        path.Path,
+			Owner:       path.Owner,
+			MergeMode:   string(path.MergeMode),
+			Required:    path.Required,
+			Description: path.Description,
+		})
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		left := out[i]
+		right := out[j]
+		if left.Path != right.Path {
+			return left.Path < right.Path
+		}
+		if left.Owner != right.Owner {
+			return left.Owner < right.Owner
+		}
+		return left.MergeMode < right.MergeMode
+	})
+	return out
+}
+
+func previewMappingGroups(mappings []adapter.FieldMapping) agentPreviewMappingGroups {
+	sorted := append([]adapter.FieldMapping(nil), mappings...)
+	sort.SliceStable(sorted, func(i, j int) bool {
+		left := sorted[i]
+		right := sorted[j]
+		if left.SourcePath != right.SourcePath {
+			return left.SourcePath < right.SourcePath
+		}
+		if left.TargetPath != right.TargetPath {
+			return left.TargetPath < right.TargetPath
+		}
+		if left.Status != right.Status {
+			return left.Status < right.Status
+		}
+		return left.Reason < right.Reason
+	})
+
+	groups := agentPreviewMappingGroups{
+		Native:                 []agentPreviewMapping{},
+		RenderedAsInstructions: []agentPreviewMapping{},
+		Ignored:                []agentPreviewMapping{},
+		Unsupported:            []agentPreviewMapping{},
+	}
+	for _, mapping := range sorted {
+		item := agentPreviewMapping{
+			Source: mapping.SourcePath,
+			Target: mapping.TargetPath,
+			Reason: mapping.Reason,
+		}
+		switch mapping.Status {
+		case adapter.MappingNative:
+			groups.Native = append(groups.Native, item)
+		case adapter.MappingRenderedAsInstructions:
+			groups.RenderedAsInstructions = append(groups.RenderedAsInstructions, item)
+		case adapter.MappingIgnored:
+			groups.Ignored = append(groups.Ignored, item)
+		case adapter.MappingUnsupported:
+			groups.Unsupported = append(groups.Unsupported, item)
+		default:
+			item.Reason = firstNonEmptyString(item.Reason, "adapter returned unknown mapping status "+string(mapping.Status))
+			groups.Unsupported = append(groups.Unsupported, item)
+		}
+	}
+	return groups
+}
+
+func uniqueSortedStrings(values []string) []string {
+	if len(values) == 0 {
+		return []string{}
+	}
+
+	seen := make(map[string]struct{}, len(values))
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func firstNonEmptyString(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func encodeYAML(cmd *cobra.Command, value any) error {
 	encoder := yaml.NewEncoder(cmd.OutOrStdout())
 	encoder.SetIndent(2)
-	if err := encoder.Encode(agent); err != nil {
+	if err := encoder.Encode(value); err != nil {
 		_ = encoder.Close()
 		return err
 	}
