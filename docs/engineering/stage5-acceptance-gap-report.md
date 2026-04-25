@@ -70,6 +70,23 @@ Recommended next work slices:
 4. Export/import packaging: implement portable `.avm.zip` export/import for agents, envs, referenced capabilities, and memory refs.
 5. Mapping preview/status polish: add `agent show --runtime` preview and decide whether Cursor should surface as `partial` status or remain `synced` with explicit warnings.
 
+## Automated Coverage Added
+
+The Stage 5 acceptance harness now adds Go tests for the passing smoke flow and
+selected negative gap tracking:
+
+- `cmd/avm/stage5_acceptance_test.go` runs `init`, `agent`, `env`, `memory
+  import --dry-run`, `use`, `status`, and `deactivate` under temporary `HOME`,
+  project, `CODEX_HOME`, `CLAUDE_CONFIG_DIR`, and `CLINE_DATA_HOME` paths.
+- The harness asserts `init` does not create project `.avm` or adapter managed
+  runtime files, and that those managed paths appear only after `use`.
+- The harness asserts `codex`, `claude-code`, `cline`, and `cursor` all reach
+  `synced` entries in `state/sync-state.json` for the multi-runtime env.
+- The harness asserts `memory import --dry-run` does not add formal files under
+  `~/.avm/memory/**`.
+- The harness tracks current negative behavior for `env create --local`, `shell
+  init`, and absent top-level `sync`, `export`, and `import` commands.
+
 ## Non-goals Still In Force
 
 - No `sync --watch` in Phase 1.
