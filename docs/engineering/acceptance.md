@@ -2,19 +2,19 @@
 
 > 最后更新：2026-04-26（v7 — Stage 6 Acceptance Polish）
 
-本文档定义 Phase 1 MVP 的验收标准。验收重点是 Agent Profile、能力引用、多 runtime Environment 映射、Claude Code/Codex/Cline adapter、render mapping 和数据安全。
+本文档定义 Phase 1 MVP 的验收标准，并标注当前 `main` 的可执行基线。未合入的 Stage 6 分支能力必须写成 in-progress，不能写成已发布能力。验收重点是 Agent Profile、能力引用、多 runtime Environment 映射、Claude Code/Codex/Cline/Cursor adapter、render mapping 和数据安全。
 
 ---
 
 ## 验收原则
 
-1. 所有 PRD Phase 1 命令可用。
+1. 当前已合入的 Phase 1 命令可用：`init`、`agent create/list/show`、`env create`、`env create --local`、`memory import --dry-run`、`use/status/deactivate`、`sync`、`shell init`、`export/import`。
 2. `~/.avm` 是 Agent Profile 的 source of truth。
-3. `avm init` 只读扫描 runtime，只写 `~/.avm/**`。
+3. `avm init` 当前只写 `~/.avm/**` 默认配置和 state；runtime read-only scan/import-report 属于 Stage 6 in-progress，除非对应分支已合入。
 4. 不默认覆盖用户 instruction 文件。
 5. adapter 不静默丢字段，必须记录 mapping status。
 6. 写 runtime 文件前有冲突检测和备份。
-7. export/import 能迁移 Agent Profile、Environment、capability 和 memory refs。
+7. export/import 能迁移 Agent Profile、Environment 及已存在的被引用 capability/memory 文件；更完整 package scope 和交互式冲突处理属于后续策略。
 
 ---
 
@@ -47,14 +47,21 @@ avm init
 - 不删除已有 `~/.avm/`。
 - 退出码 1。
 
-### 1.3 扫描 runtime
+### 1.3 Runtime import-report（Stage 6 in-progress）
 
 前置：
 
 - 存在 `~/.codex/config.toml`，包含 profile/MCP。
 - 存在 Claude Code `.claude/agents/reviewer.md`。
 
-预期：
+当前 `main` 基线：
+
+- `avm init` 不扫描 runtime 配置。
+- 不写 `state/import-report.json`。
+- 不创建 imported agent/env。
+- 仍只创建 `~/.avm/**` 默认配置、默认 agent/env 和 `state/sync-state.json`。
+
+Stage 6 目标：
 
 - 导入可识别 profile/agent/MCP。
 - 无法识别字段写入 `runtime_extensions`。
@@ -78,7 +85,7 @@ avm init
 
 - 只创建或修改 `~/.avm/**`。
 - 不创建、不修改、不删除任何 runtime 配置文件。
-- 导入报告中明确区分 confirmed、candidate、runtime_extensions 和 ignored。
+- 当前 `main` 不写 runtime import-report；Stage 6 import-report 合入后，报告必须明确区分 confirmed、candidate、runtime_extensions 和 ignored。
 
 ---
 
@@ -129,18 +136,23 @@ avm agent list
 
 预期显示：
 
-- agent name
-- source scope
-- role/tags
-- referenced runtimes 或 supported targets
+- `NAME`
+- `SCOPE`
+- `VERSION`
+- `DESCRIPTION`
 
-### 2.4 映射预览
+### 2.4 映射预览（Stage 6 in-progress）
 
 ```bash
 avm agent show backend-coder --runtime codex
 ```
 
-预期：
+当前 `main` 基线：
+
+- `--runtime` flag 已存在并校验 runtime 名称。
+- 输出仍是 agent YAML，不展示 adapter mapping preview。
+
+Stage 6 目标：
 
 - 显示 native mappings。
 - 显示 rendered/unsupported mappings。
@@ -156,7 +168,8 @@ avm agent show backend-coder --runtime codex
 avm env create backend-dev \
   --codex backend-coder \
   --claude-code code-reviewer \
-  --cline backend-assistant
+  --cline backend-assistant \
+  --cursor cursor-helper
 ```
 
 预期：
@@ -165,6 +178,7 @@ avm env create backend-dev \
 - `runtime_agents.codex.primary = backend-coder`。
 - `runtime_agents.claude-code.primary = code-reviewer`。
 - `runtime_agents.cline.primary = backend-assistant`。
+- `runtime_agents.cursor.primary = cursor-helper`。
 - env YAML 不包含 `capabilities` 或 `memory_layers`。
 - 引用不存在时失败。
 
@@ -177,7 +191,7 @@ avm env create backend-dev --local --codex project-backend-coder
 预期：
 
 - 创建 `<project>/.avm/env.yaml`。
-- 包含 `extends: <当前 active env>`。
+- 显式传入 env name 时包含 `extends: backend-dev`；未传 name 时要求当前 active 是 env，并使用当前 active env。
 - 覆盖 `runtime_agents.codex.primary`，不影响其他 runtime 绑定。
 
 ### 3.3 不允许在 Environment 声明能力
@@ -225,7 +239,7 @@ avm use backend-coder
 ### 4.2 激活多 runtime Environment
 
 ```bash
-avm use backend-dev
+avm use --kind env backend-dev
 ```
 
 预期：
@@ -234,9 +248,11 @@ avm use backend-dev
 - `runtime_agents.codex = backend-coder`。
 - `runtime_agents.claude-code = code-reviewer`。
 - `runtime_agents.cline = backend-assistant`。
+- `runtime_agents.cursor = cursor-helper`。
 - Codex 只渲染 `backend-coder` 的 capabilities/memory refs。
 - Claude Code 只渲染 `code-reviewer` 的 capabilities/memory refs。
 - Cline 只渲染 `backend-assistant` 的 capabilities/memory refs。
+- Cursor 只渲染 `cursor-helper` 的 rules/MCP PoC。
 - 更新 `state/current-active = env:backend-dev`。
 
 ### 4.3 Claude Code 输出
@@ -284,9 +300,10 @@ avm use backend-dev
 
 预期：
 
-- 写 `<project>/.cursor/mcp.json`。
 - 写 AVM 管理的 rules 文件。
-- Phase 1 中 Cursor 可保持 `synced`，但必须通过 warnings 和 mapping status 明确展示 native、rendered_as_instructions、ignored、unsupported 的边界。
+- 当 agent 有 MCP refs 时，写入或合并 `<project>/.cursor/mcp.json`。
+- 成功写入时 runtime status 保持 `synced`。
+- Phase 1 partial support 必须通过 warnings 和 mapping status 明确展示 native、rendered_as_instructions、ignored、unsupported 的边界。
 
 ---
 
@@ -297,6 +314,7 @@ avm use backend-dev
 ```bash
 avm shell init zsh
 avm shell init bash
+avm shell init fish
 ```
 
 预期：
@@ -375,27 +393,28 @@ avm status
 预期输出包含：
 
 - active profile/env。
-- agents 列表。
 - targets 状态：synced/skipped/failed；partial adapter support 通过 warnings 和 mapping status 展示。
-- conflicts。
+- managed paths。
 - ignored/unsupported/rendered mappings。
-- shell prompt 状态。
+- warnings；冲突会以 failed runtime error/warning 暴露。
 - 耗时 < 500ms。
 
 示例：
 
 ```text
-Active profile: backend-coder
-
-Targets:
-  codex         synced   2 rendered fields
-  cursor        synced   warnings: 1
-
-Mappings:
-  codex: capabilities.skills rendered as instructions
-  cursor: agent.model.* unsupported
-
-Shell prompt: enabled (avm:backend-coder)
+active: env:backend-dev
+runtime status:
+  cline: synced (agent backend-assistant)
+  codex: synced (agent backend-coder)
+  cursor: synced (agent cursor-helper)
+managed paths:
+  codex:
+    - ~/.codex/config.toml owner=shared-section merge=structured-section
+mapping status:
+  cursor:
+    - model_run.model: unsupported (Cursor Phase 1 has no stable local Agent Profile field)
+warnings:
+  - cursor: Cursor Phase 1 support is partial; rules/MCP are rendered, profile semantics are reported as mappings.
 ```
 
 ---
@@ -403,7 +422,8 @@ Shell prompt: enabled (avm:backend-coder)
 ## 8. `avm memory import --dry-run`
 
 ```bash
-avm memory import --from claude-code --dry-run
+avm memory import --from testdata/memory/backend-standards.md --dry-run
+avm memory import --from testdata/memory/backend-standards.md --dry-run --format json
 ```
 
 预期：
@@ -412,7 +432,7 @@ avm memory import --from claude-code --dry-run
 - 不写入 `~/.avm/memory/` 正式文件。
 - 输出可迁移 memory candidates。
 - 输出 new/changed/conflict/skipped diff 状态。
-- 可保存 `~/.avm/state/memory-import-report.json`。
+- 当前 `main` 只输出 report，不持久化 `~/.avm/state/memory-import-report.json`。
 - 对无法安全归一化的条目标记 candidate 或 skipped，不静默丢弃。
 
 ---
@@ -449,7 +469,7 @@ avm import backend-coder.avm.zip
 
 - 校验 manifest version。
 - 同名同内容 skip。
-- 同名不同内容提示 rename/overwrite。
+- 同名不同内容失败并报告 package import conflict；交互式 rename/overwrite 属于后续 package policy。
 - import 后不自动 `avm use`。
 
 ---
@@ -472,7 +492,6 @@ avm import backend-coder.avm.zip
 | 操作 | 目标 |
 |------|------|
 | `avm agent list` | < 100ms |
-| `avm env list` | < 100ms |
 | `avm status` | < 500ms |
 | `avm use backend-coder` | < 500ms（fixture：1 agent、3 skills、2 MCP、1 target） |
 | `avm use backend-dev` | < 500ms（fixture：3 agents、3 skills、2 MCP、3 targets） |
