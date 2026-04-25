@@ -1,13 +1,13 @@
-# Stage 5 Acceptance Gap Report
+# Stage 5 Acceptance Status Report
 
 > Date: 2026-04-25
-> Base: `3f776d4`
+> Base: `main` after Stage 5 integration
 > Scope: Phase 1 acceptance hardening
 
-This report captures the current executable acceptance state before Stage 5
-implementation work. It separates passing paths from known gaps so the next
-tasks can target concrete behavior instead of re-reading the full acceptance
-document.
+This report captures the executable acceptance state after the Stage 5
+hardening branches were integrated. It keeps the passing smoke path, records
+which Stage 5 gaps were closed, and leaves only post-MVP or still-undecided
+items as follow-up work.
 
 ## Passing Smoke
 
@@ -42,38 +42,46 @@ Observed pass criteria:
 - Cursor partial behavior is visible through warnings and mapping status.
 - `status` shows active env, runtime states, managed paths, and mapping status.
 
-## Verified Gaps
+## Closed Stage 5 Gaps
 
-These are directly verified gaps against `docs/engineering/acceptance.md`:
+These gaps were directly verified before Stage 5 and are now implemented or
+covered by tests:
 
-| Area | Current behavior | Acceptance target |
+| Area | Previous behavior | Current behavior |
 |------|------------------|-------------------|
-| `avm init` idempotency | Second `avm init` exits 0 and rewrites defaults | Existing config should fail unless `--force` is passed |
-| `avm init` state files | Initial `init` does not create `state/sync-state.json` | `state/sync-state.json` exists after init |
-| `avm init` cache dir | Initial `init` does not create `~/.avm/cache` | `cache/` exists after init |
+| `avm init` idempotency | Second `avm init` rewrote defaults | Existing config fails unless `--force` is passed |
+| `avm init` state files | Initial `init` did not create `state/sync-state.json` | `state/sync-state.json` exists after init |
+| `avm init` cache dir | Initial `init` did not create `~/.avm/cache` | `cache/` exists after init |
+| `avm env create --local` | Returned not implemented | Writes project `.avm/env.yaml` override |
+| Env reference validation | Missing profile references could be written | Missing referenced profiles fail before write |
+| `avm shell init` | Returned not implemented | Prints eval-safe bash/zsh/fish shell hooks |
+| `avm sync` | Command was absent | Re-syncs current active without changing selection |
+| `avm export` / `avm import` | Commands were absent | Portable `.avm.zip` export/import for Phase 1 agents/envs |
+
+## Remaining Follow-up
+
+These are still outside the closed Stage 5 scope:
+
+| Area | Current behavior | Follow-up target |
+|------|------------------|------------------|
 | Runtime import during init | Runtime import/report is not implemented | Read-only scan of runtime configs with `state/import-report.json` |
-| `avm env create --local` | Returns `avm env create --local is not supported yet` | Writes project `.avm/env.yaml` override |
-| Env reference validation | `env create` can write mappings to missing profiles | Missing referenced profiles should fail |
-| `avm shell init` | Returns `avm shell init: not implemented` | Prints eval-safe shell hook |
-| `avm sync` | Command is absent | Re-sync current active without changing selection |
-| `avm export` / `avm import` | Commands are absent | Portable package export/import |
-| `avm agent show --runtime` | Shows YAML, not mapping preview | Shows native/rendered/unsupported mapping preview |
-| Cursor status | Runtime status is `synced` with partial warnings | Acceptance text says Cursor should display `partial` |
+| `avm agent show --runtime` | Shows YAML, not mapping preview | Show native/rendered/unsupported mapping preview |
+| Cursor status | Runtime status is `synced` with warnings and mapping status | Decide whether Cursor should display `partial` or keep `synced` plus warnings |
+| Package scope | Export/import excludes config/global defaults/active, project env overrides, state/backup/cache, runtime outputs, runtime-native memory, and interactive overwrite/rename | Decide which belong in post-MVP packaging |
 
-## Stage 5 Work Slices
+## Stage 5 Integration Result
 
-Recommended next work slices:
+Integrated branches:
 
-1. Acceptance harness: convert the passing smoke and selected negative cases into automated tests.
-2. Init/shell/sync CLI gaps: implement `init --force`, initial state/cache artifacts, shell hook output, and `avm sync`.
-3. Env hardening: implement project-local env overrides and validate referenced agent profiles.
-4. Export/import packaging: implement portable `.avm.zip` export/import for agents, envs, referenced capabilities, and memory refs.
-5. Mapping preview/status polish: add `agent show --runtime` preview and decide whether Cursor should surface as `partial` status or remain `synced` with explicit warnings.
+- `origin/feat/acceptance-harness`
+- `origin/feat/cli-hardening`
+- `origin/feat/env-hardening`
+- `origin/feat/package-io`
 
 ## Automated Coverage Added
 
 The Stage 5 acceptance harness now adds Go tests for the passing smoke flow and
-selected negative gap tracking:
+the hardened CLI behavior:
 
 - `cmd/avm/stage5_acceptance_test.go` runs `init`, `agent`, `env`, `memory
   import --dry-run`, `use`, `status`, and `deactivate` under temporary `HOME`,
@@ -84,8 +92,9 @@ selected negative gap tracking:
   `synced` entries in `state/sync-state.json` for the multi-runtime env.
 - The harness asserts `memory import --dry-run` does not add formal files under
   `~/.avm/memory/**`.
-- The harness tracks current negative behavior for `env create --local`, `shell
-  init`, and absent top-level `sync`, `export`, and `import` commands.
+- The harness covers `init --force`, initial cache/sync-state artifacts, project
+  local env overrides, missing profile validation, shell hook output, `sync`,
+  and package `export`/`import`.
 
 ## Non-goals Still In Force
 

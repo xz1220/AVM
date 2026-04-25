@@ -171,58 +171,90 @@ func TestStage5AcceptanceSmokeFlow(t *testing.T) {
 	assertCurrentActive(t, "profile:default")
 }
 
-func TestStage5AcceptanceSelectedGaps(t *testing.T) {
+func TestStage5AcceptanceHardenedCLIFlow(t *testing.T) {
 	home := t.TempDir()
 	project := t.TempDir()
 	t.Setenv("HOME", home)
+	setupCodexHome(t, home)
 	chdir(t, project)
 
-	if _, err := executeCommand("init"); err != nil {
+	if out, err := executeCommand("init"); err != nil {
 		t.Fatalf("init returned error: %v", err)
+	} else {
+		assertContains(t, out, "initialized avm home")
+	}
+	assertPathExists(t, filepath.Join(home, ".avm", "cache"))
+	assertPathExists(t, syncStatePath())
+
+	if _, err := executeCommand("init"); err == nil {
+		t.Fatal("second init without --force returned nil error")
+	} else if !strings.Contains(err.Error(), "avm home already initialized") {
+		t.Fatalf("unexpected repeated init error: %v", err)
 	}
 
-	tests := []struct {
-		name string
-		args []string
-		want string
-	}{
-		{
-			name: "env local not implemented",
-			args: []string{"env", "create", "workspace", "--local", "--codex", "default"},
-			want: "avm env create --local is not supported yet",
-		},
-		{
-			name: "shell init not implemented",
-			args: []string{"shell", "init", "zsh"},
-			want: "avm shell init: not implemented",
-		},
-		{
-			name: "sync command absent",
-			args: []string{"sync"},
-			want: `unknown command "sync"`,
-		},
-		{
-			name: "export command absent",
-			args: []string{"export", "default"},
-			want: `unknown command "export"`,
-		},
-		{
-			name: "import command absent",
-			args: []string{"import", "bundle.avm.zip"},
-			want: `unknown command "import"`,
-		},
+	if out, err := executeCommand("init", "--force"); err != nil {
+		t.Fatalf("init --force returned error: %v", err)
+	} else {
+		assertContains(t, out, "initialized avm home")
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			_, err := executeCommand(tt.args...)
-			if err == nil {
-				t.Fatal("expected error")
-			}
-			if got := err.Error(); !strings.Contains(got, tt.want) {
-				t.Fatalf("unexpected error:\n got: %q\nwant to contain: %q", got, tt.want)
-			}
-		})
+	localOut, err := executeCommand("env", "create", "default", "--local", "--codex", "default")
+	if err != nil {
+		t.Fatalf("env create --local returned error: %v\noutput:\n%s", err, localOut)
+	}
+	assertContains(t, localOut, "created local env override default")
+	assertPathExists(t, config.ProjectEnvPath(project))
+	override, err := config.ReadProjectOverride(project)
+	if err != nil {
+		t.Fatalf("read project override: %v", err)
+	}
+	if override.Extends != "default" || override.RuntimeAgents["codex"].Primary != "default" {
+		t.Fatalf("unexpected project override: %#v", override)
+	}
+
+	_, err = executeCommand("env", "create", "broken", "--codex", "missing-profile")
+	if err == nil {
+		t.Fatal("env create with missing profile returned nil error")
+	}
+	if got := err.Error(); !strings.Contains(got, "runtime_agents.codex.primary") || !strings.Contains(got, `profile "missing-profile" not found`) {
+		t.Fatalf("unexpected missing profile error: %v", err)
+	}
+
+	shellOut, err := executeCommand("shell", "init", "zsh")
+	if err != nil {
+		t.Fatalf("shell init returned error: %v", err)
+	}
+	for _, want := range []string{"__avm_precmd", "add-zsh-hook", "current-active"} {
+		assertContains(t, shellOut, want)
+	}
+
+	syncOut, err := executeCommand("sync")
+	if err != nil {
+		t.Fatalf("sync returned error: %v\noutput:\n%s", err, syncOut)
+	}
+	for _, want := range []string{"active: profile:default", "sync: completed", "  codex: synced"} {
+		assertContains(t, syncOut, want)
+	}
+	assertCurrentActive(t, "profile:default")
+
+	packagePath := filepath.Join(t.TempDir(), "default.avm.zip")
+	exportOut, err := executeCommand("export", "default", "--output", packagePath)
+	if err != nil {
+		t.Fatalf("export returned error: %v\noutput:\n%s", err, exportOut)
+	}
+	assertContains(t, exportOut, "exported agent default")
+	assertPathExists(t, packagePath)
+
+	targetHome := t.TempDir()
+	t.Setenv("HOME", targetHome)
+	importOut, err := executeCommand("import", packagePath)
+	if err != nil {
+		t.Fatalf("import returned error: %v\noutput:\n%s", err, importOut)
+	}
+	assertContains(t, importOut, "imported agent default: added")
+	assertPathExists(t, config.AgentPath("default"))
+	if _, err := os.Stat(config.GlobalConfigPath()); !os.IsNotExist(err) {
+		t.Fatalf("import should not activate package or write global config, stat err: %v", err)
 	}
 }
 
