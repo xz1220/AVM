@@ -1,6 +1,6 @@
 # Agent VM — Coding Implementation Plan
 
-> 日期：2026-04-24
+> 日期：2026-04-26
 > 范围：Phase 1 MVP
 > 目标：支持多个 coding Agent 并发实现，同时避免文件冲突和架构漂移
 
@@ -8,7 +8,7 @@
 
 ## 总结
 
-当前 `main` 已完成 Round 0/1/2/3、Stage 4、Stage 5：Go scaffold、config model、adapter contract、CLI skeleton、Phase 1 fixtures、first vertical slice、activation pipeline、runtime adapters、acceptance hardening、env local override、sync CLI、shell hook、portable package export/import 都已合并。下一阶段进入 **post-MVP polish / mapping preview**，重点是补齐仍未关闭的验收边界，而不是继续扩展 Phase 1 数据模型：
+当前 `main` 已完成 Round 0/1/2/3、Stage 4、Stage 5：Go scaffold、config model、adapter contract、CLI skeleton、Phase 1 fixtures、first vertical slice、activation pipeline、runtime adapters、acceptance hardening、env local override、sync CLI、shell hook、portable package export/import 都已合并。下一阶段进入 **Stage 6 / Acceptance Polish**，重点是补齐仍未关闭的验收边界，而不是继续扩展 Phase 1 数据模型：
 
 ```text
 avm use <profile|env>
@@ -54,6 +54,7 @@ PRD 已明确：Phase 1 不做 `sync --watch`，不做 `workspace_isolation` 主
 | Stage 5 P0 | `DONE` | acceptance smoke、缺口报告、Stage 5 任务拆分 | `go run ./cmd/avm --help`、临时 HOME multi-runtime smoke |
 | Stage 5 P1-P4 | `DONE` | `origin/feat/acceptance-harness`、`origin/feat/cli-hardening`、`origin/feat/env-hardening`、`origin/feat/package-io` | 各分支 `go test ./...`、`go vet ./...` |
 | Stage 5 P5 | `DONE` | Stage 5 branch integration、acceptance harness 更新、gap report 更新 | `go test ./...`、`go vet ./...`、`git diff --check` |
+| Stage 6 P0 | `DONE` | Acceptance polish 边界决策、prompts、Cursor 状态语义收敛 | `git diff --check` |
 
 Round 1 合并后的能力基线：
 
@@ -63,9 +64,9 @@ Round 1 合并后的能力基线：
 - Fixtures 已有 Phase 1 minimal layout。
 - First vertical slice 已可用：`avm init`、`avm agent create/list/show`、`avm env create`、`avm memory import --from <file> --dry-run`。
 
-### 当前阶段：Post Stage 5 Follow-up
+### 当前阶段：Stage 6 / Acceptance Polish
 
-状态：`S5-P5 DONE`。Stage 5 gap report 已更新为当前验收状态：[stage5-acceptance-gap-report.md](./stage5-acceptance-gap-report.md)。下一步优先处理剩余 follow-up：runtime import report、`agent show --runtime` mapping preview、Cursor partial/synced 状态语义，以及 package scope 是否扩展。
+状态：`S6-P0 DONE`。下一步可以并发启动 Stage 6 的三个实现分支：`agent show --runtime` mapping preview、`init` read-only runtime import report、README/examples/docs 对齐。Cursor Phase 1 状态语义已定：成功写入时保持 `synced`，partial 能力边界必须通过 warnings 和 mapping status 明确展示。
 
 当前 `avm use` 会重建 active、调用 sync、写 sync-state，并可通过 Codex / Claude Code / Cline / Cursor adapters 写入 AVM-managed config。Cursor 仍是 Phase 1 partial adapter，必须通过 warnings 和 mapping status 明确说明能力边界。
 
@@ -92,6 +93,7 @@ Round 1 合并后的能力基线：
 8. `S5-P0 Lead acceptance scan` 已完成：跑 smoke、确认 gaps、更新 Stage 5 分工。
 9. `S5-P1/P2/P3/P4 Stage 5 Agents` 已完成：acceptance harness、CLI hardening、env hardening、package IO。
 10. `S5-P5 Lead integration` 已完成：合并 Stage 5 分支、更新 acceptance harness 和 gap report、跑整体验证。
+11. `S6-P0 Lead prep` 已完成：锁定 Cursor 状态语义、拆分 Stage 6 owner 和 prompt。
 
 Round 3 退出条件：
 
@@ -112,9 +114,10 @@ Round 3 退出条件：
 2. Round 3 已完成，不再启动对应 Agent。
 3. Stage 4 已完成，不再启动对应 Agent。
 4. Stage 5 已完成，不再启动对应 Agent。
-5. 每个子 Agent 必须使用独立 `git worktree` 和独立 branch，不允许多个 Agent 直接在同一个 worktree 并发写。
-6. 任何 Agent 需要改 owner 之外的文件时，必须停止并在交付说明里声明，不要自行跨边界修改。
-7. 后续任务优先修复 [stage5-acceptance-gap-report.md](./stage5-acceptance-gap-report.md) 中的 remaining follow-up，不扩大到 `sync --watch` 或 workspace isolation。
+5. Stage 6 的每个子 Agent 必须从最新 `origin/main` 创建独立 worktree 和 branch。
+6. 每个子 Agent 必须使用独立 `git worktree` 和独立 branch，不允许多个 Agent 直接在同一个 worktree 并发写。
+7. 任何 Agent 需要改 owner 之外的文件时，必须停止并在交付说明里声明，不要自行跨边界修改。
+8. 后续任务优先修复 [stage5-acceptance-gap-report.md](./stage5-acceptance-gap-report.md) 中的 remaining follow-up，不扩大到 `sync --watch`、workspace isolation 或 runtime-native memory 写入。
 
 Stage 5 已执行 worktree 形态（归档，不再启动）：
 
@@ -124,6 +127,15 @@ git worktree add ../agent-vm-acceptance -b feat/acceptance-harness origin/main
 git worktree add ../agent-vm-cli-hardening -b feat/cli-hardening origin/main
 git worktree add ../agent-vm-env-hardening -b feat/env-hardening origin/main
 git worktree add ../agent-vm-package-io -b feat/package-io origin/main
+```
+
+Stage 6 推荐 worktree 形态：
+
+```bash
+git fetch origin main
+git worktree add ../agent-vm-mapping-preview -b feat/mapping-preview origin/main
+git worktree add ../agent-vm-init-report -b feat/init-import-report origin/main
+git worktree add ../agent-vm-docs-polish -b feat/docs-polish origin/main
 ```
 
 ### 必须串行
@@ -148,7 +160,7 @@ git worktree add ../agent-vm-package-io -b feat/package-io origin/main
 | `P2` | Portable Memory import dry-run | `internal/memory/**`, `cmd/avm/memory*.go` | `DONE` |
 | `P3` | Adapter contract + fake adapter | `internal/adapter/**` | `DONE` |
 | `P4` | Sync/state/backup | `internal/sync/**`, `internal/state/**` | `S1`, `S2` |
-| `P5` | CLI agent/env/status commands | `cmd/avm/**` | partial: init/agent/env done; use/status/deactivate next |
+| `P5` | CLI agent/env/status commands | `cmd/avm/**` | `DONE` |
 | `P6` | Runtime fixtures | `testdata/**`, `fixtures/**` | `DONE` |
 | `P11` | Config ResolveActivation | `internal/config/resolve*.go`, `merge*.go`, tests | `DONE` |
 | `P12` | Agent CLI implementation | `cmd/avm/init*.go`, `agent*.go`, `env*.go`, tests | `DONE` |
@@ -303,7 +315,7 @@ Owner:
 | Claude Agent | `internal/adapter/claude/**` | `.claude/agents/*.md`, `.mcp.json`, memory refs 渲染 |
 | Codex Agent | `internal/adapter/codex/**` | `config.toml`, role TOML, skills/memory instructions |
 | Cline Agent | `internal/adapter/cline/**` | MCP settings, `.clinerules/avm/*.md` |
-| Cursor Agent | `internal/adapter/cursor/**` | `.cursor/mcp.json`, rules PoC, partial status |
+| Cursor Agent | `internal/adapter/cursor/**` | `.cursor/mcp.json`, rules PoC, partial support warnings |
 
 共同验收：
 
@@ -410,12 +422,12 @@ testdata/
 
 - 每个 adapter 有 fixture。
 - 每个 adapter 有 `Plan` 和 `Render` 单测。
-- `avm status` 能显示 partial/ignored/unsupported。
+- `avm status` 能显示 warnings 和 ignored/unsupported/rendered mapping status。
 - adapter agents 不改 `internal/runtime/registry.go`，Lead integration 时统一注册。
 
 ### Stage 5：Acceptance Hardening
 
-标记：`IN_PROGRESS`
+标记：`DONE`
 
 任务：
 
@@ -429,6 +441,23 @@ testdata/
 - Phase 1 acceptance 核心路径通过。
 - 没有 silent field drop。
 - acceptance gap report 中的 Phase 1 blocking gaps 已关闭或明确降级到 post-MVP。
+
+### Stage 6：Acceptance Polish
+
+标记：`READY`
+
+任务：
+
+1. `agent show --runtime` 使用 adapter `Plan` 输出 mapping preview，展示 native、rendered_as_instructions、ignored、unsupported。
+2. `avm init` 增加 read-only runtime scan report，写 `~/.avm/state/import-report.json`，不写 runtime 配置、不自动激活导入对象。
+3. README/examples/acceptance docs 与当前 CLI 对齐，明确 Cursor Phase 1 是 `synced` + warnings/mapping status，而不是独立 `partial` sync 状态。
+
+退出条件：
+
+- `go test ./...` 和 `go vet ./...` 通过。
+- `avm agent show <name> --runtime <runtime>` 可在临时 HOME/project 下稳定输出 mapping preview。
+- `avm init` 可在存在 runtime fixture 时生成 import report，且 runtime 文件 hash 不变。
+- README/examples 不再引用未实现或已变更的 Stage 5 行为。
 
 ---
 
@@ -556,8 +585,151 @@ Stage 5 已完成合并。已关闭：
 
 - runtime import/report during init。
 - `agent show --runtime` mapping preview。
-- Cursor `partial` vs `synced with warnings` 状态语义决策。
+- Cursor `synced` + warnings/mapping status 语义写入 README/examples。
 - package scope 是否扩展到 config/active/project override/state/backup/cache/runtime-native memory。
+
+### Stage 6 Agent prompts
+
+#### S6-P1 Mapping Preview prompt
+
+```text
+你是 Agent VM 的 S6-P1 Mapping Preview Agent。请从最新 origin/main 创建独立 worktree 后开发、提交、推送，完成后删除自己的 worktree。
+
+准备：
+cd /Users/danielxing/code/agent-vm
+git fetch origin main
+git worktree add ../agent-vm-mapping-preview -b feat/mapping-preview origin/main
+cd ../agent-vm-mapping-preview
+
+Owner：
+- cmd/avm/agent*.go
+- cmd/avm/*agent*_test.go
+- cmd/avm/*mapping*_test.go only if needed
+
+不要修改：
+- go.mod/go.sum
+- internal/adapter/** contract 或 concrete adapters
+- internal/config core model
+- internal/sync/**
+- internal/runtime/registry.go
+- README / localized README / docs
+
+任务：
+- 实现 `avm agent show <name> --runtime <runtime>` 的 mapping preview；未传 `--runtime` 时继续输出现有 YAML。
+- 读取 profile 后构造只包含该 runtime 的 resolved activation/input，调用对应 runtime adapter `Plan`，不要调用 `Render`，不要写 runtime 文件。
+- 输出必须稳定、可测，包含 runtime、agent、managed paths、warnings、以及 mapping groups：native、rendered_as_instructions、ignored、unsupported。
+- Cursor Phase 1 不引入独立 partial sync status；preview 中必须展示 unsupported/rendered/ignored 边界。
+- invalid runtime、missing profile、adapter plan error 要返回稳定错误。
+
+验收：
+- go test ./...
+- go vet ./...
+- 临时 HOME/project 测试覆盖：未传 --runtime 仍输出 YAML；codex preview 有 native/rendered/unsupported；cursor preview 有 unsupported；preview 不创建 runtime managed files。
+- 提交前 git status --short --untracked-files=all 只能包含 Owner 范围文件。
+
+完成后：
+git push -u origin feat/mapping-preview
+git status --short
+cd /Users/danielxing/code/agent-vm
+git worktree remove ../agent-vm-mapping-preview
+
+回复修改文件、测试结果、commit hash、远程分支，以及仍未覆盖的 mapping preview 项。
+```
+
+#### S6-P2 Init Import Report prompt
+
+```text
+你是 Agent VM 的 S6-P2 Init Import Report Agent。请从最新 origin/main 创建独立 worktree 后开发、提交、推送，完成后删除自己的 worktree。
+
+准备：
+cd /Users/danielxing/code/agent-vm
+git fetch origin main
+git worktree add ../agent-vm-init-report -b feat/init-import-report origin/main
+cd ../agent-vm-init-report
+
+Owner：
+- cmd/avm/init*.go
+- cmd/avm/*init*_test.go
+- internal/state/*import* only if needed
+- testdata/init/** only if needed
+
+不要修改：
+- go.mod/go.sum
+- internal/adapter/** implementation
+- internal/config core model
+- internal/runtime/registry.go
+- README / localized README / docs
+
+任务：
+- `avm init` 完成默认 config/agent/env/sync-state 后，read-only 扫描已注册 runtime adapters：调用 Detect 和 Import。
+- 写 `~/.avm/state/import-report.json`，结构稳定，至少包含 version、generated_at、runtimes[]、found/config_dir/version、agents candidates、warnings/errors。
+- 扫描只能读 runtime 文件，不得创建/修改/删除 Codex/Claude/Cline/Cursor runtime 配置；不得自动 `avm use`；不得把 candidate 直接写入 agents/envs。
+- adapter Import 返回错误时记录到 report，不让整个 init 失败，除非 report 文件本身写入失败。
+- `init --force` 也应刷新 report；已有用户额外 `~/.avm/**` 文件不得删除。
+
+验收：
+- go test ./...
+- go vet ./...
+- 临时 HOME/project/runtime fixture 测试覆盖：report 生成、runtime 文件 hash 不变、Import error 被记录、init --force 刷新 report。
+- 提交前 git status --short --untracked-files=all 只能包含 Owner 范围文件。
+
+完成后：
+git push -u origin feat/init-import-report
+git status --short
+cd /Users/danielxing/code/agent-vm
+git worktree remove ../agent-vm-init-report
+
+回复修改文件、测试结果、commit hash、远程分支，以及 init import/report 仍未覆盖的 runtime。
+```
+
+#### S6-P3 Docs Polish prompt
+
+```text
+你是 Agent VM 的 S6-P3 Docs Polish Agent。请从最新 origin/main 创建独立 worktree 后开发、提交、推送，完成后删除自己的 worktree。
+
+准备：
+cd /Users/danielxing/code/agent-vm
+git fetch origin main
+git worktree add ../agent-vm-docs-polish -b feat/docs-polish origin/main
+cd ../agent-vm-docs-polish
+
+Owner：
+- README.md
+- README.zh-CN.md
+- docs/README.md
+- docs/engineering/acceptance.md
+- docs/engineering/stage5-acceptance-gap-report.md
+- docs/engineering/fixture-conventions.md only if needed
+
+不要修改：
+- go.mod/go.sum
+- cmd/**
+- internal/**
+- fixtures/**
+- testdata/**
+- docs/engineering/implementation-plan.md
+
+任务：
+- README/examples 对齐当前 CLI：init、agent create/list/show、env create/use、env create --local、memory import --dry-run、use/status/deactivate、sync、shell init、export/import。
+- 明确 Cursor Phase 1 语义：成功写入时 status 保持 `synced`；partial support 通过 warnings 和 mapping status 暴露。
+- 标注 runtime import-report 和 `agent show --runtime` 如果相关分支尚未合入，则属于 Stage 6 in-progress；不要把未合入能力写成已发布。
+- 删除或改写 Stage 5 之前的过时 not implemented 文案。
+- 保持中英文 README 信息一致，避免引入营销型内容。
+
+验收：
+- git diff --check
+- go test ./...（文档改动也跑一遍，防止示例相关测试漂移）
+- 搜索确认 docs/README 中没有把 Cursor 要求为 standalone partial status 的旧说法。
+- 提交前 git status --short --untracked-files=all 只能包含 Owner 范围文件。
+
+完成后：
+git push -u origin feat/docs-polish
+git status --short
+cd /Users/danielxing/code/agent-vm
+git worktree remove ../agent-vm-docs-polish
+
+回复修改文件、测试结果、commit hash、远程分支，以及仍需 Lead 在合并后更新的 docs 项。
+```
 
 ### Stage 5 archived prompts
 
@@ -763,7 +935,7 @@ Phase 1 coding 完成时至少满足：
 4. `avm use <profile>` 可重建 active 并调用 adapter render。
 5. `avm env create/use` 可按 runtime 选择不同 Agent Profile。
 6. Codex、Claude Code、Cline 至少有 fixture 覆盖。
-7. Cursor 明确标记 partial。
+7. Cursor Phase 1 partial support 通过 warnings 和 mapping status 明确展示。
 8. `workspace_isolation` 不存在于 Agent Profile 主模型。
 9. mapping status 无 silent drop。
 10. `go test ./...` 通过。

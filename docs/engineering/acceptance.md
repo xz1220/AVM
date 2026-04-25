@@ -1,6 +1,6 @@
 # Agent VM — 验收标准
 
-> 最后更新：2026-04-24（v6 — Portable Memory MVP）
+> 最后更新：2026-04-26（v7 — Stage 6 Acceptance Polish）
 
 本文档定义 Phase 1 MVP 的验收标准。验收重点是 Agent Profile、能力引用、多 runtime Environment 映射、Claude Code/Codex/Cline adapter、render mapping 和数据安全。
 
@@ -286,7 +286,7 @@ avm use backend-dev
 
 - 写 `<project>/.cursor/mcp.json`。
 - 写 AVM 管理的 rules 文件。
-- `avm status` 显示 Cursor 为 `partial`。
+- Phase 1 中 Cursor 可保持 `synced`，但必须通过 warnings 和 mapping status 明确展示 native、rendered_as_instructions、ignored、unsupported 的边界。
 
 ---
 
@@ -376,7 +376,7 @@ avm status
 
 - active profile/env。
 - agents 列表。
-- targets 状态：synced/skipped/failed/partial。
+- targets 状态：synced/skipped/failed；partial adapter support 通过 warnings 和 mapping status 展示。
 - conflicts。
 - ignored/unsupported/rendered mappings。
 - shell prompt 状态。
@@ -389,10 +389,11 @@ Active profile: backend-coder
 
 Targets:
   codex         synced   2 rendered fields
-  cursor        partial
+  cursor        synced   warnings: 1
 
 Mappings:
   codex: capabilities.skills rendered as instructions
+  cursor: agent.model.* unsupported
 
 Shell prompt: enabled (avm:backend-coder)
 ```

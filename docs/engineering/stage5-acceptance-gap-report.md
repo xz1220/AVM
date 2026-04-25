@@ -1,6 +1,6 @@
 # Stage 5 Acceptance Status Report
 
-> Date: 2026-04-25
+> Date: 2026-04-26
 > Base: `main` after Stage 5 integration
 > Scope: Phase 1 acceptance hardening
 
@@ -66,7 +66,7 @@ These are still outside the closed Stage 5 scope:
 |------|------------------|------------------|
 | Runtime import during init | Runtime import/report is not implemented | Read-only scan of runtime configs with `state/import-report.json` |
 | `avm agent show --runtime` | Shows YAML, not mapping preview | Show native/rendered/unsupported mapping preview |
-| Cursor status | Runtime status is `synced` with warnings and mapping status | Decide whether Cursor should display `partial` or keep `synced` plus warnings |
+| Cursor status | Runtime status is `synced` with warnings and mapping status | Keep `synced` for successful writes; expose partial support through warnings and mapping status |
 | Package scope | Export/import excludes config/global defaults/active, project env overrides, state/backup/cache, runtime outputs, runtime-native memory, and interactive overwrite/rename | Decide which belong in post-MVP packaging |
 
 ## Stage 5 Integration Result
