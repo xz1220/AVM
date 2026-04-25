@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"os"
+	"sort"
 
 	"github.com/spf13/cobra"
 	"github.com/xz1220/agent-vm/internal/config"
@@ -23,7 +25,7 @@ func newEnvCreateCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "create <name>",
 		Short: "Create an AVM runtime environment",
-		Args:  cobra.ExactArgs(1),
+		Args:  validateEnvCreateArgs,
 		RunE:  runEnvCreate,
 	}
 	cmd.Flags().Bool("local", false, "create the environment for the current workspace")
@@ -34,31 +36,57 @@ func newEnvCreateCommand() *cobra.Command {
 	return cmd
 }
 
-func runEnvCreate(cmd *cobra.Command, args []string) error {
+func validateEnvCreateArgs(cmd *cobra.Command, args []string) error {
 	local, err := cmd.Flags().GetBool("local")
 	if err != nil {
 		return err
 	}
 	if local {
-		return fmt.Errorf("avm env create --local is not supported yet")
+		if len(args) > 1 {
+			return fmt.Errorf("accepts at most 1 arg(s), received %d", len(args))
+		}
+		return nil
+	}
+	return cobra.ExactArgs(1)(cmd, args)
+}
+
+func runEnvCreate(cmd *cobra.Command, args []string) error {
+	local, err := cmd.Flags().GetBool("local")
+	if err != nil {
+		return err
 	}
 
-	runtimeAgents := make(map[string]config.RuntimeAgent)
-	targets := make([]string, 0, len(config.KnownTargets))
-	for _, runtime := range []string{"codex", "claude-code", "cline", "cursor"} {
-		profile, err := cmd.Flags().GetString(runtime)
+	cwd, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+
+	runtimeAgents, targets, err := envCreateRuntimeAgents(cmd, !local)
+	if err != nil {
+		return err
+	}
+	if err := validateRuntimeAgentProfiles(runtimeAgents, cwd); err != nil {
+		return err
+	}
+
+	if local {
+		extends, err := envCreateLocalExtends(args)
 		if err != nil {
 			return err
 		}
-		if profile == "" {
-			continue
+		if _, err := config.ReadEnvironment(extends); err != nil {
+			return err
 		}
-		runtimeAgents[runtime] = config.RuntimeAgent{Primary: profile}
-		targets = append(targets, runtime)
-	}
-	if len(runtimeAgents) == 0 {
-		runtimeAgents["codex"] = config.RuntimeAgent{Primary: "default"}
-		targets = append(targets, "codex")
+		override := &config.ProjectOverride{
+			Extends:       extends,
+			RuntimeAgents: runtimeAgents,
+		}
+		if err := config.WriteProjectOverride(cwd, override); err != nil {
+			return err
+		}
+
+		fmt.Fprintf(cmd.OutOrStdout(), "created local env override %s\n", extends)
+		return nil
 	}
 
 	env := &config.Environment{
@@ -73,3 +101,80 @@ func runEnvCreate(cmd *cobra.Command, args []string) error {
 	fmt.Fprintf(cmd.OutOrStdout(), "created env %s\n", env.Name)
 	return nil
 }
+
+func envCreateRuntimeAgents(cmd *cobra.Command, withDefault bool) (map[string]config.RuntimeAgent, []string, error) {
+	runtimeAgents := make(map[string]config.RuntimeAgent)
+	targets := make([]string, 0, len(envCreateRuntimeOrder))
+	for _, runtime := range envCreateRuntimeOrder {
+		profile, err := cmd.Flags().GetString(runtime)
+		if err != nil {
+			return nil, nil, err
+		}
+		if profile == "" {
+			continue
+		}
+		runtimeAgents[runtime] = config.RuntimeAgent{Primary: profile}
+		targets = append(targets, runtime)
+	}
+	if withDefault && len(runtimeAgents) == 0 {
+		runtimeAgents["codex"] = config.RuntimeAgent{Primary: "default"}
+		targets = append(targets, "codex")
+	}
+	return runtimeAgents, targets, nil
+}
+
+func envCreateLocalExtends(args []string) (string, error) {
+	if len(args) > 0 {
+		return args[0], nil
+	}
+
+	cfg, err := config.ReadGlobalConfig()
+	if err != nil {
+		return "", err
+	}
+	if cfg.Active.Kind != config.ActiveKindEnv {
+		return "", fmt.Errorf("--local env override requires active env or an explicit env name")
+	}
+	return cfg.Active.Name, nil
+}
+
+func validateRuntimeAgentProfiles(runtimeAgents map[string]config.RuntimeAgent, cwd string) error {
+	runtimes := make([]string, 0, len(runtimeAgents))
+	for runtime := range runtimeAgents {
+		runtimes = append(runtimes, runtime)
+	}
+	sort.Strings(runtimes)
+
+	for _, runtime := range runtimes {
+		agent := runtimeAgents[runtime]
+		if agent.Primary != "" {
+			if err := validateRuntimeAgentProfile(agent.Primary, cwd); err != nil {
+				return fmt.Errorf("runtime_agents.%s.primary: %w", runtime, err)
+			}
+		}
+		for i, available := range agent.Available {
+			if err := validateRuntimeAgentProfile(available, cwd); err != nil {
+				return fmt.Errorf("runtime_agents.%s.available[%d]: %w", runtime, i, err)
+			}
+		}
+	}
+	return nil
+}
+
+func validateRuntimeAgentProfile(name, cwd string) error {
+	if _, err := config.ReadAgent(name, config.ScopeProject, cwd); err == nil {
+		return nil
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+
+	if _, err := config.ReadAgent(name, config.ScopeGlobal, cwd); err == nil {
+		return nil
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+
+	return fmt.Errorf("profile %q not found in %s or %s", name, config.ProjectAgentPath(cwd, name), config.AgentPath(name))
+}
+
+var envCreateRuntimeOrder = []string{"codex", "claude-code", "cline", "cursor"}

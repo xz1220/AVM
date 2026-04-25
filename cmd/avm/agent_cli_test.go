@@ -131,6 +131,9 @@ func TestEnvCreate(t *testing.T) {
 	t.Setenv("HOME", home)
 	chdir(t, project)
 
+	writeEnvTestAgent(t, project, config.ScopeGlobal, envTestAgent("backend-coder", "codex"))
+	writeEnvTestAgent(t, project, config.ScopeGlobal, envTestAgent("backend-reviewer", "claude-code"))
+
 	out, err := executeCommand(
 		"env", "create", "coding",
 		"--codex", "backend-coder",

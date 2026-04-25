@@ -37,6 +37,21 @@ func WriteEnvironment(env *Environment) error {
 	return writeYAML(path, env)
 }
 
+func ReadProjectOverride(cwd string) (*ProjectOverride, error) {
+	return readProjectOverride(ProjectEnvPath(cwd))
+}
+
+func WriteProjectOverride(cwd string, override *ProjectOverride) error {
+	if override == nil {
+		return fieldError("", "", "project override is nil")
+	}
+	path := ProjectEnvPath(cwd)
+	if err := validateProjectOverride(override, path); err != nil {
+		return err
+	}
+	return writeYAML(path, override)
+}
+
 func ListEnvironments() ([]EnvironmentSummary, error) {
 	paths, err := listYAMLFiles(EnvsDir())
 	if err != nil {
