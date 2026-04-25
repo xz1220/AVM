@@ -13,7 +13,7 @@
 <p align="center">
   <a href="https://github.com/xz1220/Agent-VM/actions/workflows/ci.yml"><img src="https://github.com/xz1220/Agent-VM/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <img src="https://img.shields.io/badge/status-early_preview-0f766e" alt="Status: early preview">
-  <img src="https://img.shields.io/badge/runtime-Codex%20%7C%20Claude%20Code%20%7C%20OpenClaw%20%7C%20Hermes%20Agent-1d4ed8" alt="Supported runtime targets">
+  <img src="https://img.shields.io/badge/runtime-Codex%20%7C%20Claude%20Code%20%7C%20Cline%20%7C%20Cursor-1d4ed8" alt="Supported runtime targets">
   <img src="https://img.shields.io/badge/language-Go-00ADD8" alt="Go">
 </p>
 
@@ -24,7 +24,8 @@
 Agent VM, or `avm`, is a local control plane for AI coding agent profiles. It
 keeps an agent's role, tools, permissions, model preferences, and memory refs in
 one portable profile, then lets adapters render that profile into runtimes such
-as Codex, Claude Code, OpenClaw, and Hermes Agent.
+as Codex, Claude Code, Cline, and Cursor. Cursor support is a conservative
+Phase 1 rules/MCP PoC.
 
 <p align="center">
   <img src="assets/avm-before-after.svg" alt="Before AVM config is scattered; after AVM one profile activates an agent" width="100%">
@@ -46,8 +47,8 @@ backend-coder.yaml
   -> avm use backend-coder
     -> Codex profile
     -> Claude Code agent
-    -> OpenClaw workspace
-    -> Hermes Agent profile
+    -> Cline rules/MCP settings
+    -> Cursor rules/MCP PoC
 ```
 
 ## Why This Is Different
@@ -57,7 +58,7 @@ backend-coder.yaml
 | Dotfiles | Files and symlinks | No agent object, no mapping status |
 | MCP config managers | Tool server config | Usually no role, memory, model, or permission model |
 | Runtime-native profiles | One ecosystem | Hard to carry across tools |
-| Agent VM | Agent Profile + capabilities + memory refs + adapters | Early, still building concrete adapters |
+| Agent VM | Agent Profile + capabilities + memory refs + adapters | Early; Phase 1 adapters are conservative and report mapping status |
 
 AVM is not trying to flatten every runtime into the same interface. Each adapter
 must report how fields map: `native`, `rendered_as_instructions`, `ignored`, or
@@ -68,7 +69,7 @@ must report how fields map: `native`, `rendered_as_instructions`, `ignored`, or
 | Layer | Example |
 | --- | --- |
 | Identity | `backend-coder`, `pr-reviewer`, `incident-runner` |
-| Runtime | `codex`, `claude-code`, `openclaw`, `hermes-agent` |
+| Runtime | `codex`, `claude-code`, `cline`, `cursor` |
 | Model run | model name, reasoning effort, verbosity |
 | Capabilities | skills, commands, hooks, MCP servers, toolsets |
 | Permissions | approval mode, sandbox intent, allow/deny policy |
@@ -144,25 +145,33 @@ memory_refs:
 
 ## Status
 
-This repository is an early preview. The core model and first CLI slices are in
-place; profile activation is the next major milestone.
+This repository is an early preview. The core model, Stage 5 CLI hardening, and
+managed activation path are in place.
 
 Working today:
 
 - `avm init`
 - `avm agent create/list/show`
-- `avm env create`
+- `avm env create`, including `avm env create --local`
 - `avm memory import --from <file> --dry-run`
+- `avm use`, `avm status`, and `avm deactivate`
+- `avm sync`
+- `avm shell init bash|zsh|fish`
+- `avm export` and `avm import`
+- managed Codex, Claude Code, Cline, and Cursor render outputs
 - config validation and resolution tests
 - adapter contract, fake adapter, and Phase 1 fixtures
 
-In progress:
+Cursor Phase 1 writes successfully as `synced`; partial support is exposed
+through warnings and mapping status, not a separate Cursor-only sync state.
 
-- `avm use <profile-or-env>`
-- `avm status`
-- `avm deactivate`
-- concrete Codex and Claude Code adapter writes
-- release packaging
+Stage 6 in progress:
+
+- `avm init` runtime import/report scan with `state/import-report.json`
+- `avm agent show --runtime <runtime>` mapping preview; on this branch the flag
+  is accepted, but output remains the agent YAML
+- broader package policy for config/defaults/active state, project overrides,
+  runtime outputs, and interactive overwrite/rename
 
 ## Quickstart
 
@@ -180,7 +189,14 @@ go run ./cmd/avm --help
 go run ./cmd/avm init
 ```
 
-Create a profile:
+For a local smoke run without installed runtime CLIs, create the runtime config
+directories before activation:
+
+```bash
+mkdir -p "$HOME/.codex" "$HOME/.claude" "$HOME/.cline/data" .cursor
+```
+
+Create and inspect profiles:
 
 ```bash
 go run ./cmd/avm agent create backend-coder \
@@ -190,13 +206,25 @@ go run ./cmd/avm agent create backend-coder \
   --skills git,test \
   --mcps github \
   --memory backend-standards:project
-```
 
-Inspect it:
+go run ./cmd/avm agent create reviewer --runtime claude-code --skills review
+go run ./cmd/avm agent create cline-helper --runtime cline --skills test
+go run ./cmd/avm agent create cursor-helper --runtime cursor --skills rules
 
-```bash
 go run ./cmd/avm agent list
 go run ./cmd/avm agent show backend-coder
+```
+
+Create environments:
+
+```bash
+go run ./cmd/avm env create all-runtimes \
+  --codex backend-coder \
+  --claude-code reviewer \
+  --cline cline-helper \
+  --cursor cursor-helper
+
+go run ./cmd/avm env create all-runtimes --local --codex backend-coder
 ```
 
 Preview a portable memory import:
@@ -204,7 +232,30 @@ Preview a portable memory import:
 ```bash
 go run ./cmd/avm memory import \
   --from testdata/memory/backend-standards.md \
-  --dry-run
+  --dry-run \
+  --format json
+```
+
+Activate, inspect, resync, and deactivate:
+
+```bash
+go run ./cmd/avm use --kind env all-runtimes
+go run ./cmd/avm status
+go run ./cmd/avm sync
+go run ./cmd/avm deactivate
+```
+
+Shell prompt integration prints eval-safe snippets:
+
+```bash
+eval "$(go run ./cmd/avm shell init zsh)"
+```
+
+Export and import packages:
+
+```bash
+go run ./cmd/avm export backend-coder --kind agent --output backend-coder.avm.zip
+go run ./cmd/avm import backend-coder.avm.zip
 ```
 
 Build locally:
@@ -214,9 +265,9 @@ make build
 ./bin/avm --help
 ```
 
-## Target CLI Experience
+## Current Status Shape
 
-This is the intended Phase 1 loop once activation lands:
+The current activation loop is:
 
 ```bash
 avm init
@@ -228,10 +279,17 @@ avm status
 Expected status shape:
 
 ```text
-active   profile:backend-coder
-runtime  codex          native: model, permissions
-runtime  claude-code    rendered: skills, memory_refs
-runtime  openclaw       rendered: workspace, memory_refs
+active: profile:backend-coder
+runtime status:
+  codex: synced (agent backend-coder)
+managed paths:
+  codex:
+    - ~/.codex/config.toml owner=shared-section merge=structured-section
+mapping status:
+  codex:
+    - capabilities.skills -> instructions: rendered_as_instructions
+warnings:
+  none
 ```
 
 ## Safety Model
@@ -251,7 +309,7 @@ AVM is designed to be conservative by default:
 | Phase | Theme | Headline |
 | --- | --- | --- |
 | 1 | Local profile activation | `avm use <profile>` |
-| 2 | Runtime coverage | Codex, Claude Code, OpenClaw, Hermes Agent adapters |
+| 2 | Runtime coverage | Codex, Claude Code, Cline, Cursor PoC adapters |
 | 3 | Portable memory | explicit import/export/diff/push/pull |
 | 4 | Team registry | shareable agent profiles with policy and audit |
 
@@ -284,8 +342,8 @@ The main package is `cmd/avm`. Core packages live under `internal/config`,
 
 AVM is early. The most useful contributions right now are narrow and concrete:
 
-- runtime mapping research for Codex, Claude Code, OpenClaw, Hermes Agent, and
-  GitHub Copilot custom agents
+- runtime mapping research for Codex, Claude Code, Cline, Cursor, and GitHub
+  Copilot custom agents
 - adapter fixtures
 - CLI behavior tests
 - docs that explain real workflows

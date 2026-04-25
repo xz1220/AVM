@@ -52,11 +52,11 @@ covered by tests:
 | `avm init` idempotency | Second `avm init` rewrote defaults | Existing config fails unless `--force` is passed |
 | `avm init` state files | Initial `init` did not create `state/sync-state.json` | `state/sync-state.json` exists after init |
 | `avm init` cache dir | Initial `init` did not create `~/.avm/cache` | `cache/` exists after init |
-| `avm env create --local` | Returned not implemented | Writes project `.avm/env.yaml` override |
+| `avm env create --local` | Project-local env overrides were only specified | Writes project `.avm/env.yaml` override |
 | Env reference validation | Missing profile references could be written | Missing referenced profiles fail before write |
-| `avm shell init` | Returned not implemented | Prints eval-safe bash/zsh/fish shell hooks |
-| `avm sync` | Command was absent | Re-syncs current active without changing selection |
-| `avm export` / `avm import` | Commands were absent | Portable `.avm.zip` export/import for Phase 1 agents/envs |
+| `avm shell init` | Shell hook output was only specified | Prints eval-safe bash/zsh/fish shell hooks |
+| `avm sync` | No user-facing resync command in the Stage 4 baseline | Re-syncs current active without changing selection |
+| `avm export` / `avm import` | No user-facing package commands in the Stage 4 baseline | Portable `.avm.zip` export/import for Phase 1 agents/envs |
 
 ## Remaining Follow-up
 
@@ -64,8 +64,8 @@ These are still outside the closed Stage 5 scope:
 
 | Area | Current behavior | Follow-up target |
 |------|------------------|------------------|
-| Runtime import during init | Runtime import/report is not implemented | Read-only scan of runtime configs with `state/import-report.json` |
-| `avm agent show --runtime` | Shows YAML, not mapping preview | Show native/rendered/unsupported mapping preview |
+| Runtime import during init | Current `main` creates AVM defaults and `sync-state.json`; it does not write an import report | Stage 6 in-progress: read-only scan of runtime configs with `state/import-report.json` |
+| `avm agent show --runtime` | Current `main` accepts and validates `--runtime`, then still shows YAML | Stage 6 in-progress: show native/rendered/unsupported mapping preview |
 | Cursor status | Runtime status is `synced` with warnings and mapping status | Keep `synced` for successful writes; expose partial support through warnings and mapping status |
 | Package scope | Export/import excludes config/global defaults/active, project env overrides, state/backup/cache, runtime outputs, runtime-native memory, and interactive overwrite/rename | Decide which belong in post-MVP packaging |
 
