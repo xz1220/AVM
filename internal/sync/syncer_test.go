@@ -142,6 +142,76 @@ func TestSyncActivationFailedActiveRebuildDoesNotRender(t *testing.T) {
 	assertFileMissing(t, filepath.Join(dir, "project", ".avm-fake", "fake", "../bad.rendered"))
 }
 
+func TestRebuildActiveLinksResolvedSkills(t *testing.T) {
+	dir := t.TempDir()
+	skillDir := filepath.Join(dir, "registry", "skills", "probe-skill")
+	if err := os.MkdirAll(skillDir, 0o700); err != nil {
+		t.Fatalf("create skill dir: %v", err)
+	}
+	skillPath := filepath.Join(skillDir, "SKILL.md")
+	if err := os.WriteFile(skillPath, []byte("AVM_SKILL_PROBE_MARKER_20260426\n"), 0o600); err != nil {
+		t.Fatalf("write skill: %v", err)
+	}
+
+	resolved := testResolved("fake", "backend")
+	resolved.Capabilities["fake"] = config.ResolvedCapabilities{
+		Skills: []string{"probe-skill"},
+		SkillRefs: []config.ResolvedSkill{
+			{Name: "probe-skill", SourceDir: skillDir, SourcePath: skillPath},
+		},
+	}
+
+	activeDir := filepath.Join(dir, "active")
+	if err := RebuildActive(resolved, activeDir); err != nil {
+		t.Fatalf("RebuildActive returned error: %v", err)
+	}
+
+	assertFileContains(t, filepath.Join(activeDir, "skills", "probe-skill", "SKILL.md"), "AVM_SKILL_PROBE_MARKER_20260426")
+	assertFileContains(t, filepath.Join(activeDir, "manifest.yaml"), "probe-skill")
+}
+
+func TestSyncActivationCleansStaleRuntimeSkillsFromPreviousActivation(t *testing.T) {
+	dir := t.TempDir()
+	opts := testOptions(dir)
+	statePath := opts.StatePath
+	oldActive := config.ActiveRef{Kind: config.ActiveKindEnv, Name: "skill-env"}
+	syncState := state.NewSyncState(oldActive)
+
+	staleSkillPath := filepath.Join(dir, "claude-home", "skills", "probe-skill", "SKILL.md")
+	userSkillPath := filepath.Join(dir, "claude-home", "skills", "user-skill", "SKILL.md")
+	if err := os.MkdirAll(filepath.Dir(staleSkillPath), 0o700); err != nil {
+		t.Fatalf("create stale skill dir: %v", err)
+	}
+	if err := os.WriteFile(staleSkillPath, []byte("---\nname: \"probe-skill\"\ndescription: \"AVM skill probe-skill.\"\n---\n\nold\n"), 0o600); err != nil {
+		t.Fatalf("write stale skill: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(userSkillPath), 0o700); err != nil {
+		t.Fatalf("create user skill dir: %v", err)
+	}
+	if err := os.WriteFile(userSkillPath, []byte("---\nname: user-skill\ndescription: user-owned\n---\n\nkeep\n"), 0o600); err != nil {
+		t.Fatalf("write user skill: %v", err)
+	}
+	syncState.Runtimes["claude-code"] = state.RuntimeState{
+		Runtime: "claude-code",
+		Status:  state.RuntimeStatusSynced,
+		Active:  oldActive,
+		ManagedPaths: []state.ManagedPathState{
+			{Path: staleSkillPath, Owner: "avm", MergeMode: "whole-file"},
+			{Path: userSkillPath, Owner: "avm", MergeMode: "whole-file"},
+		},
+	}
+	if err := state.SaveSyncState(statePath, syncState); err != nil {
+		t.Fatalf("save sync state: %v", err)
+	}
+
+	if _, err := testSyncer().SyncActivation(context.Background(), testResolved("fake", "backend"), opts); err != nil {
+		t.Fatalf("sync activation failed: %v", err)
+	}
+
+	assertFileMissing(t, staleSkillPath)
+	assertFileContains(t, userSkillPath, "user-owned")
+}
+
 func testSyncer() *Syncer {
 	syncer := NewSyncer(StaticAdapterRegistry{
 		"fake": fake.New(fake.WithName("fake")),

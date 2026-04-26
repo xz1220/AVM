@@ -50,7 +50,8 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	printStatusWithSyncState(cmd.OutOrStdout(), cfg.Active, syncState)
+	targets, warnings := statusTargetsFromActive(cfg.Active, cwd)
+	printStatusWithSyncState(cmd.OutOrStdout(), cfg.Active, syncState, targets, warnings)
 	return nil
 }
 
@@ -89,9 +90,9 @@ func printStatusWithoutSyncState(out io.Writer, active config.ActiveRef, targets
 	printWarnings(out, warnings)
 }
 
-func printStatusWithSyncState(out io.Writer, active config.ActiveRef, syncState *state.SyncState) {
-	runtimes := syncStateRuntimeOrder(syncState)
-	warnings := make([]string, 0)
+func printStatusWithSyncState(out io.Writer, active config.ActiveRef, syncState *state.SyncState, targets []string, targetWarnings []string) {
+	runtimes := syncStateRuntimeOrderForTargets(syncState, targets)
+	warnings := append([]string(nil), targetWarnings...)
 	if formatActiveRef(syncState.LastActive) != "none" && syncState.LastActive != active {
 		warnings = append(warnings, fmt.Sprintf("sync-state active %s differs from config active %s", formatActiveRef(syncState.LastActive), formatActiveRef(active)))
 	}
@@ -102,7 +103,11 @@ func printStatusWithSyncState(out io.Writer, active config.ActiveRef, syncState 
 		fmt.Fprintln(out, "  none")
 	} else {
 		for _, runtime := range runtimes {
-			runtimeState := syncState.Runtimes[runtime]
+			runtimeState, ok := syncState.Runtimes[runtime]
+			if !ok {
+				fmt.Fprintf(out, "  %s: unknown\n", runtime)
+				continue
+			}
 			status := string(runtimeState.Status)
 			if status == "" {
 				status = "unknown"
@@ -232,6 +237,31 @@ func syncStateRuntimeOrder(syncState *state.SyncState) []string {
 	runtimes := make([]string, 0, len(syncState.Runtimes))
 	for runtime := range syncState.Runtimes {
 		runtimes = append(runtimes, runtime)
+	}
+	sort.Strings(runtimes)
+	return runtimes
+}
+
+func syncStateRuntimeOrderForTargets(syncState *state.SyncState, targets []string) []string {
+	if len(targets) == 0 {
+		return syncStateRuntimeOrder(syncState)
+	}
+	seen := make(map[string]struct{}, len(targets))
+	runtimes := make([]string, 0, len(targets))
+	for _, target := range targets {
+		if target == "" {
+			continue
+		}
+		if _, ok := seen[target]; ok {
+			continue
+		}
+		if syncState != nil {
+			if _, ok := syncState.Runtimes[target]; !ok {
+				continue
+			}
+		}
+		seen[target] = struct{}{}
+		runtimes = append(runtimes, target)
 	}
 	sort.Strings(runtimes)
 	return runtimes

@@ -1,6 +1,8 @@
 package config
 
 import (
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -167,6 +169,94 @@ func TestResolveActivationProjectOverridePriority(t *testing.T) {
 	}
 	if !containsString(resolved.SourceFiles, ProjectAgentPath(project, "project-coder")) {
 		t.Fatalf("source files missing project agent: %#v", resolved.SourceFiles)
+	}
+}
+
+func TestResolveActivationLoadsMCPRegistryDefinitions(t *testing.T) {
+	home, project := setupResolveTest(t)
+
+	agent := resolveTestAgent("backend-coder", "codex")
+	agent.Capabilities.MCPs = []string{"github"}
+	if err := WriteAgent(&agent, ScopeGlobal, project); err != nil {
+		t.Fatalf("WriteAgent returned error: %v", err)
+	}
+	if err := WriteGlobalConfig(&GlobalConfig{
+		Active: ActiveRef{Kind: ActiveKindProfile, Name: "backend-coder"},
+		Defaults: DefaultsConfig{
+			Targets: []string{"codex"},
+		},
+	}); err != nil {
+		t.Fatalf("WriteGlobalConfig returned error: %v", err)
+	}
+
+	registryPath := filepath.Join(home, ".avm", "registry", "mcps", "github.yaml")
+	if err := os.MkdirAll(filepath.Dir(registryPath), 0o700); err != nil {
+		t.Fatalf("create registry dir: %v", err)
+	}
+	if err := os.WriteFile(registryPath, []byte("name: github\nkind: mcp\nserver:\n  type: stdio\n  command: printf\n  args:\n    - avm-test-mcp\n  env:\n    GITHUB_TOKEN: ${GITHUB_TOKEN}\n"), 0o600); err != nil {
+		t.Fatalf("write registry: %v", err)
+	}
+
+	resolved, err := ResolveActivation(ActiveRef{Kind: ActiveKindProfile, Name: "backend-coder"}, project)
+	if err != nil {
+		t.Fatalf("ResolveActivation returned error: %v", err)
+	}
+
+	servers := resolved.Capabilities["codex"].MCPServers
+	if len(servers) != 1 {
+		t.Fatalf("resolved mcp servers = %#v, want one", servers)
+	}
+	got := servers[0]
+	if got.Name != "github" || got.Command != "printf" || !reflect.DeepEqual(got.Args, []string{"avm-test-mcp"}) || got.Env["GITHUB_TOKEN"] != "${GITHUB_TOKEN}" {
+		t.Fatalf("resolved mcp server not populated: %#v", got)
+	}
+	if got.SourcePath != registryPath {
+		t.Fatalf("resolved mcp source path = %q, want %q", got.SourcePath, registryPath)
+	}
+	if !containsString(resolved.SourceFiles, registryPath) {
+		t.Fatalf("source files missing registry path: %#v", resolved.SourceFiles)
+	}
+}
+
+func TestResolveActivationLoadsSkillRegistryDefinitions(t *testing.T) {
+	home, project := setupResolveTest(t)
+
+	agent := resolveTestAgent("backend-coder", "codex", "probe-skill")
+	if err := WriteAgent(&agent, ScopeGlobal, project); err != nil {
+		t.Fatalf("WriteAgent returned error: %v", err)
+	}
+	if err := WriteGlobalConfig(&GlobalConfig{
+		Active: ActiveRef{Kind: ActiveKindProfile, Name: "backend-coder"},
+		Defaults: DefaultsConfig{
+			Targets: []string{"codex"},
+		},
+	}); err != nil {
+		t.Fatalf("WriteGlobalConfig returned error: %v", err)
+	}
+
+	skillDir := filepath.Join(home, ".avm", "registry", "skills", "probe-skill")
+	skillPath := filepath.Join(skillDir, "SKILL.md")
+	if err := os.MkdirAll(skillDir, 0o700); err != nil {
+		t.Fatalf("create skill dir: %v", err)
+	}
+	if err := os.WriteFile(skillPath, []byte("AVM_SKILL_PROBE_MARKER_20260426\n"), 0o600); err != nil {
+		t.Fatalf("write skill: %v", err)
+	}
+
+	resolved, err := ResolveActivation(ActiveRef{Kind: ActiveKindProfile, Name: "backend-coder"}, project)
+	if err != nil {
+		t.Fatalf("ResolveActivation returned error: %v", err)
+	}
+
+	skills := resolved.Capabilities["codex"].SkillRefs
+	if len(skills) != 1 {
+		t.Fatalf("resolved skill refs = %#v, want one", skills)
+	}
+	if got := skills[0]; got.Name != "probe-skill" || got.SourceDir != skillDir || got.SourcePath != skillPath {
+		t.Fatalf("resolved skill ref not populated: %#v", got)
+	}
+	if !containsString(resolved.SourceFiles, skillPath) {
+		t.Fatalf("source files missing skill path: %#v", resolved.SourceFiles)
 	}
 }
 

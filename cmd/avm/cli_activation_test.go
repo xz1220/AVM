@@ -51,6 +51,13 @@ func TestUseStatusDeactivateCommands(t *testing.T) {
 		t.Fatalf("unexpected active ref: %#v", cfg.Active)
 	}
 	assertCurrentActive(t, "profile:backend-coder")
+	codexConfig := readFileForTest(t, filepath.Join(codexHome, "config.toml"))
+	if !strings.Contains(codexConfig, "profile = \"avm-backend-coder\"") {
+		t.Fatalf("codex config did not switch selector:\n%s", codexConfig)
+	}
+	if strings.Contains(codexConfig, "profile = \"user\"") {
+		t.Fatalf("codex config kept stale user selector:\n%s", codexConfig)
+	}
 
 	statusOut, err := executeCommand("status")
 	if err != nil {
@@ -215,6 +222,193 @@ func TestUseKindEnvAndAutoPrefersProfile(t *testing.T) {
 	}
 }
 
+func TestStatusFiltersStaleRuntimeStateAfterActivationSwitch(t *testing.T) {
+	home := t.TempDir()
+	project := t.TempDir()
+	t.Setenv("HOME", home)
+	codexHome := setupCodexHome(t, home)
+	cursorDir := filepath.Join(project, ".cursor")
+	if err := os.MkdirAll(cursorDir, 0o700); err != nil {
+		t.Fatalf("create cursor dir: %v", err)
+	}
+	chdir(t, project)
+
+	if _, err := executeCommand("init"); err != nil {
+		t.Fatalf("init returned error: %v", err)
+	}
+	if _, err := executeCommand("agent", "create", "writer-agent", "--runtime", "codex"); err != nil {
+		t.Fatalf("create writer-agent: %v", err)
+	}
+	if _, err := executeCommand("agent", "create", "cursor-agent", "--runtime", "cursor"); err != nil {
+		t.Fatalf("create cursor-agent: %v", err)
+	}
+	if _, err := executeCommand("env", "create", "all-runtimes", "--codex", "writer-agent", "--cursor", "cursor-agent"); err != nil {
+		t.Fatalf("create env: %v", err)
+	}
+	if out, err := executeCommand("use", "--kind", "env", "all-runtimes"); err != nil {
+		t.Fatalf("use env returned error: %v\n%s", err, out)
+	}
+
+	envStatus, err := executeCommand("status")
+	if err != nil {
+		t.Fatalf("env status returned error: %v", err)
+	}
+	if !strings.Contains(envStatus, "  cursor: synced (agent cursor-agent)") {
+		t.Fatalf("env status missing cursor synced state:\n%s", envStatus)
+	}
+
+	if out, err := executeCommand("use", "--kind", "profile", "writer-agent"); err != nil {
+		t.Fatalf("use profile returned error: %v\n%s", err, out)
+	}
+	profileStatus, err := executeCommand("status")
+	if err != nil {
+		t.Fatalf("profile status returned error: %v", err)
+	}
+	if strings.Contains(profileStatus, "cursor: synced") || strings.Contains(profileStatus, "cursor-agent") {
+		t.Fatalf("profile status leaked stale cursor state:\n%s", profileStatus)
+	}
+
+	codexConfig := readFileForTest(t, filepath.Join(codexHome, "config.toml"))
+	if !strings.Contains(codexConfig, "profile = \"avm-writer-agent\"") {
+		t.Fatalf("codex config did not switch to writer-agent selector:\n%s", codexConfig)
+	}
+}
+
+func TestUseRendersMCPRegistryDefinitions(t *testing.T) {
+	home := t.TempDir()
+	project := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("GITHUB_TOKEN", "REAL_SECRET_SHOULD_NOT_APPEAR")
+	codexHome := setupCodexHome(t, home)
+	claudeConfigDir := filepath.Join(home, ".claude-test")
+	if err := os.MkdirAll(claudeConfigDir, 0o700); err != nil {
+		t.Fatalf("create claude config dir: %v", err)
+	}
+	t.Setenv("CLAUDE_CONFIG_DIR", claudeConfigDir)
+	chdir(t, project)
+
+	if _, err := executeCommand("init"); err != nil {
+		t.Fatalf("init returned error: %v", err)
+	}
+	writeFileForTest(t, filepath.Join(home, ".avm", "registry", "mcps", "github.yaml"), "name: github\nkind: mcp\nserver:\n  type: stdio\n  command: printf\n  args:\n    - avm-test-mcp\n  env:\n    GITHUB_TOKEN: ${GITHUB_TOKEN}\n")
+	if _, err := executeCommand("agent", "create", "codex-agent", "--runtime", "codex", "--mcps", "github"); err != nil {
+		t.Fatalf("create codex agent: %v", err)
+	}
+	if _, err := executeCommand("agent", "create", "claude-agent", "--runtime", "claude-code", "--mcps", "github"); err != nil {
+		t.Fatalf("create claude agent: %v", err)
+	}
+	if _, err := executeCommand("env", "create", "all-runtimes", "--codex", "codex-agent", "--claude-code", "claude-agent"); err != nil {
+		t.Fatalf("create env: %v", err)
+	}
+	if out, err := executeCommand("use", "--kind", "env", "all-runtimes"); err != nil {
+		t.Fatalf("use env returned error: %v\n%s", err, out)
+	}
+
+	codexConfig := readFileForTest(t, filepath.Join(codexHome, "config.toml"))
+	for _, want := range []string{
+		"profile = \"avm-all-runtimes\"",
+		"[mcp_servers.github]",
+		"command = \"printf\"",
+		"args = [\"avm-test-mcp\"]",
+		"GITHUB_TOKEN = \"${GITHUB_TOKEN}\"",
+	} {
+		if !strings.Contains(codexConfig, want) {
+			t.Fatalf("codex config missing %q:\n%s", want, codexConfig)
+		}
+	}
+	if strings.Contains(codexConfig, "REAL_SECRET_SHOULD_NOT_APPEAR") {
+		t.Fatalf("codex config expanded secret:\n%s", codexConfig)
+	}
+
+	claudeMCP := readFileForTest(t, filepath.Join(project, ".mcp.json"))
+	for _, want := range []string{`"github"`, `"command": "printf"`, `"avm-test-mcp"`, `"GITHUB_TOKEN": "${GITHUB_TOKEN}"`} {
+		if !strings.Contains(claudeMCP, want) {
+			t.Fatalf("claude mcp config missing %q:\n%s", want, claudeMCP)
+		}
+	}
+	if strings.Contains(claudeMCP, "REAL_SECRET_SHOULD_NOT_APPEAR") {
+		t.Fatalf("claude mcp config expanded secret:\n%s", claudeMCP)
+	}
+}
+
+func TestUseActivatesSkillContentForRuntimeSkillDirs(t *testing.T) {
+	home := t.TempDir()
+	project := t.TempDir()
+	t.Setenv("HOME", home)
+	codexHome := setupCodexHome(t, home)
+	claudeConfigDir := filepath.Join(home, ".claude-test")
+	clineDataHome := filepath.Join(home, ".cline-test")
+	for _, dir := range []string{claudeConfigDir, clineDataHome} {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatalf("create runtime dir %s: %v", dir, err)
+		}
+	}
+	t.Setenv("CLAUDE_CONFIG_DIR", claudeConfigDir)
+	t.Setenv("CLINE_DATA_HOME", clineDataHome)
+	chdir(t, project)
+
+	if _, err := executeCommand("init"); err != nil {
+		t.Fatalf("init returned error: %v", err)
+	}
+	writeFileForTest(t, filepath.Join(home, ".avm", "registry", "skills", "probe-skill", "SKILL.md"), "# Probe\n\nAVM_SKILL_PROBE_MARKER_20260426\n")
+	writeFileForTest(t, filepath.Join(home, ".avm", "registry", "skills", "unused-skill", "SKILL.md"), "# Unused\n\nUNUSED_SKILL_MARKER\n")
+	if _, err := executeCommand("agent", "create", "codex-skill-agent", "--runtime", "codex", "--skills", "probe-skill"); err != nil {
+		t.Fatalf("create codex skill agent: %v", err)
+	}
+	if _, err := executeCommand("agent", "create", "claude-skill-agent", "--runtime", "claude-code", "--skills", "probe-skill"); err != nil {
+		t.Fatalf("create claude skill agent: %v", err)
+	}
+	if _, err := executeCommand("agent", "create", "cline-skill-agent", "--runtime", "cline", "--skills", "probe-skill"); err != nil {
+		t.Fatalf("create cline skill agent: %v", err)
+	}
+	if _, err := executeCommand("env", "create", "skill-env", "--codex", "codex-skill-agent", "--claude-code", "claude-skill-agent", "--cline", "cline-skill-agent"); err != nil {
+		t.Fatalf("create skill env: %v", err)
+	}
+	if out, err := executeCommand("use", "--kind", "env", "skill-env"); err != nil {
+		t.Fatalf("use skill env returned error: %v\n%s", err, out)
+	}
+
+	activeSkillPath := filepath.Join(home, ".avm", "active", "skills", "probe-skill", "SKILL.md")
+	activeUnusedPath := filepath.Join(home, ".avm", "active", "skills", "unused-skill", "SKILL.md")
+	if got := readFileForTest(t, activeSkillPath); !strings.Contains(got, "AVM_SKILL_PROBE_MARKER_20260426") {
+		t.Fatalf("active skill missing marker:\n%s", got)
+	}
+	if _, err := os.Stat(activeUnusedPath); !os.IsNotExist(err) {
+		t.Fatalf("unused skill should not be active, stat err: %v", err)
+	}
+
+	for _, path := range []string{
+		filepath.Join(codexHome, "skills", "probe-skill", "SKILL.md"),
+		filepath.Join(claudeConfigDir, "skills", "probe-skill", "SKILL.md"),
+	} {
+		got := readFileForTest(t, path)
+		for _, want := range []string{`name: "probe-skill"`, "AVM_SKILL_PROBE_MARKER_20260426"} {
+			if !strings.Contains(got, want) {
+				t.Fatalf("runtime skill %s missing %q:\n%s", path, want, got)
+			}
+		}
+	}
+
+	clineRules := readFileForTest(t, filepath.Join(project, ".clinerules", "avm", "cline-skill-agent.md"))
+	if !strings.Contains(clineRules, filepath.ToSlash(activeSkillPath)) {
+		t.Fatalf("cline rules missing active skill path:\n%s", clineRules)
+	}
+
+	if _, err := executeCommand("agent", "create", "no-skill-agent", "--runtime", "codex"); err != nil {
+		t.Fatalf("create no-skill agent: %v", err)
+	}
+	if out, err := executeCommand("use", "--kind", "profile", "no-skill-agent"); err != nil {
+		t.Fatalf("use no-skill profile returned error: %v\n%s", err, out)
+	}
+	for _, path := range []string{
+		activeSkillPath,
+		filepath.Join(codexHome, "skills", "probe-skill", "SKILL.md"),
+		filepath.Join(claudeConfigDir, "skills", "probe-skill", "SKILL.md"),
+	} {
+		assertPathMissing(t, path)
+	}
+}
+
 func TestUseMissingActivationStableErrors(t *testing.T) {
 	home := t.TempDir()
 	project := t.TempDir()
@@ -258,6 +452,25 @@ func assertCurrentActive(t *testing.T, want string) {
 	}
 	if got := strings.TrimSpace(string(data)); got != want {
 		t.Fatalf("unexpected current active:\n got: %q\nwant: %q", got, want)
+	}
+}
+
+func readFileForTest(t *testing.T, path string) string {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	return string(data)
+}
+
+func writeFileForTest(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatalf("create %s: %v", filepath.Dir(path), err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("write %s: %v", path, err)
 	}
 }
 

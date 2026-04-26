@@ -208,7 +208,7 @@ func TestRenderWritesManagedPathsAndPreservesUserConfig(t *testing.T) {
 
 	configContent := readFile(t, configPath)
 	for _, expected := range []string{
-		"profile = \"user\"",
+		"profile = \"avm-coding\"",
 		"secret = \"${DO_NOT_EXPAND}\"",
 		"# >>> avm:codex:codex-config",
 		"[profiles.avm-coding]",
@@ -217,6 +217,12 @@ func TestRenderWritesManagedPathsAndPreservesUserConfig(t *testing.T) {
 		if !strings.Contains(configContent, expected) {
 			t.Fatalf("rendered config missing %q:\n%s", expected, configContent)
 		}
+	}
+	if strings.Contains(configContent, "profile = \"user\"") {
+		t.Fatalf("old top-level profile selector was not replaced:\n%s", configContent)
+	}
+	if strings.Index(configContent, "# >>> avm:codex:codex-config") > strings.Index(configContent, "[user]") {
+		t.Fatalf("AVM config block must stay before user tables so profile remains top-level:\n%s", configContent)
 	}
 	if strings.Contains(configContent, "old = true") {
 		t.Fatalf("old AVM block was not replaced:\n%s", configContent)
@@ -281,7 +287,7 @@ func TestRenderStructuredConfigReplaceAndAppend(t *testing.T) {
 
 			content := readFile(t, configPath)
 			for _, expected := range []string{
-				"profile = \"user\"",
+				"profile = \"avm-coding\"",
 				"secret = \"${DO_NOT_EXPAND}\"",
 				"# >>> avm:codex:codex-config",
 				"[profiles.avm-coding]",
@@ -291,6 +297,9 @@ func TestRenderStructuredConfigReplaceAndAppend(t *testing.T) {
 				if !strings.Contains(content, expected) {
 					t.Fatalf("rendered config missing %q:\n%s", expected, content)
 				}
+			}
+			if strings.Contains(content, "profile = \"user\"") {
+				t.Fatalf("old top-level profile selector was not replaced:\n%s", content)
 			}
 			if strings.Contains(content, "old = true") {
 				t.Fatalf("old AVM block was not replaced:\n%s", content)
@@ -411,6 +420,73 @@ func TestRenderRejectsManagedAGENTSMD(t *testing.T) {
 	if got := readFile(t, agentsPath); got != "user-owned\n" {
 		t.Fatalf("AGENTS.md changed despite render error: %q", got)
 	}
+}
+
+func TestRenderLinksActiveSkillDirectories(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	activeDir := filepath.Join(t.TempDir(), "active")
+	skillDir := filepath.Join(activeDir, "skills", "probe-skill")
+	if err := os.MkdirAll(skillDir, 0o700); err != nil {
+		t.Fatalf("create active skill dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte("AVM_SKILL_PROBE_MARKER_20260426\n"), 0o600); err != nil {
+		t.Fatalf("write active skill: %v", err)
+	}
+
+	a := codex.New(codex.WithConfigDir(dir))
+	input := richInput("/repo")
+	input.ActiveDir = activeDir
+	input.Capabilities.Skills = []adapter.CapabilityRef{
+		{Name: "probe-skill", Path: filepath.ToSlash(filepath.Join(skillDir, "SKILL.md"))},
+	}
+
+	plan, err := a.Plan(ctx, input)
+	if err != nil {
+		t.Fatalf("plan failed: %v", err)
+	}
+	result, err := a.Render(ctx, plan)
+	if err != nil {
+		t.Fatalf("render failed: %v", err)
+	}
+	if !operationChanged(result, "codex-skill-probe-skill") {
+		t.Fatalf("codex skill link should report changed")
+	}
+	runtimeSkillPath := filepath.Join(dir, "skills", "probe-skill", "SKILL.md")
+	assertPathContains(t, runtimeSkillPath, "avm_managed: true")
+	assertPathContains(t, runtimeSkillPath, "AVM_SKILL_PROBE_MARKER_20260426")
+
+	second, err := a.Render(ctx, plan)
+	if err != nil {
+		t.Fatalf("second render failed: %v", err)
+	}
+	if operationChanged(second, "codex-skill-probe-skill") {
+		t.Fatalf("codex skill link should be unchanged on second render")
+	}
+
+	userSkillPath := filepath.Join(dir, "skills", "user-skill", "SKILL.md")
+	if err := os.MkdirAll(filepath.Dir(userSkillPath), 0o700); err != nil {
+		t.Fatalf("create user skill dir: %v", err)
+	}
+	if err := os.WriteFile(userSkillPath, []byte("---\nname: user-skill\ndescription: user-owned\n---\n\nkeep\n"), 0o600); err != nil {
+		t.Fatalf("write user skill: %v", err)
+	}
+
+	cleanupInput := input
+	cleanupInput.Capabilities.Skills = nil
+	cleanupPlan, err := a.Plan(ctx, cleanupInput)
+	if err != nil {
+		t.Fatalf("cleanup plan failed: %v", err)
+	}
+	cleanupResult, err := a.Render(ctx, cleanupPlan)
+	if err != nil {
+		t.Fatalf("cleanup render failed: %v", err)
+	}
+	if !operationChanged(cleanupResult, "codex-skill-remove-probe-skill") {
+		t.Fatalf("codex stale skill removal should report changed")
+	}
+	assertPathMissing(t, runtimeSkillPath)
+	assertPathContains(t, userSkillPath, "user-owned")
 }
 
 func TestManagedPathsReturnsCopy(t *testing.T) {
@@ -673,4 +749,19 @@ func readFile(t *testing.T, path string) string {
 		t.Fatalf("read %s: %v", path, err)
 	}
 	return string(data)
+}
+
+func assertPathContains(t *testing.T, path, expected string) {
+	t.Helper()
+	content := readFile(t, path)
+	if !strings.Contains(content, expected) {
+		t.Fatalf("%s missing %q:\n%s", path, expected, content)
+	}
+}
+
+func assertPathMissing(t *testing.T, path string) {
+	t.Helper()
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("expected %s to be missing, stat err: %v", path, err)
+	}
 }

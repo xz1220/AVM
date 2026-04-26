@@ -2,6 +2,7 @@ package sync
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -18,6 +19,7 @@ type activeManifest struct {
 	GeneratedAt   time.Time         `yaml:"generated_at"`
 	RuntimeAgents map[string]string `yaml:"runtime_agents,omitempty"`
 	Profiles      []string          `yaml:"profiles,omitempty"`
+	Skills        []string          `yaml:"skills,omitempty"`
 	Targets       []string          `yaml:"targets,omitempty"`
 }
 
@@ -96,11 +98,13 @@ func buildActiveTree(root string, resolved *config.ResolvedActivation, now time.
 	}
 
 	runtimeAgents := runtimeAgentNames(resolved)
+	skills := activeSkills(resolved)
 	manifest := activeManifest{
 		Active:        resolved.Active,
 		GeneratedAt:   now.UTC(),
 		RuntimeAgents: runtimeAgents,
 		Profiles:      sortedUniqueValues(runtimeAgents),
+		Skills:        sortedSkillNames(skills),
 		Targets:       append([]string(nil), resolved.Targets...),
 	}
 	if err := writeYAML(filepath.Join(root, "manifest.yaml"), manifest); err != nil {
@@ -137,7 +141,136 @@ func buildActiveTree(root string, resolved *config.ResolvedActivation, now time.
 		writtenAgents[name] = struct{}{}
 	}
 
+	for _, skill := range skills {
+		if !safeActiveName(skill.Name) {
+			return fmt.Errorf("skill name %q cannot be used in active path", skill.Name)
+		}
+		if skill.SourceDir == "" {
+			continue
+		}
+		if err := linkOrCopyDir(skill.SourceDir, filepath.Join(root, "skills", skill.Name)); err != nil {
+			return err
+		}
+	}
+
 	return nil
+}
+
+func activeSkills(resolved *config.ResolvedActivation) []config.ResolvedSkill {
+	if resolved == nil || len(resolved.Capabilities) == 0 {
+		return nil
+	}
+	byName := make(map[string]config.ResolvedSkill)
+	for _, capabilities := range resolved.Capabilities {
+		for _, skill := range capabilities.SkillRefs {
+			if skill.Name == "" {
+				continue
+			}
+			if _, ok := byName[skill.Name]; !ok {
+				byName[skill.Name] = skill
+			}
+		}
+	}
+	names := make([]string, 0, len(byName))
+	for name := range byName {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	out := make([]config.ResolvedSkill, 0, len(names))
+	for _, name := range names {
+		out = append(out, byName[name])
+	}
+	return out
+}
+
+func sortedSkillNames(skills []config.ResolvedSkill) []string {
+	names := make([]string, 0, len(skills))
+	for _, skill := range skills {
+		if skill.Name != "" {
+			names = append(names, skill.Name)
+		}
+	}
+	sort.Strings(names)
+	return names
+}
+
+func linkOrCopyDir(source, target string) error {
+	if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
+		return err
+	}
+	if err := os.Symlink(source, target); err == nil {
+		return nil
+	}
+	return copyDir(source, target)
+}
+
+func copyDir(source, target string) error {
+	info, err := os.Stat(source)
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("skill source %s is not a directory", source)
+	}
+	if err := os.MkdirAll(target, info.Mode().Perm()); err != nil {
+		return err
+	}
+	entries, err := os.ReadDir(source)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		sourcePath := filepath.Join(source, entry.Name())
+		targetPath := filepath.Join(target, entry.Name())
+		info, err := os.Lstat(sourcePath)
+		if err != nil {
+			return err
+		}
+		switch {
+		case info.Mode()&os.ModeSymlink != 0:
+			link, err := os.Readlink(sourcePath)
+			if err != nil {
+				return err
+			}
+			if err := os.Symlink(link, targetPath); err != nil {
+				return err
+			}
+		case info.IsDir():
+			if err := copyDir(sourcePath, targetPath); err != nil {
+				return err
+			}
+		case info.Mode().IsRegular():
+			if err := copyFile(sourcePath, targetPath, info.Mode().Perm()); err != nil {
+				return err
+			}
+		default:
+			return fmt.Errorf("unsupported skill registry path type %s", sourcePath)
+		}
+	}
+	return nil
+}
+
+func copyFile(source, target string, mode os.FileMode) error {
+	if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
+		return err
+	}
+	in, err := os.Open(source)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	out, err := os.OpenFile(target, os.O_CREATE|os.O_EXCL|os.O_WRONLY, mode)
+	if err != nil {
+		return err
+	}
+
+	if _, err := io.Copy(out, in); err != nil {
+		_ = out.Close()
+		return err
+	}
+	return out.Close()
 }
 
 func runtimeAgentNames(resolved *config.ResolvedActivation) map[string]string {

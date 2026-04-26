@@ -24,9 +24,13 @@ const (
 	claudeBinaryName  = "claude"
 	claudeDirName     = ".claude"
 	agentsDirName     = "agents"
+	skillsDirName     = "skills"
+	skillFileName     = "SKILL.md"
 	mcpFileName       = ".mcp.json"
 	agentOperationID  = "claude-agent"
 	mcpOperationID    = "claude-mcp"
+	skillOperationID  = "claude-skill"
+	avmManagedKey     = "avm_managed"
 	avmMetadataKey    = "_avm"
 	avmMetadataSubkey = "claude-code"
 )
@@ -138,6 +142,8 @@ func (a *Adapter) Plan(ctx adapter.Context, input adapter.RenderInput) (*adapter
 	projectRoot := firstNonEmpty(input.ProjectRoot, a.projectRoot, ".")
 	agentPath := filepath.ToSlash(filepath.Join(projectRoot, claudeDirName, agentsDirName, agentFileName+".md"))
 	mcpPath := filepath.ToSlash(filepath.Join(projectRoot, mcpFileName))
+	skillFiles, skillWarnings := claudeSkillFiles(input, a.claudeHome())
+	staleSkillFiles := staleClaudeSkillFiles(a.claudeHome(), skillFileNames(skillFiles))
 
 	render := renderContext{
 		input:         input,
@@ -165,6 +171,39 @@ func (a *Adapter) Plan(ctx adapter.Context, input adapter.RenderInput) (*adapter
 			Description: "write Claude Code AVM-managed agent file",
 			Required:    true,
 		},
+	}
+	for _, skillFile := range skillFiles {
+		managedPaths = append(managedPaths, adapter.ManagedPath{
+			Path:        skillFile.target,
+			Owner:       "avm",
+			Description: "Claude Code skill file rendered from the AVM active skill set.",
+			Required:    true,
+			MergeMode:   adapter.MergeModeWholeFile,
+		})
+		operations = append(operations, adapter.RenderOperation{
+			ID:          skillOperationID + "-" + slug(skillFile.name),
+			Action:      adapter.OperationWriteFile,
+			Path:        skillFile.target,
+			Content:     skillFile.content,
+			Description: "write Claude Code skill file from AVM active skill",
+			Required:    true,
+		})
+	}
+	for _, stale := range staleSkillFiles {
+		managedPaths = append(managedPaths, adapter.ManagedPath{
+			Path:        stale.target,
+			Owner:       "avm",
+			Description: "Stale Claude Code AVM-managed skill file removed because it is not in the current active skill set.",
+			Required:    false,
+			MergeMode:   adapter.MergeModeWholeFile,
+		})
+		operations = append(operations, adapter.RenderOperation{
+			ID:          skillOperationID + "-remove-" + slug(stale.name),
+			Action:      adapter.OperationRemoveFile,
+			Path:        stale.target,
+			Description: "remove stale Claude Code AVM-managed skill file",
+			Required:    false,
+		})
 	}
 
 	if len(render.renderableMCPServers()) > 0 {
@@ -194,6 +233,7 @@ func (a *Adapter) Plan(ctx adapter.Context, input adapter.RenderInput) (*adapter
 		Mappings:     render.mappings(),
 		Warnings:     render.warnings(),
 	}
+	plan.Warnings = append(plan.Warnings, skillWarnings...)
 	return renderplan.Normalize(plan), nil
 }
 
@@ -533,6 +573,11 @@ func applyOperation(operation adapter.RenderOperation, managed adapter.ManagedPa
 			return false, fmt.Errorf("claude-code write operation %q requires whole-file managed path %s", operation.ID, operation.Path)
 		}
 		return writeFileAtomic(operation.Path, operation.Content)
+	case adapter.OperationRemoveFile:
+		if managed.MergeMode != adapter.MergeModeWholeFile {
+			return false, fmt.Errorf("claude-code remove operation %q requires whole-file managed path %s", operation.ID, operation.Path)
+		}
+		return removeFileAndEmptyParent(operation.Path)
 	case adapter.OperationStructuredSet:
 		if managed.MergeMode != adapter.MergeModeStructuredSection {
 			return false, fmt.Errorf("claude-code structured operation %q requires structured-section managed path %s", operation.ID, operation.Path)
@@ -579,6 +624,17 @@ func writeFileAtomic(path string, content []byte) (bool, error) {
 	if err := os.Rename(tempName, path); err != nil {
 		return false, err
 	}
+	return true, nil
+}
+
+func removeFileAndEmptyParent(path string) (bool, error) {
+	if err := os.Remove(path); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return false, nil
+		}
+		return false, err
+	}
+	_ = os.Remove(filepath.Dir(path))
 	return true, nil
 }
 
@@ -745,6 +801,188 @@ func mcpServerConfigFromAdapter(server adapter.MCPServer) mcpServerConfig {
 		}
 	}
 	return config
+}
+
+type skillFile struct {
+	name    string
+	target  string
+	content []byte
+}
+
+type staleSkillFile struct {
+	name   string
+	target string
+}
+
+func claudeSkillFiles(input adapter.RenderInput, configDir string) ([]skillFile, []string) {
+	if input.ActiveDir == "" || len(input.Capabilities.Skills) == 0 {
+		return nil, nil
+	}
+	var files []skillFile
+	var warnings []string
+	seen := make(map[string]struct{}, len(input.Capabilities.Skills))
+	for _, ref := range input.Capabilities.Skills {
+		if ref.Name == "" || ref.Path == "" {
+			continue
+		}
+		if _, ok := seen[ref.Name]; ok {
+			continue
+		}
+		seen[ref.Name] = struct{}{}
+		content, err := renderRuntimeSkillFile(ref.Name, filepath.FromSlash(ref.Path))
+		if err != nil {
+			warnings = append(warnings, fmt.Sprintf("skill %q was not installed because %v", ref.Name, err))
+			continue
+		}
+		files = append(files, skillFile{
+			name:    ref.Name,
+			target:  filepath.ToSlash(filepath.Join(configDir, skillsDirName, ref.Name, skillFileName)),
+			content: content,
+		})
+	}
+	sort.SliceStable(files, func(i, j int) bool {
+		return files[i].name < files[j].name
+	})
+	sort.Strings(warnings)
+	return files, warnings
+}
+
+func skillFileNames(files []skillFile) map[string]struct{} {
+	names := make(map[string]struct{}, len(files))
+	for _, file := range files {
+		if file.name != "" {
+			names[file.name] = struct{}{}
+		}
+	}
+	return names
+}
+
+func staleClaudeSkillFiles(configDir string, desired map[string]struct{}) []staleSkillFile {
+	skillsDir := filepath.Join(configDir, skillsDirName)
+	entries, err := os.ReadDir(skillsDir)
+	if err != nil {
+		return nil
+	}
+	var stale []staleSkillFile
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if !safeRuntimeSkillName(name) {
+			continue
+		}
+		if _, ok := desired[name]; ok {
+			continue
+		}
+		path := filepath.Join(skillsDir, name, skillFileName)
+		if runtimeSkillFileAVMManaged(path, name) {
+			stale = append(stale, staleSkillFile{name: name, target: filepath.ToSlash(path)})
+		}
+	}
+	sort.SliceStable(stale, func(i, j int) bool {
+		return stale[i].name < stale[j].name
+	})
+	return stale
+}
+
+func renderRuntimeSkillFile(name, sourcePath string) ([]byte, error) {
+	raw, err := os.ReadFile(sourcePath)
+	if err != nil {
+		return nil, err
+	}
+	if hasSkillFrontmatter(raw) {
+		return ensureRuntimeSkillManaged(raw), nil
+	}
+	var b strings.Builder
+	b.WriteString("---\n")
+	writeYAMLString(&b, "name", name)
+	writeYAMLString(&b, "description", "AVM skill "+name+".")
+	writeLine(&b, "%s: true", avmManagedKey)
+	b.WriteString("---\n\n")
+	b.Write(bytes.TrimLeft(raw, "\n"))
+	return []byte(b.String()), nil
+}
+
+func ensureRuntimeSkillManaged(raw []byte) []byte {
+	if runtimeSkillContentAVMManaged(raw, "") {
+		return raw
+	}
+	start, end := skillFrontmatterSpan(raw)
+	if start < 0 || end < 0 {
+		return raw
+	}
+	out := make([]byte, 0, len(raw)+len(avmManagedKey)+8)
+	out = append(out, raw[:end]...)
+	if end > 0 && raw[end-1] != '\n' {
+		out = append(out, '\n')
+	}
+	out = append(out, []byte(avmManagedKey+": true\n")...)
+	out = append(out, raw[end:]...)
+	return out
+}
+
+func hasSkillFrontmatter(raw []byte) bool {
+	start, end := skillFrontmatterSpan(raw)
+	return start == 0 && end > 0
+}
+
+func runtimeSkillFileAVMManaged(path, name string) bool {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	return runtimeSkillContentAVMManaged(raw, name)
+}
+
+func runtimeSkillContentAVMManaged(raw []byte, name string) bool {
+	start, end := skillFrontmatterSpan(raw)
+	if start != 0 || end <= 0 {
+		return false
+	}
+	frontmatter := string(raw[start:end])
+	if strings.Contains(frontmatter, avmManagedKey+": true") || strings.Contains(frontmatter, avmManagedKey+": \"true\"") {
+		return true
+	}
+	if name != "" && strings.Contains(frontmatter, `description: "AVM skill `+name+`."`) {
+		return true
+	}
+	return false
+}
+
+func skillFrontmatterSpan(raw []byte) (int, int) {
+	trimmed := bytes.TrimLeft(raw, "\ufeff\n\r\t ")
+	if len(trimmed) != len(raw) {
+		return -1, -1
+	}
+	if !bytes.HasPrefix(raw, []byte("---\n")) && !bytes.HasPrefix(raw, []byte("---\r\n")) {
+		return -1, -1
+	}
+	lineStart := 3
+	if len(raw) > 3 && raw[3] == '\r' {
+		lineStart = 5
+	} else if len(raw) > 3 && raw[3] == '\n' {
+		lineStart = 4
+	}
+	for lineStart < len(raw) {
+		lineEnd := lineStart
+		for lineEnd < len(raw) && raw[lineEnd] != '\n' {
+			lineEnd++
+		}
+		line := bytes.TrimSpace(bytes.TrimRight(raw[lineStart:lineEnd], "\r"))
+		if bytes.Equal(line, []byte("---")) {
+			return 0, lineStart
+		}
+		lineStart = lineEnd
+		if lineStart < len(raw) && raw[lineStart] == '\n' {
+			lineStart++
+		}
+	}
+	return -1, -1
+}
+
+func safeRuntimeSkillName(name string) bool {
+	return name != "" && name != "." && name != ".." && !strings.Contains(name, "/") && !strings.Contains(name, "\\")
 }
 
 func importAgents(dir string) ([]adapter.ImportedAgent, error) {

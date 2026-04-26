@@ -17,11 +17,30 @@ type ResolvedActivation struct {
 }
 
 type ResolvedCapabilities struct {
-	Skills   []string          `yaml:"skills,omitempty" json:"skills,omitempty"`
-	MCPs     []string          `yaml:"mcps,omitempty" json:"mcps,omitempty"`
-	Commands []string          `yaml:"commands,omitempty" json:"commands,omitempty"`
-	Hooks    []string          `yaml:"hooks,omitempty" json:"hooks,omitempty"`
-	Toolsets map[string]string `yaml:"toolsets,omitempty" json:"toolsets,omitempty"`
+	Skills     []string            `yaml:"skills,omitempty" json:"skills,omitempty"`
+	SkillRefs  []ResolvedSkill     `yaml:"skill_refs,omitempty" json:"skill_refs,omitempty"`
+	MCPs       []string            `yaml:"mcps,omitempty" json:"mcps,omitempty"`
+	MCPServers []ResolvedMCPServer `yaml:"mcp_servers,omitempty" json:"mcp_servers,omitempty"`
+	Commands   []string            `yaml:"commands,omitempty" json:"commands,omitempty"`
+	Hooks      []string            `yaml:"hooks,omitempty" json:"hooks,omitempty"`
+	Toolsets   map[string]string   `yaml:"toolsets,omitempty" json:"toolsets,omitempty"`
+}
+
+type ResolvedMCPServer struct {
+	Name       string            `yaml:"name" json:"name"`
+	Type       string            `yaml:"type,omitempty" json:"type,omitempty"`
+	Command    string            `yaml:"command,omitempty" json:"command,omitempty"`
+	Args       []string          `yaml:"args,omitempty" json:"args,omitempty"`
+	Env        map[string]string `yaml:"env,omitempty" json:"env,omitempty"`
+	URL        string            `yaml:"url,omitempty" json:"url,omitempty"`
+	Headers    map[string]string `yaml:"headers,omitempty" json:"headers,omitempty"`
+	SourcePath string            `yaml:"source_path,omitempty" json:"source_path,omitempty"`
+}
+
+type ResolvedSkill struct {
+	Name       string `yaml:"name" json:"name"`
+	SourceDir  string `yaml:"source_dir" json:"source_dir"`
+	SourcePath string `yaml:"source_path" json:"source_path"`
 }
 
 func ResolveActivation(ref ActiveRef, cwd string) (*ResolvedActivation, error) {
@@ -55,12 +74,15 @@ func resolveProfileActivation(ref ActiveRef, cwd string) (*ResolvedActivation, e
 		runtime: *agent,
 	}
 
+	capabilities, capabilitySources, warnings := capabilitiesForAgents(agents)
+
 	return &ResolvedActivation{
 		Active:        ref,
 		RuntimeAgents: agents,
-		Capabilities:  capabilitiesForAgents(agents),
+		Capabilities:  capabilities,
 		Targets:       targets,
-		SourceFiles:   uniqueStrings(append([]string{agentPath}, targetSources...)),
+		SourceFiles:   uniqueStrings(append(append([]string{agentPath}, targetSources...), capabilitySources...)),
+		Warnings:      warnings,
 	}, nil
 }
 
@@ -105,13 +127,16 @@ func resolveEnvironmentActivation(ref ActiveRef, cwd string) (*ResolvedActivatio
 		sourceFiles = append(sourceFiles, agentPath)
 	}
 
+	capabilities, capabilitySources, warnings := capabilitiesForAgents(agents)
+
 	return &ResolvedActivation{
 		Active:        ref,
 		Env:           env,
 		RuntimeAgents: agents,
-		Capabilities:  capabilitiesForAgents(agents),
+		Capabilities:  capabilities,
 		Targets:       cloneStringSlice(env.Targets),
-		SourceFiles:   uniqueStrings(sourceFiles),
+		SourceFiles:   uniqueStrings(append(sourceFiles, capabilitySources...)),
+		Warnings:      warnings,
 	}, nil
 }
 
@@ -150,25 +175,61 @@ func targetsForProfile(agent *AgentProfile) ([]string, []string, error) {
 	return []string{agent.Runtime.Preferred}, nil, nil
 }
 
-func capabilitiesForAgents(agents map[string]AgentProfile) map[string]ResolvedCapabilities {
+func capabilitiesForAgents(agents map[string]AgentProfile) (map[string]ResolvedCapabilities, []string, []string) {
 	if len(agents) == 0 {
-		return nil
+		return nil, nil, nil
 	}
 	capabilities := make(map[string]ResolvedCapabilities, len(agents))
+	var sourceFiles []string
+	var warnings []string
 	for runtime, agent := range agents {
-		capabilities[runtime] = capabilitiesForAgent(agent)
+		resolved, sources, capabilityWarnings := capabilitiesForAgent(agent)
+		capabilities[runtime] = resolved
+		sourceFiles = append(sourceFiles, sources...)
+		for _, warning := range capabilityWarnings {
+			if warning != "" {
+				warnings = append(warnings, runtime+": "+warning)
+			}
+		}
 	}
-	return capabilities
+	return capabilities, uniqueStrings(sourceFiles), uniqueStrings(warnings)
 }
 
-func capabilitiesForAgent(agent AgentProfile) ResolvedCapabilities {
-	return ResolvedCapabilities{
+func capabilitiesForAgent(agent AgentProfile) (ResolvedCapabilities, []string, []string) {
+	resolved := ResolvedCapabilities{
 		Skills:   cloneStringSlice(agent.Capabilities.Skills),
 		MCPs:     cloneStringSlice(agent.Capabilities.MCPs),
 		Commands: cloneStringSlice(agent.Capabilities.Commands),
 		Hooks:    cloneStringSlice(agent.Capabilities.Hooks),
 		Toolsets: cloneStringMap(agent.Capabilities.Toolsets),
 	}
+
+	var sourceFiles []string
+	var warnings []string
+	for _, name := range resolved.Skills {
+		skill, path, err := resolvedSkill(name)
+		if err != nil {
+			if !os.IsNotExist(err) {
+				warnings = append(warnings, "skill registry "+name+" could not be read: "+err.Error())
+			}
+			continue
+		}
+		resolved.SkillRefs = append(resolved.SkillRefs, skill)
+		sourceFiles = append(sourceFiles, path)
+	}
+	for _, name := range resolved.MCPs {
+		server, path, err := resolvedMCPServer(name)
+		if err != nil {
+			if !os.IsNotExist(err) {
+				warnings = append(warnings, "mcp registry "+name+" could not be read: "+err.Error())
+			}
+			resolved.MCPServers = append(resolved.MCPServers, ResolvedMCPServer{Name: name})
+			continue
+		}
+		resolved.MCPServers = append(resolved.MCPServers, server)
+		sourceFiles = append(sourceFiles, path)
+	}
+	return resolved, sourceFiles, warnings
 }
 
 func sortedRuntimeKeys(agents map[string]RuntimeAgent) []string {

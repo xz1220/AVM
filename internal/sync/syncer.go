@@ -1,8 +1,12 @@
 package sync
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -66,6 +70,7 @@ func (s *Syncer) SyncActivation(ctx context.Context, resolved *config.ResolvedAc
 	if syncState.Runtimes == nil {
 		syncState.Runtimes = make(map[string]state.RuntimeState)
 	}
+	priorRuntimes := cloneRuntimeStates(syncState.Runtimes)
 
 	result := &Result{
 		Active: resolved.Active,
@@ -97,8 +102,14 @@ func (s *Syncer) SyncActivation(ctx context.Context, resolved *config.ResolvedAc
 		syncState.Runtimes[input.Runtime] = runtimeStateFromTarget(targetResult, targetResult.ManagedPaths, prior, now)
 	}
 	result.Warnings = uniqueNonEmptyStrings(result.Warnings)
+	syncErr := resultError(result)
 
 	if !opts.DryRun {
+		if syncErr == nil {
+			if err := cleanupStaleRuntimeSkills(priorRuntimes, syncState.Runtimes, resolved.Active); err != nil {
+				return result, err
+			}
+		}
 		if err := state.SaveSyncState(opts.StatePath, syncState); err != nil {
 			return result, err
 		}
@@ -109,8 +120,8 @@ func (s *Syncer) SyncActivation(ctx context.Context, resolved *config.ResolvedAc
 		}
 	}
 
-	if err := resultError(result); err != nil {
-		return result, err
+	if syncErr != nil {
+		return result, syncErr
 	}
 	return result, nil
 }
@@ -188,7 +199,7 @@ func (s *Syncer) renderTarget(ctx context.Context, input adapter.RenderInput, ac
 	}
 	targetResult.RenderResult = renderResult
 	if len(renderResult.ManagedPaths) > 0 {
-		targetResult.ManagedPaths = append([]adapter.ManagedPath(nil), renderResult.ManagedPaths...)
+		targetResult.ManagedPaths = managedPathsAfterRender(renderResult.ManagedPaths, renderResult.Operations)
 	}
 	if len(renderResult.Mappings) > 0 {
 		targetResult.Mappings = append([]adapter.FieldMapping(nil), renderResult.Mappings...)
@@ -249,6 +260,28 @@ func runtimeStateFromTarget(target TargetResult, managedPaths []adapter.ManagedP
 	return runtimeState
 }
 
+func managedPathsAfterRender(paths []adapter.ManagedPath, operations []adapter.RenderOperationResult) []adapter.ManagedPath {
+	removed := make(map[string]struct{})
+	for _, operation := range operations {
+		if operation.Action != adapter.OperationRemoveFile || operation.Path == "" {
+			continue
+		}
+		removed[filepath.Clean(operation.Path)] = struct{}{}
+	}
+	if len(removed) == 0 {
+		return append([]adapter.ManagedPath(nil), paths...)
+	}
+
+	filtered := make([]adapter.ManagedPath, 0, len(paths))
+	for _, path := range paths {
+		if _, ok := removed[filepath.Clean(path.Path)]; ok {
+			continue
+		}
+		filtered = append(filtered, path)
+	}
+	return filtered
+}
+
 func managedPathStatesWithPriorHashes(paths []adapter.ManagedPath, prior []state.ManagedPathState) []state.ManagedPathState {
 	states := state.ManagedPathStates(paths)
 	if len(states) == 0 || len(prior) == 0 {
@@ -270,6 +303,144 @@ func managedPathStatesWithPriorHashes(paths []adapter.ManagedPath, prior []state
 		states[i].ManagedHash = priorState.ManagedHash
 	}
 	return states
+}
+
+func cloneRuntimeStates(in map[string]state.RuntimeState) map[string]state.RuntimeState {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]state.RuntimeState, len(in))
+	for runtime, runtimeState := range in {
+		runtimeState.ManagedPaths = append([]state.ManagedPathState(nil), runtimeState.ManagedPaths...)
+		runtimeState.Mappings = append([]state.MappingState(nil), runtimeState.Mappings...)
+		runtimeState.Warnings = append([]string(nil), runtimeState.Warnings...)
+		out[runtime] = runtimeState
+	}
+	return out
+}
+
+func cleanupStaleRuntimeSkills(prior, current map[string]state.RuntimeState, active config.ActiveRef) error {
+	if len(prior) == 0 {
+		return nil
+	}
+
+	currentPaths := make(map[string]struct{})
+	for _, runtimeState := range current {
+		if runtimeState.Active != active {
+			continue
+		}
+		for _, managedPath := range runtimeState.ManagedPaths {
+			if managedPath.Path != "" {
+				currentPaths[filepath.Clean(managedPath.Path)] = struct{}{}
+			}
+		}
+	}
+
+	stale := make(map[string]struct{})
+	for _, runtimeState := range prior {
+		for _, managedPath := range runtimeState.ManagedPaths {
+			if managedPath.Path == "" {
+				continue
+			}
+			path := filepath.Clean(managedPath.Path)
+			if _, ok := currentPaths[path]; ok {
+				continue
+			}
+			if isRuntimeSkillManagedPath(path) && runtimeSkillFileAVMManaged(path) {
+				stale[path] = struct{}{}
+			}
+		}
+	}
+
+	paths := make([]string, 0, len(stale))
+	for path := range stale {
+		paths = append(paths, path)
+	}
+	sort.Strings(paths)
+	for _, path := range paths {
+		if err := removeRuntimeSkillFileAndEmptyParent(path); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func isRuntimeSkillManagedPath(path string) bool {
+	clean := filepath.Clean(path)
+	if filepath.Base(clean) != "SKILL.md" {
+		return false
+	}
+	skillDir := filepath.Dir(clean)
+	if skillDir == "." || skillDir == string(filepath.Separator) {
+		return false
+	}
+	return filepath.Base(filepath.Dir(skillDir)) == "skills"
+}
+
+func runtimeSkillFileAVMManaged(path string) bool {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	name := filepath.Base(filepath.Dir(filepath.Clean(path)))
+	return runtimeSkillContentAVMManaged(raw, name)
+}
+
+func runtimeSkillContentAVMManaged(raw []byte, name string) bool {
+	start, end := skillFrontmatterSpan(raw)
+	if start != 0 || end <= 0 {
+		return false
+	}
+	frontmatter := string(raw[start:end])
+	if strings.Contains(frontmatter, "avm_managed: true") || strings.Contains(frontmatter, "avm_managed: \"true\"") {
+		return true
+	}
+	if name != "" && strings.Contains(frontmatter, `description: "AVM skill `+name+`."`) {
+		return true
+	}
+	return false
+}
+
+func skillFrontmatterSpan(raw []byte) (int, int) {
+	trimmed := bytes.TrimLeft(raw, "\ufeff\n\r\t ")
+	if len(trimmed) != len(raw) {
+		return -1, -1
+	}
+	if !bytes.HasPrefix(raw, []byte("---\n")) && !bytes.HasPrefix(raw, []byte("---\r\n")) {
+		return -1, -1
+	}
+	lineStart := 3
+	if len(raw) > 3 && raw[3] == '\r' {
+		lineStart = 5
+	} else if len(raw) > 3 && raw[3] == '\n' {
+		lineStart = 4
+	}
+	for lineStart < len(raw) {
+		lineEnd := lineStart
+		for lineEnd < len(raw) && raw[lineEnd] != '\n' {
+			lineEnd++
+		}
+		line := bytes.TrimSpace(bytes.TrimRight(raw[lineStart:lineEnd], "\r"))
+		if bytes.Equal(line, []byte("---")) {
+			return 0, lineStart
+		}
+		lineStart = lineEnd
+		if lineStart < len(raw) && raw[lineStart] == '\n' {
+			lineStart++
+		}
+	}
+	return -1, -1
+}
+
+func removeRuntimeSkillFileAndEmptyParent(path string) error {
+	if err := os.Remove(path); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return err
+	}
+	_ = os.Remove(filepath.Dir(path))
+	return nil
 }
 
 func defaultOptions(opts Options) Options {

@@ -22,8 +22,12 @@ const (
 	runtimeName       = "codex"
 	configFileName    = "config.toml"
 	agentsDirName     = "agents"
+	skillsDirName     = "skills"
+	skillFileName     = "SKILL.md"
+	avmManagedKey     = "avm_managed"
 	configOperationID = "codex-config"
 	roleOperationID   = "codex-agent-role"
+	skillOperationID  = "codex-skill"
 )
 
 // Adapter renders the conservative Phase 1 Codex path.
@@ -106,6 +110,8 @@ func (a *Adapter) Plan(ctx adapter.Context, input adapter.RenderInput) (*adapter
 	configPath := filepath.ToSlash(filepath.Join(a.codexHome(), configFileName))
 	rolePath := filepath.ToSlash(filepath.Join(a.codexHome(), agentsDirName, roleName+".toml"))
 	roleConfigPath := "./" + filepath.ToSlash(filepath.Join(agentsDirName, roleName+".toml"))
+	skillFiles, skillWarnings := codexSkillFiles(input, a.codexHome())
+	staleSkillFiles := staleCodexSkillFiles(a.codexHome(), skillFileNames(skillFiles))
 
 	render := renderContext{
 		input:          input,
@@ -158,6 +164,40 @@ func (a *Adapter) Plan(ctx adapter.Context, input adapter.RenderInput) (*adapter
 		Mappings: render.mappings(),
 		Warnings: render.warnings(),
 	}
+	for _, skillFile := range skillFiles {
+		plan.ManagedPaths = append(plan.ManagedPaths, adapter.ManagedPath{
+			Path:        skillFile.target,
+			Owner:       "avm",
+			Description: "Codex skill file rendered from the AVM active skill set.",
+			Required:    true,
+			MergeMode:   adapter.MergeModeWholeFile,
+		})
+		plan.Operations = append(plan.Operations, adapter.RenderOperation{
+			ID:          skillOperationID + "-" + slug(skillFile.name),
+			Action:      adapter.OperationWriteFile,
+			Path:        skillFile.target,
+			Content:     skillFile.content,
+			Description: "write Codex skill file from AVM active skill",
+			Required:    true,
+		})
+	}
+	for _, stale := range staleSkillFiles {
+		plan.ManagedPaths = append(plan.ManagedPaths, adapter.ManagedPath{
+			Path:        stale.target,
+			Owner:       "avm",
+			Description: "Stale Codex AVM-managed skill file removed because it is not in the current active skill set.",
+			Required:    false,
+			MergeMode:   adapter.MergeModeWholeFile,
+		})
+		plan.Operations = append(plan.Operations, adapter.RenderOperation{
+			ID:          skillOperationID + "-remove-" + slug(stale.name),
+			Action:      adapter.OperationRemoveFile,
+			Path:        stale.target,
+			Description: "remove stale Codex AVM-managed skill file",
+			Required:    false,
+		})
+	}
+	plan.Warnings = append(plan.Warnings, skillWarnings...)
 
 	return renderplan.Normalize(plan), nil
 }
@@ -269,6 +309,8 @@ type renderContext struct {
 
 func (r renderContext) renderConfigSection() string {
 	var b strings.Builder
+	writeTomlString(&b, "profile", r.profileName)
+	b.WriteByte('\n')
 	writeLine(&b, "[profiles.%s]", r.profileName)
 	writeTomlString(&b, "model", r.input.Agent.Model.Model)
 	writeTomlString(&b, "model_reasoning_effort", r.input.Agent.Model.ReasoningEffort)
@@ -550,6 +592,10 @@ func validateOperation(operation adapter.RenderOperation, managed adapter.Manage
 		if managed.MergeMode != adapter.MergeModeWholeFile {
 			return fmt.Errorf("codex write operation %q requires whole-file managed path %s", operation.ID, operation.Path)
 		}
+	case adapter.OperationRemoveFile:
+		if managed.MergeMode != adapter.MergeModeWholeFile {
+			return fmt.Errorf("codex remove operation %q requires whole-file managed path %s", operation.ID, operation.Path)
+		}
 	case adapter.OperationStructuredSet:
 		if managed.MergeMode != adapter.MergeModeStructuredSection {
 			return fmt.Errorf("codex structured operation %q requires structured-section managed path %s", operation.ID, operation.Path)
@@ -578,7 +624,12 @@ func applyOperation(operation adapter.RenderOperation, managed adapter.ManagedPa
 	switch operation.Action {
 	case adapter.OperationWriteFile:
 		return writeFileAtomic(operation.Path, operation.Content)
+	case adapter.OperationRemoveFile:
+		return removeFileAndEmptyParent(operation.Path)
 	case adapter.OperationStructuredSet:
+		if operation.ID == configOperationID {
+			return mergeCodexConfigBlock(operation.Path, operation.ID, operation.Content)
+		}
 		return mergeMarkedBlock(operation.Path, operation.ID, operation.Content)
 	default:
 		return false, fmt.Errorf("codex adapter cannot apply %s operation %q at %s", operation.Action, operation.ID, operation.Path)
@@ -621,6 +672,17 @@ func writeFileAtomic(path string, content []byte) (bool, error) {
 	return true, nil
 }
 
+func removeFileAndEmptyParent(path string) (bool, error) {
+	if err := os.Remove(path); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return false, nil
+		}
+		return false, err
+	}
+	_ = os.Remove(filepath.Dir(path))
+	return true, nil
+}
+
 func mergeMarkedBlock(path, operationID string, content []byte) (bool, error) {
 	if operationID == "" {
 		return false, fmt.Errorf("codex structured operation for %s must have an id", path)
@@ -641,6 +703,30 @@ func mergeMarkedBlock(path, operationID string, content []byte) (bool, error) {
 		if err != nil {
 			return false, err
 		}
+	}
+	return writeFileAtomic(path, next)
+}
+
+func mergeCodexConfigBlock(path, operationID string, content []byte) (bool, error) {
+	if operationID == "" {
+		return false, fmt.Errorf("codex structured operation for %s must have an id", path)
+	}
+
+	begin := []byte("# >>> avm:codex:" + operationID)
+	end := []byte("# <<< avm:codex:" + operationID)
+	block := []byte(string(begin) + "\n" + strings.TrimRight(string(content), "\n") + "\n" + string(end) + "\n")
+
+	existing, err := os.ReadFile(path)
+	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			return false, err
+		}
+		existing = nil
+	}
+
+	next, err := replaceCodexConfigBlock(existing, begin, end, block)
+	if err != nil {
+		return false, err
 	}
 	return writeFileAtomic(path, next)
 }
@@ -681,6 +767,112 @@ func replaceOrAppendMarkedBlock(existing, begin, end, block []byte) ([]byte, err
 	}
 	out = append(out, block...)
 	return out, nil
+}
+
+func replaceCodexConfigBlock(existing, begin, end, block []byte) ([]byte, error) {
+	start, stop, found, err := markedBlockSpan(existing, begin, end)
+	if err != nil {
+		return nil, err
+	}
+
+	base := append([]byte(nil), existing...)
+	if found {
+		base = make([]byte, 0, len(existing)-stop+start)
+		base = append(base, existing[:start]...)
+		base = append(base, existing[stop:]...)
+	}
+	base = removeTopLevelProfile(base)
+	return insertBeforeFirstTable(base, block), nil
+}
+
+func removeTopLevelProfile(content []byte) []byte {
+	var out []byte
+	for lineStart := 0; lineStart < len(content); {
+		lineEnd := lineStart
+		for lineEnd < len(content) && content[lineEnd] != '\n' {
+			lineEnd++
+		}
+		nextLineStart := lineEnd
+		if nextLineStart < len(content) && content[nextLineStart] == '\n' {
+			nextLineStart++
+		}
+		lineWithNewline := content[lineStart:nextLineStart]
+		line := bytes.TrimRight(content[lineStart:lineEnd], "\r")
+
+		if isTomlTableHeader(line) {
+			out = append(out, content[lineStart:]...)
+			return out
+		}
+		if !isTopLevelProfileLine(line) {
+			out = append(out, lineWithNewline...)
+		}
+		lineStart = nextLineStart
+	}
+	return out
+}
+
+func insertBeforeFirstTable(content, block []byte) []byte {
+	offset := firstTomlTableOffset(content)
+	if offset < 0 {
+		out := append([]byte(nil), content...)
+		if len(bytes.TrimSpace(out)) > 0 && !bytes.HasSuffix(out, []byte("\n")) {
+			out = append(out, '\n')
+		}
+		if len(bytes.TrimSpace(out)) > 0 && !bytes.HasSuffix(out, []byte("\n\n")) {
+			out = append(out, '\n')
+		}
+		out = append(out, block...)
+		return out
+	}
+
+	prefix := append([]byte(nil), content[:offset]...)
+	suffix := content[offset:]
+	out := make([]byte, 0, len(prefix)+len(block)+len(suffix)+2)
+	out = append(out, prefix...)
+	if len(bytes.TrimSpace(prefix)) > 0 && !bytes.HasSuffix(out, []byte("\n")) {
+		out = append(out, '\n')
+	}
+	if len(bytes.TrimSpace(prefix)) > 0 && !bytes.HasSuffix(out, []byte("\n\n")) {
+		out = append(out, '\n')
+	}
+	out = append(out, block...)
+	out = append(out, suffix...)
+	return out
+}
+
+func firstTomlTableOffset(content []byte) int {
+	for lineStart := 0; lineStart < len(content); {
+		lineEnd := lineStart
+		for lineEnd < len(content) && content[lineEnd] != '\n' {
+			lineEnd++
+		}
+		line := bytes.TrimRight(content[lineStart:lineEnd], "\r")
+		if isTomlTableHeader(line) {
+			return lineStart
+		}
+		lineStart = lineEnd
+		if lineStart < len(content) && content[lineStart] == '\n' {
+			lineStart++
+		}
+	}
+	return -1
+}
+
+func isTopLevelProfileLine(line []byte) bool {
+	trimmed := bytes.TrimSpace(line)
+	if len(trimmed) == 0 || trimmed[0] == '#' {
+		return false
+	}
+	if !bytes.HasPrefix(trimmed, []byte("profile")) {
+		return false
+	}
+	rest := bytes.TrimSpace(trimmed[len("profile"):])
+	return len(rest) > 0 && rest[0] == '='
+}
+
+func isTomlTableHeader(line []byte) bool {
+	trimmed := bytes.TrimSpace(line)
+	return len(trimmed) > 0 && trimmed[0] == '['
 }
 
 func markedBlockSpan(existing, begin, end []byte) (int, int, bool, error) {
@@ -781,7 +973,199 @@ func validateCodexManagedPath(path, configDir string) error {
 		return nil
 	}
 
-	return fmt.Errorf("codex managed path %s is outside adapter ownership; allowed paths are %s and %s", path, configPath, filepath.Join(agentsDir, "*.toml"))
+	skillsDir := filepath.Join(home, skillsDirName)
+	rel, err = filepath.Rel(skillsDir, target)
+	if err == nil && rel != "." && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && filepath.Base(rel) == skillFileName && filepath.Dir(filepath.Dir(rel)) == "." {
+		return nil
+	}
+
+	return fmt.Errorf("codex managed path %s is outside adapter ownership; allowed paths are %s, %s, and %s", path, configPath, filepath.Join(agentsDir, "*.toml"), filepath.Join(skillsDir, "*", "SKILL.md"))
+}
+
+type skillFile struct {
+	name    string
+	target  string
+	content []byte
+}
+
+type staleSkillFile struct {
+	name   string
+	target string
+}
+
+func codexSkillFiles(input adapter.RenderInput, configDir string) ([]skillFile, []string) {
+	if input.ActiveDir == "" || len(input.Capabilities.Skills) == 0 {
+		return nil, nil
+	}
+	var files []skillFile
+	var warnings []string
+	seen := make(map[string]struct{}, len(input.Capabilities.Skills))
+	for _, ref := range input.Capabilities.Skills {
+		if ref.Name == "" || ref.Path == "" {
+			continue
+		}
+		if _, ok := seen[ref.Name]; ok {
+			continue
+		}
+		seen[ref.Name] = struct{}{}
+		content, err := renderRuntimeSkillFile(ref.Name, filepath.FromSlash(ref.Path))
+		if err != nil {
+			warnings = append(warnings, fmt.Sprintf("skill %q was not installed because %v", ref.Name, err))
+			continue
+		}
+		files = append(files, skillFile{
+			name:    ref.Name,
+			target:  filepath.ToSlash(filepath.Join(configDir, skillsDirName, ref.Name, skillFileName)),
+			content: content,
+		})
+	}
+	sort.SliceStable(files, func(i, j int) bool {
+		return files[i].name < files[j].name
+	})
+	sort.Strings(warnings)
+	return files, warnings
+}
+
+func skillFileNames(files []skillFile) map[string]struct{} {
+	names := make(map[string]struct{}, len(files))
+	for _, file := range files {
+		if file.name != "" {
+			names[file.name] = struct{}{}
+		}
+	}
+	return names
+}
+
+func staleCodexSkillFiles(configDir string, desired map[string]struct{}) []staleSkillFile {
+	skillsDir := filepath.Join(configDir, skillsDirName)
+	entries, err := os.ReadDir(skillsDir)
+	if err != nil {
+		return nil
+	}
+	var stale []staleSkillFile
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if !safeRuntimeSkillName(name) {
+			continue
+		}
+		if _, ok := desired[name]; ok {
+			continue
+		}
+		path := filepath.Join(skillsDir, name, skillFileName)
+		if runtimeSkillFileAVMManaged(path, name) {
+			stale = append(stale, staleSkillFile{name: name, target: filepath.ToSlash(path)})
+		}
+	}
+	sort.SliceStable(stale, func(i, j int) bool {
+		return stale[i].name < stale[j].name
+	})
+	return stale
+}
+
+func renderRuntimeSkillFile(name, sourcePath string) ([]byte, error) {
+	raw, err := os.ReadFile(sourcePath)
+	if err != nil {
+		return nil, err
+	}
+	if hasSkillFrontmatter(raw) {
+		return ensureRuntimeSkillManaged(raw), nil
+	}
+	var b strings.Builder
+	b.WriteString("---\n")
+	writeTomlLikeYAMLString(&b, "name", name)
+	writeTomlLikeYAMLString(&b, "description", "AVM skill "+name+".")
+	writeLine(&b, "%s: true", avmManagedKey)
+	b.WriteString("---\n\n")
+	b.Write(bytes.TrimLeft(raw, "\n"))
+	return []byte(b.String()), nil
+}
+
+func ensureRuntimeSkillManaged(raw []byte) []byte {
+	if runtimeSkillContentAVMManaged(raw, "") {
+		return raw
+	}
+	start, end := skillFrontmatterSpan(raw)
+	if start < 0 || end < 0 {
+		return raw
+	}
+	out := make([]byte, 0, len(raw)+len(avmManagedKey)+8)
+	out = append(out, raw[:end]...)
+	if end > 0 && raw[end-1] != '\n' {
+		out = append(out, '\n')
+	}
+	out = append(out, []byte(avmManagedKey+": true\n")...)
+	out = append(out, raw[end:]...)
+	return out
+}
+
+func hasSkillFrontmatter(raw []byte) bool {
+	start, end := skillFrontmatterSpan(raw)
+	return start == 0 && end > 0
+}
+
+func runtimeSkillFileAVMManaged(path, name string) bool {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	return runtimeSkillContentAVMManaged(raw, name)
+}
+
+func runtimeSkillContentAVMManaged(raw []byte, name string) bool {
+	start, end := skillFrontmatterSpan(raw)
+	if start != 0 || end <= 0 {
+		return false
+	}
+	frontmatter := string(raw[start:end])
+	if strings.Contains(frontmatter, avmManagedKey+": true") || strings.Contains(frontmatter, avmManagedKey+": \"true\"") {
+		return true
+	}
+	if name != "" && strings.Contains(frontmatter, `description: "AVM skill `+name+`."`) {
+		return true
+	}
+	return false
+}
+
+func skillFrontmatterSpan(raw []byte) (int, int) {
+	trimmed := bytes.TrimLeft(raw, "\ufeff\n\r\t ")
+	if len(trimmed) != len(raw) {
+		return -1, -1
+	}
+	if !bytes.HasPrefix(raw, []byte("---\n")) && !bytes.HasPrefix(raw, []byte("---\r\n")) {
+		return -1, -1
+	}
+	lineStart := 3
+	if len(raw) > 3 && raw[3] == '\r' {
+		lineStart = 5
+	} else if len(raw) > 3 && raw[3] == '\n' {
+		lineStart = 4
+	}
+	for lineStart < len(raw) {
+		lineEnd := lineStart
+		for lineEnd < len(raw) && raw[lineEnd] != '\n' {
+			lineEnd++
+		}
+		line := bytes.TrimSpace(bytes.TrimRight(raw[lineStart:lineEnd], "\r"))
+		if bytes.Equal(line, []byte("---")) {
+			return 0, lineStart
+		}
+		lineStart = lineEnd
+		if lineStart < len(raw) && raw[lineStart] == '\n' {
+			lineStart++
+		}
+	}
+	return -1, -1
+}
+
+func safeRuntimeSkillName(name string) bool {
+	return name != "" && name != "." && name != ".." && !strings.ContainsAny(name, `/\`)
+}
+
+func writeTomlLikeYAMLString(builder *strings.Builder, key, value string) {
+	writeLine(builder, "%s: %s", key, strconv.Quote(value))
 }
 
 func writeLine(builder *strings.Builder, format string, args ...any) {

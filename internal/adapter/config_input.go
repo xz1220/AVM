@@ -2,6 +2,7 @@ package adapter
 
 import (
 	"fmt"
+	"path/filepath"
 	"sort"
 
 	"github.com/xz1220/agent-vm/internal/config"
@@ -32,7 +33,7 @@ func RenderInputFromResolved(resolved *config.ResolvedActivation, runtime string
 		Active:       activeRefFromConfig(resolved.Active),
 		Runtime:      runtime,
 		Agent:        agentFromConfig(agent),
-		Capabilities: capabilitySetFromConfig(resolved.Capabilities[runtime]),
+		Capabilities: capabilitySetFromConfig(resolved.Capabilities[runtime], opts.ActiveDir),
 		Memory:       portableMemoryFromConfig(resolved.Memory[runtime]),
 		ProjectRoot:  opts.ProjectRoot,
 		ActiveDir:    opts.ActiveDir,
@@ -90,10 +91,10 @@ func agentFromConfig(agent config.AgentProfile) Agent {
 	}
 }
 
-func capabilitySetFromConfig(capabilities config.ResolvedCapabilities) CapabilitySet {
+func capabilitySetFromConfig(capabilities config.ResolvedCapabilities, activeDir string) CapabilitySet {
 	return CapabilitySet{
-		Skills:     capabilityRefs(capabilities.Skills),
-		MCPServers: mcpServers(capabilities.MCPs),
+		Skills:     skillRefs(capabilities, activeDir),
+		MCPServers: mcpServers(capabilities),
 		Commands:   capabilityRefs(capabilities.Commands),
 		Hooks:      capabilityRefs(capabilities.Hooks),
 		Toolsets:   toolsets(capabilities.Toolsets),
@@ -110,14 +111,106 @@ func capabilityRefs(names []string) []CapabilityRef {
 	return refs
 }
 
-func mcpServers(names []string) []MCPServer {
-	servers := make([]MCPServer, 0, len(names))
-	for _, name := range names {
+func skillRefs(capabilities config.ResolvedCapabilities, activeDir string) []CapabilityRef {
+	byName := make(map[string]config.ResolvedSkill, len(capabilities.SkillRefs))
+	for _, skill := range capabilities.SkillRefs {
+		if skill.Name != "" {
+			byName[skill.Name] = skill
+		}
+	}
+
+	refs := make([]CapabilityRef, 0, len(capabilities.Skills))
+	seen := make(map[string]struct{}, len(capabilities.Skills))
+	for _, name := range capabilities.Skills {
+		if name == "" {
+			continue
+		}
+		seen[name] = struct{}{}
+		ref := CapabilityRef{Name: name}
+		if _, ok := byName[name]; ok && activeDir != "" {
+			ref.Path = filepath.ToSlash(filepath.Join(activeDir, "skills", name, "SKILL.md"))
+		}
+		refs = append(refs, ref)
+	}
+
+	var extras []string
+	for name := range byName {
+		if _, ok := seen[name]; !ok {
+			extras = append(extras, name)
+		}
+	}
+	sort.Strings(extras)
+	for _, name := range extras {
+		ref := CapabilityRef{Name: name}
+		if activeDir != "" {
+			ref.Path = filepath.ToSlash(filepath.Join(activeDir, "skills", name, "SKILL.md"))
+		}
+		refs = append(refs, ref)
+	}
+	return refs
+}
+
+func mcpServers(capabilities config.ResolvedCapabilities) []MCPServer {
+	byName := make(map[string]config.ResolvedMCPServer, len(capabilities.MCPServers))
+	for _, server := range capabilities.MCPServers {
+		if server.Name != "" {
+			byName[server.Name] = server
+		}
+	}
+
+	servers := make([]MCPServer, 0, len(capabilities.MCPs))
+	seen := make(map[string]struct{}, len(capabilities.MCPs))
+	for _, name := range capabilities.MCPs {
 		if name != "" {
+			seen[name] = struct{}{}
+			if server, ok := byName[name]; ok {
+				servers = append(servers, mcpServerFromConfig(server))
+				continue
+			}
 			servers = append(servers, MCPServer{Name: name})
 		}
 	}
+
+	var extras []string
+	for name := range byName {
+		if _, ok := seen[name]; !ok {
+			extras = append(extras, name)
+		}
+	}
+	sort.Strings(extras)
+	for _, name := range extras {
+		servers = append(servers, mcpServerFromConfig(byName[name]))
+	}
 	return servers
+}
+
+func mcpServerFromConfig(server config.ResolvedMCPServer) MCPServer {
+	return MCPServer{
+		Name:    server.Name,
+		Command: server.Command,
+		Args:    append([]string(nil), server.Args...),
+		Env:     envVars(server.Env),
+		URL:     server.URL,
+	}
+}
+
+func envVars(values map[string]string) []EnvVar {
+	if len(values) == 0 {
+		return nil
+	}
+	names := make([]string, 0, len(values))
+	for name := range values {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	vars := make([]EnvVar, 0, len(names))
+	for _, name := range names {
+		if name != "" {
+			vars = append(vars, EnvVar{Name: name, Value: values[name]})
+		}
+	}
+	return vars
 }
 
 func toolsets(values map[string]string) []Toolset {

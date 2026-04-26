@@ -113,6 +113,31 @@ type CapabilityRefs struct {
 	Toolsets map[string]string `yaml:"toolsets,omitempty"`
 }
 
+type MCPRegistryEntry struct {
+	Name        string          `yaml:"name"`
+	Kind        string          `yaml:"kind"`
+	Description string          `yaml:"description,omitempty"`
+	Source      string          `yaml:"source,omitempty"`
+	Server      MCPServerConfig `yaml:"server"`
+	Policy      MCPPolicy       `yaml:"policy,omitempty"`
+	Tags        []string        `yaml:"tags,omitempty"`
+}
+
+type MCPServerConfig struct {
+	Type    string            `yaml:"type,omitempty"`
+	Command string            `yaml:"command,omitempty"`
+	Args    []string          `yaml:"args,omitempty"`
+	Env     map[string]string `yaml:"env,omitempty"`
+	URL     string            `yaml:"url,omitempty"`
+	Headers map[string]string `yaml:"headers,omitempty"`
+}
+
+type MCPPolicy struct {
+	EnabledTools    []string `yaml:"enabled_tools,omitempty"`
+	DisabledTools   []string `yaml:"disabled_tools,omitempty"`
+	DefaultApproval string   `yaml:"default_approval,omitempty"`
+}
+
 type Permissions struct {
 	Approval              string   `yaml:"approval"`
 	Sandbox               string   `yaml:"sandbox"`
