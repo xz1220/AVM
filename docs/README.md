@@ -13,6 +13,7 @@ docs/
 │   └── tech-design.md
 ├── engineering/
 │   ├── architecture.md
+│   ├── activation-model.md
 │   ├── data-model.md
 │   ├── file-layout.md
 │   ├── fixture-conventions.md
@@ -39,14 +40,15 @@ docs/
 3. [engineering/implementation-plan.md](./engineering/implementation-plan.md) — coding 路径、并发 lane 和文件所有权。
 4. [engineering/acceptance.md](./engineering/acceptance.md) — Phase 1 验收标准。
 5. [engineering/stage5-acceptance-gap-report.md](./engineering/stage5-acceptance-gap-report.md) — Stage 5 当前可执行验收结果和缺口清单。
-6. [research/runtime-mapping.md](./research/runtime-mapping.md) — runtime 配置映射调研。
-7. [engineering/fixture-conventions.md](./engineering/fixture-conventions.md) — fixture layout、路径占位符和 runtime convention。
-8. [test/phase1-blackbox-test-plan.md](./test/phase1-blackbox-test-plan.md) — Phase 1 黑盒测试方案，按真实用户路径验证安装、切换和 runtime 生效。
-9. [test/phase1-blackbox-test-report-2026-04-26.md](./test/phase1-blackbox-test-report-2026-04-26.md) — Phase 1 黑盒测试执行结果和问题清单。
-10. [test/phase1-blackbox-retest-report-2026-04-26.md](./test/phase1-blackbox-retest-report-2026-04-26.md) — Phase 1 修复后的黑盒复测结果。
-11. [test/phase1-skills-blackbox-report-2026-04-26.md](./test/phase1-skills-blackbox-report-2026-04-26.md) — Phase 1 skills 真实内容加载黑盒测试结果。
-12. [test/phase1-skills-blackbox-retest-report-2026-04-26.md](./test/phase1-skills-blackbox-retest-report-2026-04-26.md) — Phase 1 skills 修复后的黑盒复测结果。
-13. [test/phase1-skills-cleanup-retest-report-2026-04-26.md](./test/phase1-skills-cleanup-retest-report-2026-04-26.md) — Phase 1 skills stale 清理修复后的黑盒复测结果。
+6. [engineering/activation-model.md](./engineering/activation-model.md) — AVM 激活模型、GVM-like shell-local 设计和持久渲染边界。
+7. [research/runtime-mapping.md](./research/runtime-mapping.md) — runtime 配置映射调研。
+8. [engineering/fixture-conventions.md](./engineering/fixture-conventions.md) — fixture layout、路径占位符和 runtime convention。
+9. [test/phase1-blackbox-test-plan.md](./test/phase1-blackbox-test-plan.md) — Phase 1 黑盒测试方案，按真实用户路径验证安装、切换和 runtime 生效。
+10. [test/phase1-blackbox-test-report-2026-04-26.md](./test/phase1-blackbox-test-report-2026-04-26.md) — Phase 1 黑盒测试执行结果和问题清单。
+11. [test/phase1-blackbox-retest-report-2026-04-26.md](./test/phase1-blackbox-retest-report-2026-04-26.md) — Phase 1 修复后的黑盒复测结果。
+12. [test/phase1-skills-blackbox-report-2026-04-26.md](./test/phase1-skills-blackbox-report-2026-04-26.md) — Phase 1 skills 真实内容加载黑盒测试结果。
+13. [test/phase1-skills-blackbox-retest-report-2026-04-26.md](./test/phase1-skills-blackbox-retest-report-2026-04-26.md) — Phase 1 skills 修复后的黑盒复测结果。
+14. [test/phase1-skills-cleanup-retest-report-2026-04-26.md](./test/phase1-skills-cleanup-retest-report-2026-04-26.md) — Phase 1 skills stale 清理修复后的黑盒复测结果。
 
 ## 当前文档口径
 

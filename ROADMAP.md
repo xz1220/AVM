@@ -11,26 +11,29 @@ Goal: make `avm use <profile>` a trustworthy local workflow.
 - [x] config model for Agent Profile, Environment, capabilities, and memory refs
 - [x] `avm init`
 - [x] `avm agent create/list/show`
-- [x] `avm env create`
+- [x] `avm env create` (including `--local` project override)
 - [x] `avm memory import --from <file> --dry-run`
 - [x] adapter contract and fake adapter
-- [ ] active manifest rebuild under `~/.avm/active`
-- [ ] `avm use <profile-or-env>`
-- [ ] `avm status`
-- [ ] `avm deactivate`
-- [ ] backup and conflict detection for managed runtime paths
-- [ ] first concrete adapter write path
+- [x] active manifest rebuild under `~/.avm/active`
+- [x] `avm use <profile-or-env>`
+- [x] `avm status`
+- [x] `avm deactivate`
+- [x] backup and conflict detection for managed runtime paths
+- [x] first concrete adapter write path
+- [x] `avm sync`
+- [x] `avm shell init` (bash/zsh/fish)
+- [x] `avm agent show --runtime` mapping preview
 
 ## Phase 2: Runtime Coverage
 
 Goal: support the runtimes that AI coding power users actually combine.
 
-- [ ] Codex profile rendering
-- [ ] Claude Code agent and MCP rendering
-- [ ] Cline rules and MCP rendering
-- [ ] Cursor PoC rendering
-- [ ] support matrix in `avm status`
-- [ ] export/import of portable profiles
+- [x] Codex profile rendering
+- [x] Claude Code agent and MCP rendering
+- [x] Cline rules and MCP rendering
+- [x] Cursor PoC rendering
+- [x] support matrix in `avm status`
+- [x] export/import of portable profiles
 
 ## Phase 3: Portable Memory
 
