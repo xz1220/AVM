@@ -1,6 +1,7 @@
 .DS_Store
 
 # Go
+/avm
 /bin/
 /dist/
 *.test
