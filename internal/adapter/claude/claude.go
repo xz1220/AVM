@@ -13,10 +13,10 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"unicode"
 
 	"github.com/xz1220/agent-vm/internal/adapter"
 	"github.com/xz1220/agent-vm/internal/adapter/renderplan"
+	"github.com/xz1220/agent-vm/internal/adapter/shared"
 )
 
 const (
@@ -137,9 +137,9 @@ func (a *Adapter) Plan(ctx adapter.Context, input adapter.RenderInput) (*adapter
 		return nil, fmt.Errorf("claude-code adapter cannot plan runtime %q", runtime)
 	}
 
-	agentName := firstNonEmpty(input.Agent.Name, input.Active.Name, "agent")
-	agentFileName := slug(agentName)
-	projectRoot := firstNonEmpty(input.ProjectRoot, a.projectRoot, ".")
+	agentName := shared.FirstNonEmpty(input.Agent.Name, input.Active.Name, "agent")
+	agentFileName := shared.Slug(agentName)
+	projectRoot := shared.FirstNonEmpty(input.ProjectRoot, a.projectRoot, ".")
 	agentPath := filepath.ToSlash(filepath.Join(projectRoot, claudeDirName, agentsDirName, agentFileName+".md"))
 	mcpPath := filepath.ToSlash(filepath.Join(projectRoot, mcpFileName))
 	skillFiles, skillWarnings := claudeSkillFiles(input, a.claudeHome())
@@ -181,7 +181,7 @@ func (a *Adapter) Plan(ctx adapter.Context, input adapter.RenderInput) (*adapter
 			MergeMode:   adapter.MergeModeWholeFile,
 		})
 		operations = append(operations, adapter.RenderOperation{
-			ID:          skillOperationID + "-" + slug(skillFile.name),
+			ID:          skillOperationID + "-" + shared.Slug(skillFile.name),
 			Action:      adapter.OperationWriteFile,
 			Path:        skillFile.target,
 			Content:     skillFile.content,
@@ -198,7 +198,7 @@ func (a *Adapter) Plan(ctx adapter.Context, input adapter.RenderInput) (*adapter
 			MergeMode:   adapter.MergeModeWholeFile,
 		})
 		operations = append(operations, adapter.RenderOperation{
-			ID:          skillOperationID + "-remove-" + slug(stale.name),
+			ID:          skillOperationID + "-remove-" + shared.Slug(stale.name),
 			Action:      adapter.OperationRemoveFile,
 			Path:        stale.target,
 			Description: "remove stale Claude Code AVM-managed skill file",
@@ -248,7 +248,7 @@ func (a *Adapter) Render(ctx adapter.Context, plan *adapter.RenderPlan) (*adapte
 		return nil, fmt.Errorf("claude-code adapter cannot render runtime %q", normalized.Runtime)
 	}
 
-	managed := managedPathIndex(normalized.ManagedPaths)
+	managed := shared.ManagedPathIndex(normalized.ManagedPaths)
 	for _, operation := range normalized.Operations {
 		if _, ok := managed[operation.Path]; !ok {
 			return nil, fmt.Errorf("claude-code render operation %q targets unmanaged path %s", operation.ID, operation.Path)
@@ -339,8 +339,8 @@ func (r renderContext) renderAgentFile() string {
 	writeYAMLString(&b, "description", r.description())
 	writeYAMLString(&b, "model", r.input.Agent.Model.Model)
 	writeYAMLString(&b, "effort", r.input.Agent.Model.ReasoningEffort)
-	writeYAMLStringList(&b, "tools", sortedStrings(r.input.Agent.Permissions.Allow))
-	writeYAMLStringList(&b, "disallowedTools", sortedStrings(r.input.Agent.Permissions.Deny))
+	writeYAMLStringList(&b, "tools", shared.SortedStrings(r.input.Agent.Permissions.Allow))
+	writeYAMLStringList(&b, "disallowedTools", shared.SortedStrings(r.input.Agent.Permissions.Deny))
 	writeYAMLStringList(&b, "skills", capabilityNames(r.input.Capabilities.Skills))
 	writeYAMLStringList(&b, "mcpServers", mcpServerNames(r.renderableMCPServers()))
 	writeYAMLStringList(&b, "hooks", capabilityNames(r.input.Capabilities.Hooks))
@@ -358,7 +358,7 @@ func (r renderContext) renderMCPDocument() string {
 	for _, server := range r.renderableMCPServers() {
 		servers[server.Name] = mcpServerConfigFromAdapter(server)
 	}
-	data, err := marshalJSON(map[string]any{"mcpServers": servers})
+	data, err := shared.MarshalJSON(map[string]any{"mcpServers": servers})
 	if err != nil {
 		return "{\n  \"mcpServers\": {}\n}\n"
 	}
@@ -366,7 +366,7 @@ func (r renderContext) renderMCPDocument() string {
 }
 
 func (r renderContext) description() string {
-	return firstNonEmpty(r.input.Agent.Description, "AVM agent "+r.agentName)
+	return shared.FirstNonEmpty(r.input.Agent.Description, "AVM agent "+r.agentName)
 }
 
 func (r renderContext) agentInstructions() string {
@@ -378,16 +378,16 @@ func (r renderContext) agentInstructions() string {
 		sections = append(sections, section("Developer instructions", r.input.Agent.Instructions.Developer))
 	}
 	if len(r.input.Agent.Instructions.References) > 0 {
-		sections = append(sections, bulletSection("Instruction references", sortedStrings(r.input.Agent.Instructions.References)))
+		sections = append(sections, bulletSection("Instruction references", shared.SortedStrings(r.input.Agent.Instructions.References)))
 	}
 	if len(r.input.Capabilities.Skills) > 0 {
 		sections = append(sections, bulletSection("Active AVM skills", skillLines(r.input.Capabilities.Skills)))
 	}
 	if len(r.input.Agent.MemoryRefs) > 0 {
-		sections = append(sections, bulletSection("AVM memory refs", memoryRefLines(r.input.Agent.MemoryRefs)))
+		sections = append(sections, bulletSection("AVM memory refs", shared.MemoryRefLines(r.input.Agent.MemoryRefs)))
 	}
 	if len(r.input.Memory) > 0 {
-		sections = append(sections, bulletSection("Portable memory", portableMemoryLines(r.input.Memory)))
+		sections = append(sections, bulletSection("Portable memory", shared.PortableMemoryLines(r.input.Memory)))
 	}
 	if r.input.Agent.Permissions.Approval != "" {
 		sections = append(sections, section("Permission approval policy", r.input.Agent.Permissions.Approval))
@@ -399,10 +399,10 @@ func (r renderContext) agentInstructions() string {
 		sections = append(sections, section("Response verbosity", r.input.Agent.Model.Verbosity))
 	}
 	if len(r.input.Capabilities.Toolsets) > 0 {
-		sections = append(sections, bulletSection("Requested toolsets", toolsetLines(r.input.Capabilities.Toolsets)))
+		sections = append(sections, bulletSection("Requested toolsets", shared.ToolsetLines(r.input.Capabilities.Toolsets)))
 	}
 	if len(r.input.Capabilities.Commands) > 0 {
-		sections = append(sections, bulletSection("Requested AVM commands", capabilityLines(r.input.Capabilities.Commands)))
+		sections = append(sections, bulletSection("Requested AVM commands", shared.CapabilityLines(r.input.Capabilities.Commands)))
 	}
 	if len(sections) == 0 {
 		return "Follow the AVM agent profile for " + r.agentName + "."
@@ -521,9 +521,9 @@ func (r renderContext) mappings() []adapter.FieldMapping {
 			Reason:     "Claude Code adapter Phase 1 does not enforce AVM toolset modes natively.",
 		})
 	}
-	for _, server := range sortedMCPServers(r.input.Capabilities.MCPServers) {
+	for _, server := range shared.SortedMCPServers(r.input.Capabilities.MCPServers) {
 		source := "capabilities.mcp_servers." + server.Name
-		if mcpServerRenderable(server) {
+		if shared.MCPServerRenderable(server) {
 			mappings = append(mappings, adapter.FieldMapping{
 				SourcePath: source,
 				TargetPath: r.mcpPath + "#mcpServers." + server.Name,
@@ -542,8 +542,8 @@ func (r renderContext) mappings() []adapter.FieldMapping {
 
 func (r renderContext) warnings() []string {
 	var warnings []string
-	for _, server := range sortedMCPServers(r.input.Capabilities.MCPServers) {
-		if !mcpServerRenderable(server) {
+	for _, server := range shared.SortedMCPServers(r.input.Capabilities.MCPServers) {
+		if !shared.MCPServerRenderable(server) {
 			warnings = append(warnings, fmt.Sprintf("mcp server %q was not rendered because command or URL is missing", server.Name))
 		}
 	}
@@ -556,10 +556,10 @@ func (r renderContext) warnings() []string {
 }
 
 func (r renderContext) renderableMCPServers() []adapter.MCPServer {
-	servers := sortedMCPServers(r.input.Capabilities.MCPServers)
+	servers := shared.SortedMCPServers(r.input.Capabilities.MCPServers)
 	out := make([]adapter.MCPServer, 0, len(servers))
 	for _, server := range servers {
-		if mcpServerRenderable(server) {
+		if shared.MCPServerRenderable(server) {
 			out = append(out, server)
 		}
 	}
@@ -572,12 +572,12 @@ func applyOperation(operation adapter.RenderOperation, managed adapter.ManagedPa
 		if managed.MergeMode != adapter.MergeModeWholeFile {
 			return false, fmt.Errorf("claude-code write operation %q requires whole-file managed path %s", operation.ID, operation.Path)
 		}
-		return writeFileAtomic(operation.Path, operation.Content)
+		return shared.WriteFileAtomic(operation.Path, operation.Content)
 	case adapter.OperationRemoveFile:
 		if managed.MergeMode != adapter.MergeModeWholeFile {
 			return false, fmt.Errorf("claude-code remove operation %q requires whole-file managed path %s", operation.ID, operation.Path)
 		}
-		return removeFileAndEmptyParent(operation.Path)
+		return shared.RemoveFileAndEmptyParent(operation.Path)
 	case adapter.OperationStructuredSet:
 		if managed.MergeMode != adapter.MergeModeStructuredSection {
 			return false, fmt.Errorf("claude-code structured operation %q requires structured-section managed path %s", operation.ID, operation.Path)
@@ -589,53 +589,6 @@ func applyOperation(operation adapter.RenderOperation, managed adapter.ManagedPa
 	default:
 		return false, fmt.Errorf("claude-code adapter cannot apply %s operation %q at %s", operation.Action, operation.ID, operation.Path)
 	}
-}
-
-func writeFileAtomic(path string, content []byte) (bool, error) {
-	existing, err := os.ReadFile(path)
-	if err == nil && bytes.Equal(existing, content) {
-		return false, nil
-	}
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return false, err
-	}
-
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return false, err
-	}
-	temp, err := os.CreateTemp(filepath.Dir(path), ".avm-*.tmp")
-	if err != nil {
-		return false, err
-	}
-	tempName := temp.Name()
-	defer os.Remove(tempName)
-
-	if _, err := temp.Write(content); err != nil {
-		temp.Close()
-		return false, err
-	}
-	if err := temp.Chmod(0o600); err != nil {
-		temp.Close()
-		return false, err
-	}
-	if err := temp.Close(); err != nil {
-		return false, err
-	}
-	if err := os.Rename(tempName, path); err != nil {
-		return false, err
-	}
-	return true, nil
-}
-
-func removeFileAndEmptyParent(path string) (bool, error) {
-	if err := os.Remove(path); err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return false, nil
-		}
-		return false, err
-	}
-	_ = os.Remove(filepath.Dir(path))
-	return true, nil
 }
 
 func mergeMCPDocument(path string, desiredContent []byte) (bool, error) {
@@ -676,11 +629,11 @@ func mergeMCPDocument(path string, desiredContent []byte) (bool, error) {
 	root["mcpServers"] = servers
 	setManagedMCPServers(root, desiredNames)
 
-	next, err := marshalJSON(root)
+	next, err := shared.MarshalJSON(root)
 	if err != nil {
 		return false, err
 	}
-	return writeFileAtomic(path, next)
+	return shared.WriteFileAtomic(path, next)
 }
 
 func objectField(root map[string]any, key string) (map[string]any, error) {
@@ -755,17 +708,6 @@ func setManagedMCPServers(root map[string]any, names []string) {
 		avmObject[avmMetadataSubkey] = runtimeObject
 	}
 	runtimeObject["managedMCPServers"] = names
-}
-
-func marshalJSON(value any) ([]byte, error) {
-	var buf bytes.Buffer
-	encoder := json.NewEncoder(&buf)
-	encoder.SetEscapeHTML(false)
-	encoder.SetIndent("", "  ")
-	if err := encoder.Encode(value); err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
 }
 
 type mcpDocument struct {
@@ -898,7 +840,7 @@ func renderRuntimeSkillFile(name, sourcePath string) ([]byte, error) {
 	b.WriteString("---\n")
 	writeYAMLString(&b, "name", name)
 	writeYAMLString(&b, "description", "AVM skill "+name+".")
-	writeLine(&b, "%s: true", avmManagedKey)
+	shared.WriteLine(&b, "%s: true", avmManagedKey)
 	b.WriteString("---\n\n")
 	b.Write(bytes.TrimLeft(raw, "\n"))
 	return []byte(b.String()), nil
@@ -1079,33 +1021,20 @@ func splitFrontmatter(content string) (map[string]string, string, bool) {
 	return fields, content[restStart:], true
 }
 
-func managedPathIndex(paths []adapter.ManagedPath) map[string]adapter.ManagedPath {
-	managed := make(map[string]adapter.ManagedPath, len(paths))
-	for _, path := range paths {
-		managed[path.Path] = path
-	}
-	return managed
-}
-
-func writeLine(builder *strings.Builder, format string, args ...any) {
-	builder.WriteString(fmt.Sprintf(format, args...))
-	builder.WriteByte('\n')
-}
-
 func writeYAMLString(builder *strings.Builder, key, value string) {
 	if value == "" {
 		return
 	}
-	writeLine(builder, "%s: %s", key, strconv.Quote(value))
+	shared.WriteLine(builder, "%s: %s", key, strconv.Quote(value))
 }
 
 func writeYAMLStringList(builder *strings.Builder, key string, values []string) {
 	if len(values) == 0 {
 		return
 	}
-	writeLine(builder, "%s:", key)
+	shared.WriteLine(builder, "%s:", key)
 	for _, value := range values {
-		writeLine(builder, "  - %s", strconv.Quote(value))
+		shared.WriteLine(builder, "  - %s", strconv.Quote(value))
 	}
 }
 
@@ -1141,22 +1070,6 @@ func skillLines(refs []adapter.CapabilityRef) []string {
 	return lines
 }
 
-func capabilityLines(refs []adapter.CapabilityRef) []string {
-	lines := make([]string, 0, len(refs))
-	for _, ref := range refs {
-		if ref.Name == "" {
-			continue
-		}
-		line := ref.Name
-		if ref.Path != "" {
-			line += " (" + ref.Path + ")"
-		}
-		lines = append(lines, line)
-	}
-	sort.Strings(lines)
-	return lines
-}
-
 func capabilityNames(refs []adapter.CapabilityRef) []string {
 	names := make([]string, 0, len(refs))
 	for _, ref := range refs {
@@ -1166,91 +1079,6 @@ func capabilityNames(refs []adapter.CapabilityRef) []string {
 	}
 	sort.Strings(names)
 	return names
-}
-
-func memoryRefLines(refs []adapter.MemoryRef) []string {
-	lines := make([]string, 0, len(refs))
-	for _, ref := range refs {
-		if ref.ID == "" {
-			continue
-		}
-		var parts []string
-		if ref.Scope != "" {
-			parts = append(parts, "scope="+ref.Scope)
-		}
-		if ref.Mode != "" {
-			parts = append(parts, "mode="+ref.Mode)
-		}
-		if ref.Path != "" {
-			parts = append(parts, "path="+ref.Path)
-		}
-		line := ref.ID
-		if len(parts) > 0 {
-			line += " (" + strings.Join(parts, ", ") + ")"
-		}
-		lines = append(lines, line)
-	}
-	sort.Strings(lines)
-	return lines
-}
-
-func portableMemoryLines(memory []adapter.PortableMemory) []string {
-	lines := make([]string, 0, len(memory))
-	for _, item := range memory {
-		if item.ID == "" {
-			continue
-		}
-		var parts []string
-		if item.Scope != "" {
-			parts = append(parts, "scope="+item.Scope)
-		}
-		if item.Mode != "" {
-			parts = append(parts, "mode="+item.Mode)
-		}
-		if item.Path != "" {
-			parts = append(parts, "path="+item.Path)
-		}
-		line := item.ID
-		if len(parts) > 0 {
-			line += " (" + strings.Join(parts, ", ") + ")"
-		}
-		if item.Content != "" {
-			line += ": " + strings.TrimSpace(item.Content)
-		}
-		lines = append(lines, line)
-	}
-	sort.Strings(lines)
-	return lines
-}
-
-func toolsetLines(toolsets []adapter.Toolset) []string {
-	lines := make([]string, 0, len(toolsets))
-	for _, toolset := range toolsets {
-		if toolset.Name == "" {
-			continue
-		}
-		line := toolset.Name
-		if toolset.Mode != "" {
-			line += "=" + toolset.Mode
-		}
-		lines = append(lines, line)
-	}
-	sort.Strings(lines)
-	return lines
-}
-
-func sortedStrings(values []string) []string {
-	out := append([]string(nil), values...)
-	sort.Strings(out)
-	return out
-}
-
-func sortedMCPServers(servers []adapter.MCPServer) []adapter.MCPServer {
-	out := append([]adapter.MCPServer(nil), servers...)
-	sort.SliceStable(out, func(i, j int) bool {
-		return out[i].Name < out[j].Name
-	})
-	return out
 }
 
 func sortedMCPServerConfigNames(servers map[string]mcpServerConfig) []string {
@@ -1271,10 +1099,6 @@ func mcpServerNames(servers []adapter.MCPServer) []string {
 	}
 	sort.Strings(names)
 	return names
-}
-
-func mcpServerRenderable(server adapter.MCPServer) bool {
-	return server.Name != "" && (server.Command != "" || server.URL != "")
 }
 
 func nativeMemoryScope(refs []adapter.MemoryRef) (string, bool) {
@@ -1300,37 +1124,4 @@ func nativeMemoryScope(refs []adapter.MemoryRef) (string, bool) {
 		}
 	}
 	return scope, true
-}
-
-func slug(value string) string {
-	value = strings.TrimSpace(strings.ToLower(value))
-	var builder strings.Builder
-	lastDash := false
-	for _, r := range value {
-		if unicode.IsLetter(r) || unicode.IsDigit(r) {
-			builder.WriteRune(r)
-			lastDash = false
-			continue
-		}
-		if r == '-' || r == '_' || unicode.IsSpace(r) {
-			if !lastDash && builder.Len() > 0 {
-				builder.WriteByte('-')
-				lastDash = true
-			}
-		}
-	}
-	slugged := strings.Trim(builder.String(), "-")
-	if slugged == "" {
-		return "agent"
-	}
-	return slugged
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if strings.TrimSpace(value) != "" {
-			return value
-		}
-	}
-	return ""
 }

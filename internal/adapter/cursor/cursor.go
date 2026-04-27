@@ -10,12 +10,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
 	"strings"
-	"unicode"
 
 	"github.com/xz1220/agent-vm/internal/adapter"
 	"github.com/xz1220/agent-vm/internal/adapter/renderplan"
+	"github.com/xz1220/agent-vm/internal/adapter/shared"
 )
 
 const (
@@ -102,8 +101,8 @@ func (a *Adapter) Plan(ctx adapter.Context, input adapter.RenderInput) (*adapter
 		return nil, fmt.Errorf("cursor adapter cannot plan runtime %q", runtime)
 	}
 
-	agentName := firstNonEmpty(input.Agent.Name, input.Active.Name, "agent")
-	ruleName := "avm-" + slug(agentName) + ".md"
+	agentName := shared.FirstNonEmpty(input.Agent.Name, input.Active.Name, "agent")
+	ruleName := "avm-" + shared.Slug(agentName) + ".md"
 	projectRoot := a.projectRootFor(input.ProjectRoot)
 	mcpPath := filepath.ToSlash(filepath.Join(projectRoot, cursorDirName, mcpFileName))
 	rulePath := filepath.ToSlash(filepath.Join(projectRoot, cursorDirName, rulesDirName, ruleName))
@@ -177,7 +176,7 @@ func (a *Adapter) Render(ctx adapter.Context, plan *adapter.RenderPlan) (*adapte
 		return nil, fmt.Errorf("cursor adapter cannot render runtime %q", normalized.Runtime)
 	}
 
-	managed := managedPathIndex(normalized.ManagedPaths)
+	managed := shared.ManagedPathIndex(normalized.ManagedPaths)
 	for _, operation := range normalized.Operations {
 		if _, ok := managed[operation.Path]; !ok {
 			return nil, fmt.Errorf("cursor render operation %q targets unmanaged path %s", operation.ID, operation.Path)
@@ -253,33 +252,33 @@ type renderContext struct {
 
 func (r renderContext) renderRuleFile() string {
 	var b strings.Builder
-	writeLine(&b, "# AVM Agent: %s", r.agentName)
+	shared.WriteLine(&b, "# AVM Agent: %s", r.agentName)
 	b.WriteByte('\n')
-	writeLine(&b, "<!-- Managed by Agent VM. Cursor support is partial in Phase 1 and only renders safe rules/instructions. -->")
+	shared.WriteLine(&b, "<!-- Managed by Agent VM. Cursor support is partial in Phase 1 and only renders safe rules/instructions. -->")
 
 	if r.input.Agent.Description != "" {
 		b.WriteByte('\n')
-		writeLine(&b, "## Description")
+		shared.WriteLine(&b, "## Description")
 		b.WriteString(strings.TrimSpace(r.input.Agent.Description))
 		b.WriteString("\n")
 	}
 	if r.input.Agent.Instructions.System != "" {
 		b.WriteByte('\n')
-		writeLine(&b, "## System Instructions")
+		shared.WriteLine(&b, "## System Instructions")
 		b.WriteString(strings.TrimSpace(r.input.Agent.Instructions.System))
 		b.WriteString("\n")
 	}
 	if r.input.Agent.Instructions.Developer != "" {
 		b.WriteByte('\n')
-		writeLine(&b, "## Developer Instructions")
+		shared.WriteLine(&b, "## Developer Instructions")
 		b.WriteString(strings.TrimSpace(r.input.Agent.Instructions.Developer))
 		b.WriteString("\n")
 	}
 	if len(r.input.Agent.Instructions.References) > 0 {
 		b.WriteByte('\n')
-		writeLine(&b, "## Instruction References")
-		for _, ref := range sortedStrings(r.input.Agent.Instructions.References) {
-			writeLine(&b, "- %s", ref)
+		shared.WriteLine(&b, "## Instruction References")
+		for _, ref := range shared.SortedStrings(r.input.Agent.Instructions.References) {
+			shared.WriteLine(&b, "- %s", ref)
 		}
 	}
 
@@ -293,7 +292,7 @@ func (r renderContext) renderMCPSection() []byte {
 	for _, server := range r.renderableMCPServers() {
 		payload.MCPServers[server.Name] = cursorMCPServerFrom(server)
 	}
-	data, err := marshalJSON(payload)
+	data, err := shared.MarshalJSON(payload)
 	if err != nil {
 		return nil
 	}
@@ -302,8 +301,8 @@ func (r renderContext) renderMCPSection() []byte {
 
 func (r renderContext) renderableMCPServers() []adapter.MCPServer {
 	var servers []adapter.MCPServer
-	for _, server := range sortedMCPServers(r.input.Capabilities.MCPServers) {
-		if mcpServerRenderable(server) {
+	for _, server := range shared.SortedMCPServers(r.input.Capabilities.MCPServers) {
+		if shared.MCPServerRenderable(server) {
 			servers = append(servers, server)
 		}
 	}
@@ -435,12 +434,12 @@ func (r renderContext) capabilityMappings() []adapter.FieldMapping {
 		mappings = append(mappings, unsupported("capabilities.toolsets", "Cursor Phase 1 PoC does not enforce AVM toolset modes."))
 	}
 
-	for _, server := range sortedMCPServers(r.input.Capabilities.MCPServers) {
+	for _, server := range shared.SortedMCPServers(r.input.Capabilities.MCPServers) {
 		source := "capabilities.mcp_servers"
 		if server.Name != "" {
 			source += "." + server.Name
 		}
-		if mcpServerRenderable(server) {
+		if shared.MCPServerRenderable(server) {
 			mappings = append(mappings, adapter.FieldMapping{
 				SourcePath: source,
 				TargetPath: r.mcpPath + "#mcpServers." + server.Name,
@@ -469,9 +468,9 @@ func (r renderContext) warnings() []string {
 	if hasNonMCPCapabilities(r.input.Capabilities) {
 		warnings = append(warnings, "cursor partial support renders MCP only; non-MCP capability mappings are unsupported")
 	}
-	for _, server := range sortedMCPServers(r.input.Capabilities.MCPServers) {
-		if !mcpServerRenderable(server) {
-			name := firstNonEmpty(server.Name, "<unnamed>")
+	for _, server := range shared.SortedMCPServers(r.input.Capabilities.MCPServers) {
+		if !shared.MCPServerRenderable(server) {
+			name := shared.FirstNonEmpty(server.Name, "<unnamed>")
 			warnings = append(warnings, fmt.Sprintf("mcp server %q was not rendered because name and command or URL are required", name))
 		}
 	}
@@ -499,7 +498,7 @@ func applyOperation(operation adapter.RenderOperation, managed adapter.ManagedPa
 		if managed.MergeMode != adapter.MergeModeWholeFile {
 			return false, fmt.Errorf("cursor write operation %q requires whole-file managed path %s", operation.ID, operation.Path)
 		}
-		return writeFileAtomic(operation.Path, operation.Content)
+		return shared.WriteFileAtomic(operation.Path, operation.Content)
 	case adapter.OperationStructuredSet:
 		if managed.MergeMode != adapter.MergeModeStructuredSection {
 			return false, fmt.Errorf("cursor structured operation %q requires structured-section managed path %s", operation.ID, operation.Path)
@@ -508,42 +507,6 @@ func applyOperation(operation adapter.RenderOperation, managed adapter.ManagedPa
 	default:
 		return false, fmt.Errorf("cursor adapter cannot apply %s operation %q at %s", operation.Action, operation.ID, operation.Path)
 	}
-}
-
-func writeFileAtomic(path string, content []byte) (bool, error) {
-	existing, err := os.ReadFile(path)
-	if err == nil && bytes.Equal(existing, content) {
-		return false, nil
-	}
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return false, err
-	}
-
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return false, err
-	}
-	temp, err := os.CreateTemp(filepath.Dir(path), ".avm-*.tmp")
-	if err != nil {
-		return false, err
-	}
-	tempName := temp.Name()
-	defer os.Remove(tempName)
-
-	if _, err := temp.Write(content); err != nil {
-		temp.Close()
-		return false, err
-	}
-	if err := temp.Chmod(0o600); err != nil {
-		temp.Close()
-		return false, err
-	}
-	if err := temp.Close(); err != nil {
-		return false, err
-	}
-	if err := os.Rename(tempName, path); err != nil {
-		return false, err
-	}
-	return true, nil
 }
 
 func mergeMCPServers(path string, content []byte) (bool, error) {
@@ -574,24 +537,24 @@ func mergeMCPServers(path string, content []byte) (bool, error) {
 		if name == "" {
 			continue
 		}
-		raw, err := marshalJSON(server)
+		raw, err := shared.MarshalJSON(server)
 		if err != nil {
 			return false, err
 		}
 		servers[name] = bytes.TrimSpace(raw)
 	}
 
-	rawServers, err := marshalJSON(servers)
+	rawServers, err := shared.MarshalJSON(servers)
 	if err != nil {
 		return false, err
 	}
 	existing["mcpServers"] = bytes.TrimSpace(rawServers)
 
-	next, err := marshalJSON(existing)
+	next, err := shared.MarshalJSON(existing)
 	if err != nil {
 		return false, err
 	}
-	return writeFileAtomic(path, next)
+	return shared.WriteFileAtomic(path, next)
 }
 
 type cursorMCPFile struct {
@@ -623,48 +586,6 @@ func cursorMCPServerFrom(server adapter.MCPServer) cursorMCPServer {
 	return out
 }
 
-func marshalJSON(value any) ([]byte, error) {
-	var b bytes.Buffer
-	encoder := json.NewEncoder(&b)
-	encoder.SetEscapeHTML(false)
-	encoder.SetIndent("", "  ")
-	if err := encoder.Encode(value); err != nil {
-		return nil, err
-	}
-	return b.Bytes(), nil
-}
-
-func managedPathIndex(paths []adapter.ManagedPath) map[string]adapter.ManagedPath {
-	managed := make(map[string]adapter.ManagedPath, len(paths))
-	for _, path := range paths {
-		managed[path.Path] = path
-	}
-	return managed
-}
-
-func writeLine(builder *strings.Builder, format string, args ...any) {
-	builder.WriteString(fmt.Sprintf(format, args...))
-	builder.WriteByte('\n')
-}
-
-func sortedStrings(values []string) []string {
-	out := append([]string(nil), values...)
-	sort.Strings(out)
-	return out
-}
-
-func sortedMCPServers(servers []adapter.MCPServer) []adapter.MCPServer {
-	out := append([]adapter.MCPServer(nil), servers...)
-	sort.SliceStable(out, func(i, j int) bool {
-		return out[i].Name < out[j].Name
-	})
-	return out
-}
-
-func mcpServerRenderable(server adapter.MCPServer) bool {
-	return server.Name != "" && (server.Command != "" || server.URL != "")
-}
-
 func hasModelConfig(model adapter.ModelConfig) bool {
 	return model.Model != "" || model.ReasoningEffort != "" || model.Verbosity != "" || model.Temperature != nil
 }
@@ -682,37 +603,4 @@ func hasNonMCPCapabilities(capabilities adapter.CapabilitySet) bool {
 		len(capabilities.Commands) > 0 ||
 		len(capabilities.Hooks) > 0 ||
 		len(capabilities.Toolsets) > 0
-}
-
-func slug(value string) string {
-	value = strings.TrimSpace(strings.ToLower(value))
-	var builder strings.Builder
-	lastDash := false
-	for _, r := range value {
-		if unicode.IsLetter(r) || unicode.IsDigit(r) {
-			builder.WriteRune(r)
-			lastDash = false
-			continue
-		}
-		if r == '-' || r == '_' || unicode.IsSpace(r) {
-			if !lastDash && builder.Len() > 0 {
-				builder.WriteByte('-')
-				lastDash = true
-			}
-		}
-	}
-	slugged := strings.Trim(builder.String(), "-")
-	if slugged == "" {
-		return "agent"
-	}
-	return slugged
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if strings.TrimSpace(value) != "" {
-			return value
-		}
-	}
-	return ""
 }

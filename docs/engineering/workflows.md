@@ -38,7 +38,7 @@ func Init(opts InitOptions) error {
     imported := ImportResult{}
     for _, adp := range adapter.All() {
         detection := adp.Detect(ctx)
-        if !detection.Installed {
+        if !detection.Found {
             continue
         }
         // Import is read-only: adapters may inspect runtime config but must not mutate it.

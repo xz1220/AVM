@@ -12,10 +12,10 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"unicode"
 
 	"github.com/xz1220/agent-vm/internal/adapter"
 	"github.com/xz1220/agent-vm/internal/adapter/renderplan"
+	"github.com/xz1220/agent-vm/internal/adapter/shared"
 )
 
 const (
@@ -103,10 +103,10 @@ func (a *Adapter) Plan(ctx adapter.Context, input adapter.RenderInput) (*adapter
 		return nil, fmt.Errorf("codex adapter cannot plan runtime %q", runtime)
 	}
 
-	agentName := firstNonEmpty(input.Agent.Name, input.Active.Name, "agent")
-	roleName := slug(agentName)
-	activeName := firstNonEmpty(input.Active.Name, agentName, "default")
-	profileName := "avm-" + slug(activeName)
+	agentName := shared.FirstNonEmpty(input.Agent.Name, input.Active.Name, "agent")
+	roleName := shared.Slug(agentName)
+	activeName := shared.FirstNonEmpty(input.Active.Name, agentName, "default")
+	profileName := "avm-" + shared.Slug(activeName)
 	configPath := filepath.ToSlash(filepath.Join(a.codexHome(), configFileName))
 	rolePath := filepath.ToSlash(filepath.Join(a.codexHome(), agentsDirName, roleName+".toml"))
 	roleConfigPath := "./" + filepath.ToSlash(filepath.Join(agentsDirName, roleName+".toml"))
@@ -173,7 +173,7 @@ func (a *Adapter) Plan(ctx adapter.Context, input adapter.RenderInput) (*adapter
 			MergeMode:   adapter.MergeModeWholeFile,
 		})
 		plan.Operations = append(plan.Operations, adapter.RenderOperation{
-			ID:          skillOperationID + "-" + slug(skillFile.name),
+			ID:          skillOperationID + "-" + shared.Slug(skillFile.name),
 			Action:      adapter.OperationWriteFile,
 			Path:        skillFile.target,
 			Content:     skillFile.content,
@@ -190,7 +190,7 @@ func (a *Adapter) Plan(ctx adapter.Context, input adapter.RenderInput) (*adapter
 			MergeMode:   adapter.MergeModeWholeFile,
 		})
 		plan.Operations = append(plan.Operations, adapter.RenderOperation{
-			ID:          skillOperationID + "-remove-" + slug(stale.name),
+			ID:          skillOperationID + "-remove-" + shared.Slug(stale.name),
 			Action:      adapter.OperationRemoveFile,
 			Path:        stale.target,
 			Description: "remove stale Codex AVM-managed skill file",
@@ -311,35 +311,35 @@ func (r renderContext) renderConfigSection() string {
 	var b strings.Builder
 	writeTomlString(&b, "profile", r.profileName)
 	b.WriteByte('\n')
-	writeLine(&b, "[profiles.%s]", r.profileName)
+	shared.WriteLine(&b, "[profiles.%s]", r.profileName)
 	writeTomlString(&b, "model", r.input.Agent.Model.Model)
 	writeTomlString(&b, "model_reasoning_effort", r.input.Agent.Model.ReasoningEffort)
 	writeTomlString(&b, "approval_policy", r.input.Agent.Permissions.Approval)
 	writeTomlString(&b, "sandbox_mode", r.input.Agent.Permissions.Sandbox)
 	b.WriteByte('\n')
 
-	for _, server := range sortedMCPServers(r.input.Capabilities.MCPServers) {
-		if !mcpServerRenderable(server) {
+	for _, server := range shared.SortedMCPServers(r.input.Capabilities.MCPServers) {
+		if !shared.MCPServerRenderable(server) {
 			continue
 		}
-		writeLine(&b, "[mcp_servers.%s]", slug(server.Name))
+		shared.WriteLine(&b, "[mcp_servers.%s]", shared.Slug(server.Name))
 		writeTomlString(&b, "command", server.Command)
 		if server.URL != "" {
 			writeTomlString(&b, "url", server.URL)
 		}
 		if len(server.Args) > 0 {
-			writeLine(&b, "args = %s", tomlStringArray(server.Args))
+			shared.WriteLine(&b, "args = %s", tomlStringArray(server.Args))
 		}
 		if len(server.Env) > 0 {
-			writeLine(&b, "env = %s", tomlEnvInlineTable(server.Env))
+			shared.WriteLine(&b, "env = %s", tomlEnvInlineTable(server.Env))
 		}
 		b.WriteByte('\n')
 	}
 
-	writeLine(&b, "[agents.%s]", r.roleName)
+	shared.WriteLine(&b, "[agents.%s]", r.roleName)
 	writeTomlString(&b, "description", r.description())
 	writeTomlString(&b, "config_file", r.roleConfigPath)
-	writeLine(&b, "nickname_candidates = %s", tomlStringArray([]string{r.agentName}))
+	shared.WriteLine(&b, "nickname_candidates = %s", tomlStringArray([]string{r.agentName}))
 
 	return strings.TrimRight(b.String(), "\n") + "\n"
 }
@@ -348,7 +348,7 @@ func (r renderContext) renderRoleFile() string {
 	var b strings.Builder
 	writeTomlString(&b, "name", r.roleName)
 	writeTomlString(&b, "description", r.description())
-	writeLine(&b, "nickname_candidates = %s", tomlStringArray([]string{r.agentName}))
+	shared.WriteLine(&b, "nickname_candidates = %s", tomlStringArray([]string{r.agentName}))
 	writeTomlString(&b, "developer_instructions", r.developerInstructions())
 	writeTomlString(&b, "model", r.input.Agent.Model.Model)
 	writeTomlString(&b, "model_reasoning_effort", r.input.Agent.Model.ReasoningEffort)
@@ -358,7 +358,7 @@ func (r renderContext) renderRoleFile() string {
 }
 
 func (r renderContext) description() string {
-	return firstNonEmpty(r.input.Agent.Description, "AVM agent "+r.agentName)
+	return shared.FirstNonEmpty(r.input.Agent.Description, "AVM agent "+r.agentName)
 }
 
 func (r renderContext) developerInstructions() string {
@@ -370,34 +370,34 @@ func (r renderContext) developerInstructions() string {
 		sections = append(sections, section("Developer instructions", r.input.Agent.Instructions.Developer))
 	}
 	if len(r.input.Agent.Instructions.References) > 0 {
-		sections = append(sections, bulletSection("Instruction references", sortedStrings(r.input.Agent.Instructions.References)))
+		sections = append(sections, bulletSection("Instruction references", shared.SortedStrings(r.input.Agent.Instructions.References)))
 	}
 	if len(r.input.Capabilities.Skills) > 0 {
 		sections = append(sections, bulletSection("Active AVM skills", skillLines(r.input.Capabilities.Skills)))
 	}
 	if len(r.input.Agent.MemoryRefs) > 0 {
-		sections = append(sections, bulletSection("AVM memory refs", memoryRefLines(r.input.Agent.MemoryRefs)))
+		sections = append(sections, bulletSection("AVM memory refs", shared.MemoryRefLines(r.input.Agent.MemoryRefs)))
 	}
 	if len(r.input.Memory) > 0 {
-		sections = append(sections, bulletSection("Portable memory", portableMemoryLines(r.input.Memory)))
+		sections = append(sections, bulletSection("Portable memory", shared.PortableMemoryLines(r.input.Memory)))
 	}
 	if len(r.input.Agent.Permissions.Allow) > 0 {
-		sections = append(sections, bulletSection("Allowed command guidance", sortedStrings(r.input.Agent.Permissions.Allow)))
+		sections = append(sections, bulletSection("Allowed command guidance", shared.SortedStrings(r.input.Agent.Permissions.Allow)))
 	}
 	if len(r.input.Agent.Permissions.Deny) > 0 {
-		sections = append(sections, bulletSection("Denied command guidance", sortedStrings(r.input.Agent.Permissions.Deny)))
+		sections = append(sections, bulletSection("Denied command guidance", shared.SortedStrings(r.input.Agent.Permissions.Deny)))
 	}
 	if r.input.Agent.Model.Verbosity != "" {
 		sections = append(sections, section("Response verbosity", r.input.Agent.Model.Verbosity))
 	}
 	if len(r.input.Capabilities.Toolsets) > 0 {
-		sections = append(sections, bulletSection("Requested toolsets", toolsetLines(r.input.Capabilities.Toolsets)))
+		sections = append(sections, bulletSection("Requested toolsets", shared.ToolsetLines(r.input.Capabilities.Toolsets)))
 	}
 	if len(r.input.Capabilities.Commands) > 0 {
-		sections = append(sections, bulletSection("Requested AVM commands", capabilityLines(r.input.Capabilities.Commands)))
+		sections = append(sections, bulletSection("Requested AVM commands", shared.CapabilityLines(r.input.Capabilities.Commands)))
 	}
 	if len(r.input.Capabilities.Hooks) > 0 {
-		sections = append(sections, bulletSection("Requested AVM hooks", capabilityLines(r.input.Capabilities.Hooks)))
+		sections = append(sections, bulletSection("Requested AVM hooks", shared.CapabilityLines(r.input.Capabilities.Hooks)))
 	}
 
 	return strings.Join(sections, "\n\n")
@@ -551,12 +551,12 @@ func (r renderContext) mappings() []adapter.FieldMapping {
 		})
 	}
 
-	for _, server := range sortedMCPServers(r.input.Capabilities.MCPServers) {
+	for _, server := range shared.SortedMCPServers(r.input.Capabilities.MCPServers) {
 		source := "capabilities.mcp_servers." + server.Name
-		if mcpServerRenderable(server) {
+		if shared.MCPServerRenderable(server) {
 			mappings = append(mappings, adapter.FieldMapping{
 				SourcePath: source,
-				TargetPath: "mcp_servers." + slug(server.Name),
+				TargetPath: "mcp_servers." + shared.Slug(server.Name),
 				Status:     adapter.MappingNative,
 			})
 			continue
@@ -573,8 +573,8 @@ func (r renderContext) mappings() []adapter.FieldMapping {
 
 func (r renderContext) warnings() []string {
 	var warnings []string
-	for _, server := range sortedMCPServers(r.input.Capabilities.MCPServers) {
-		if !mcpServerRenderable(server) {
+	for _, server := range shared.SortedMCPServers(r.input.Capabilities.MCPServers) {
+		if !shared.MCPServerRenderable(server) {
 			warnings = append(warnings, fmt.Sprintf("mcp server %q was not rendered because command or URL is missing", server.Name))
 		}
 	}
@@ -623,9 +623,9 @@ func applyOperation(operation adapter.RenderOperation, managed adapter.ManagedPa
 
 	switch operation.Action {
 	case adapter.OperationWriteFile:
-		return writeFileAtomic(operation.Path, operation.Content)
+		return shared.WriteFileAtomic(operation.Path, operation.Content)
 	case adapter.OperationRemoveFile:
-		return removeFileAndEmptyParent(operation.Path)
+		return shared.RemoveFileAndEmptyParent(operation.Path)
 	case adapter.OperationStructuredSet:
 		if operation.ID == configOperationID {
 			return mergeCodexConfigBlock(operation.Path, operation.ID, operation.Content)
@@ -634,53 +634,6 @@ func applyOperation(operation adapter.RenderOperation, managed adapter.ManagedPa
 	default:
 		return false, fmt.Errorf("codex adapter cannot apply %s operation %q at %s", operation.Action, operation.ID, operation.Path)
 	}
-}
-
-func writeFileAtomic(path string, content []byte) (bool, error) {
-	existing, err := os.ReadFile(path)
-	if err == nil && bytes.Equal(existing, content) {
-		return false, nil
-	}
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return false, err
-	}
-
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return false, err
-	}
-	temp, err := os.CreateTemp(filepath.Dir(path), ".avm-*.tmp")
-	if err != nil {
-		return false, err
-	}
-	tempName := temp.Name()
-	defer os.Remove(tempName)
-
-	if _, err := temp.Write(content); err != nil {
-		temp.Close()
-		return false, err
-	}
-	if err := temp.Chmod(0o600); err != nil {
-		temp.Close()
-		return false, err
-	}
-	if err := temp.Close(); err != nil {
-		return false, err
-	}
-	if err := os.Rename(tempName, path); err != nil {
-		return false, err
-	}
-	return true, nil
-}
-
-func removeFileAndEmptyParent(path string) (bool, error) {
-	if err := os.Remove(path); err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return false, nil
-		}
-		return false, err
-	}
-	_ = os.Remove(filepath.Dir(path))
-	return true, nil
 }
 
 func mergeMarkedBlock(path, operationID string, content []byte) (bool, error) {
@@ -704,7 +657,7 @@ func mergeMarkedBlock(path, operationID string, content []byte) (bool, error) {
 			return false, err
 		}
 	}
-	return writeFileAtomic(path, next)
+	return shared.WriteFileAtomic(path, next)
 }
 
 func mergeCodexConfigBlock(path, operationID string, content []byte) (bool, error) {
@@ -728,7 +681,7 @@ func mergeCodexConfigBlock(path, operationID string, content []byte) (bool, erro
 	if err != nil {
 		return false, err
 	}
-	return writeFileAtomic(path, next)
+	return shared.WriteFileAtomic(path, next)
 }
 
 func validateMarkedBlock(path, operationID string) error {
@@ -1077,7 +1030,7 @@ func renderRuntimeSkillFile(name, sourcePath string) ([]byte, error) {
 	b.WriteString("---\n")
 	writeTomlLikeYAMLString(&b, "name", name)
 	writeTomlLikeYAMLString(&b, "description", "AVM skill "+name+".")
-	writeLine(&b, "%s: true", avmManagedKey)
+	shared.WriteLine(&b, "%s: true", avmManagedKey)
 	b.WriteString("---\n\n")
 	b.Write(bytes.TrimLeft(raw, "\n"))
 	return []byte(b.String()), nil
@@ -1165,19 +1118,14 @@ func safeRuntimeSkillName(name string) bool {
 }
 
 func writeTomlLikeYAMLString(builder *strings.Builder, key, value string) {
-	writeLine(builder, "%s: %s", key, strconv.Quote(value))
-}
-
-func writeLine(builder *strings.Builder, format string, args ...any) {
-	builder.WriteString(fmt.Sprintf(format, args...))
-	builder.WriteByte('\n')
+	shared.WriteLine(builder, "%s: %s", key, strconv.Quote(value))
 }
 
 func writeTomlString(builder *strings.Builder, key, value string) {
 	if value == "" {
 		return
 	}
-	writeLine(builder, "%s = %s", key, strconv.Quote(value))
+	shared.WriteLine(builder, "%s = %s", key, strconv.Quote(value))
 }
 
 func tomlStringArray(values []string) string {
@@ -1233,139 +1181,4 @@ func skillLines(refs []adapter.CapabilityRef) []string {
 	}
 	sort.Strings(lines)
 	return lines
-}
-
-func capabilityLines(refs []adapter.CapabilityRef) []string {
-	lines := make([]string, 0, len(refs))
-	for _, ref := range refs {
-		if ref.Name == "" {
-			continue
-		}
-		line := ref.Name
-		if ref.Path != "" {
-			line += " (" + ref.Path + ")"
-		}
-		lines = append(lines, line)
-	}
-	sort.Strings(lines)
-	return lines
-}
-
-func memoryRefLines(refs []adapter.MemoryRef) []string {
-	lines := make([]string, 0, len(refs))
-	for _, ref := range refs {
-		if ref.ID == "" {
-			continue
-		}
-		var parts []string
-		if ref.Scope != "" {
-			parts = append(parts, "scope="+ref.Scope)
-		}
-		if ref.Mode != "" {
-			parts = append(parts, "mode="+ref.Mode)
-		}
-		if ref.Path != "" {
-			parts = append(parts, "path="+ref.Path)
-		}
-		line := ref.ID
-		if len(parts) > 0 {
-			line += " (" + strings.Join(parts, ", ") + ")"
-		}
-		lines = append(lines, line)
-	}
-	sort.Strings(lines)
-	return lines
-}
-
-func portableMemoryLines(memory []adapter.PortableMemory) []string {
-	lines := make([]string, 0, len(memory))
-	for _, item := range memory {
-		if item.ID == "" {
-			continue
-		}
-		var parts []string
-		if item.Scope != "" {
-			parts = append(parts, "scope="+item.Scope)
-		}
-		if item.Mode != "" {
-			parts = append(parts, "mode="+item.Mode)
-		}
-		if item.Path != "" {
-			parts = append(parts, "path="+item.Path)
-		}
-		line := item.ID
-		if len(parts) > 0 {
-			line += " (" + strings.Join(parts, ", ") + ")"
-		}
-		lines = append(lines, line)
-	}
-	sort.Strings(lines)
-	return lines
-}
-
-func toolsetLines(toolsets []adapter.Toolset) []string {
-	lines := make([]string, 0, len(toolsets))
-	for _, toolset := range toolsets {
-		if toolset.Name == "" {
-			continue
-		}
-		line := toolset.Name
-		if toolset.Mode != "" {
-			line += "=" + toolset.Mode
-		}
-		lines = append(lines, line)
-	}
-	sort.Strings(lines)
-	return lines
-}
-
-func sortedStrings(values []string) []string {
-	out := append([]string(nil), values...)
-	sort.Strings(out)
-	return out
-}
-
-func sortedMCPServers(servers []adapter.MCPServer) []adapter.MCPServer {
-	out := append([]adapter.MCPServer(nil), servers...)
-	sort.SliceStable(out, func(i, j int) bool {
-		return out[i].Name < out[j].Name
-	})
-	return out
-}
-
-func mcpServerRenderable(server adapter.MCPServer) bool {
-	return server.Name != "" && (server.Command != "" || server.URL != "")
-}
-
-func slug(value string) string {
-	value = strings.TrimSpace(strings.ToLower(value))
-	var builder strings.Builder
-	lastDash := false
-	for _, r := range value {
-		if unicode.IsLetter(r) || unicode.IsDigit(r) {
-			builder.WriteRune(r)
-			lastDash = false
-			continue
-		}
-		if r == '-' || r == '_' || unicode.IsSpace(r) {
-			if !lastDash && builder.Len() > 0 {
-				builder.WriteByte('-')
-				lastDash = true
-			}
-		}
-	}
-	slugged := strings.Trim(builder.String(), "-")
-	if slugged == "" {
-		return "agent"
-	}
-	return slugged
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if strings.TrimSpace(value) != "" {
-			return value
-		}
-	}
-	return ""
 }

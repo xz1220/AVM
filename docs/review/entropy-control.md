@@ -1,7 +1,7 @@
 # 熵控制：AI Coding 迭代中的仓库剪枝指南
 
-> 审计日期：2026-04-26
-> 审计范围：agent-vm 全仓库（67 commits，约 2 周迭代）
+> 审计日期：2026-04-26（2026-04-27 更新执行状态）
+> 审计范围：agent-vm 全仓库
 
 ## 背景
 
@@ -120,13 +120,17 @@ CI 应该覆盖所有能自动化检查的一致性：
 
 ---
 
-## 四、建议的剪枝执行顺序
+## 四、剪枝执行记录（2026-04-27）
 
-1. 修复 `ROADMAP.md` 的勾选状态（5 分钟，影响所有新读者的第一印象）
-2. 修复 `architecture.md` 的模块引用（15 分钟，消除最大的误导源）
-3. 全局替换 `detection.Installed` → `detection.Found`（2 分钟）
-4. 处理翻译 README 中的 OpenClaw/Hermes 引用（10 分钟）
-5. 删除或标注 models.go 中的占位 struct（5 分钟）
-6. 提取 adapter 公共函数到 shared 包（30 分钟，可单独 PR）
-7. 补齐 CI 步骤（10 分钟）
-8. 补齐 backup/packageio/runtime 的测试（按需排期）
+| 项目 | 状态 | 说明 |
+|------|------|------|
+| 修复 ROADMAP.md 勾选状态 | ✅ 已完成 | 此前已修复 |
+| 修复 architecture.md 模块引用 | ✅ 已完成 | registry/env/template → 实际 9 个包 |
+| 全局替换 detection.Installed → Found | ✅ 已完成 | workflows.md + modules/sync.md |
+| 处理翻译 README | ✅ 已完成 | 删除 5 个翻译版本，保留 zh-CN |
+| 删除过时 review/test 快照文档 | ✅ 已完成 | docs/ 从 36 → 18 个文件 |
+| 修复 config.md 幽灵文件引用 | ✅ 已完成 | project.go/capability.go → 实际文件 |
+| 提取 adapter 公共函数到 shared 包 | ✅ 已完成 | 15 个函数 → internal/adapter/shared/ |
+| 补齐 CI 步骤 | ✅ 已完成 | 加入 go build + go vet + gofmt |
+| models.go 占位 struct | ⏭️ 跳过 | fixture 中有使用，属于 schema 定义 |
+| 补齐 backup/packageio/runtime 测试 | 🔲 待做 | 按需排期 |

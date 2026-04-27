@@ -1,6 +1,6 @@
 # Agent VM — 顶层架构设计
 
-> 最后更新：2026-04-24（v6 — Portable Memory 对齐）
+> 最后更新：2026-04-27（v7 — 对齐实际包结构）
 
 ## 设计目标
 
@@ -47,9 +47,9 @@
 ├──────────────────────────────────────────────────────────────┤
 │ 核心层 internal/                                              │
 │ ┌──────────┐ ┌───────────┐ ┌──────────┐ ┌──────────┐         │
-│ │ config   │ │ registry  │ │ env      │ │ sync     │         │
-│ │ YAML/TOML│ │ capability│ │ resolve  │ │ render   │         │
-│ │ merge    │ │ index     │ │ activate │ │ backup   │         │
+│ │ config   │ │ memory    │ │ sync     │ │ packageio│         │
+│ │ YAML     │ │ import    │ │ activate │ │ export   │         │
+│ │ validate │ │ standards │ │ conflict │ │ import   │         │
 │ └────┬─────┘ └─────┬─────┘ └────┬─────┘ └────┬─────┘         │
 │      │             │            │            │               │
 │ ┌────┴─────────────┴────────────┴────────────┴────┐          │
@@ -170,26 +170,34 @@ type FieldMapping struct {
 
 | 模块 | 包路径 | 职责 | 不做什么 |
 |------|--------|------|---------|
-| config | `internal/config` | YAML/TOML/JSON 读写、schema、merge、路径解析 | 不写 runtime 文件 |
-| registry | `internal/registry` | capability 安装、索引、校验、引用解析 | 不决定 profile 启用什么 |
-| env | `internal/env` | 解析 active profile/env、展开 runtime_agents 和 profile 引用 | 不做 runtime 格式翻译 |
-| memory | `internal/memory` | portable memory metadata、import dry-run、diff、Phase 2 push/pull 编排 | 不静默写 runtime native memory |
-| sync | `internal/sync` | active 重建、adapter 编排、冲突检测、备份 | 不直接了解 runtime 格式 |
+| config | `internal/config` | YAML 读写、schema 校验、profile/env 解析、路径解析 | 不写 runtime 文件 |
 | adapter | `internal/adapter` | runtime detect/import/plan/render、managed paths | 不做全局合并策略 |
+| sync | `internal/sync` | active 重建、adapter 编排、冲突检测 | 不直接了解 runtime 格式 |
+| backup | `internal/backup` | 写入前备份 managed paths | 不决定备份策略 |
+| memory | `internal/memory` | portable memory metadata、import dry-run、standards 校验 | 不静默写 runtime native memory |
 | state | `internal/state` | hash、render status、last sync、import report | 不承载业务配置 |
+| runtime | `internal/runtime` | adapter 注册表，按名称查找 adapter 实例 | 不实现具体 adapter 逻辑 |
+| packageio | `internal/packageio` | 整包 export/import（ZIP 格式） | 不做 profile 解析 |
+| version | `internal/version` | 版本号管理 | 无外部依赖 |
 
 ## 依赖关系
 
 ```
 cmd/avm
   ├── config
-  ├── registry
-  ├── env          -> config, registry
-  ├── memory       -> config, adapter, state
-  ├── sync         -> config, env, adapter, state
-  │   ├── adapter  -> config models
-  │   └── state    -> util/hash
-  └── template
+  ├── adapter
+  ├── sync         -> config, adapter, backup, state
+  ├── memory       -> config
+  ├── packageio    -> config
+  ├── runtime      -> adapter/claude, adapter/codex, adapter/cline, adapter/cursor
+  ├── state        -> adapter, config
+  └── version
+```
+
+adapter 层内部依赖：
+```
+adapter/*  -> config（引用 config models）
+backup     -> adapter, config
 ```
 
 约束：
@@ -263,7 +271,7 @@ type Adapter interface {
 
 新增 capability 类型时：
 
-1. 在 `registry/` 增加 schema。
+1. 在 `config/models.go` 增加字段定义。
 2. 在 `CapabilitySet` 增加引用字段。
 3. adapter 逐个声明支持状态。
 4. acceptance 增加至少一个 native 或 ignored 测试。

@@ -12,10 +12,10 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"unicode"
 
 	"github.com/xz1220/agent-vm/internal/adapter"
 	"github.com/xz1220/agent-vm/internal/adapter/renderplan"
+	"github.com/xz1220/agent-vm/internal/adapter/shared"
 )
 
 const (
@@ -148,9 +148,9 @@ func (a *Adapter) Plan(ctx adapter.Context, input adapter.RenderInput) (*adapter
 		return nil, fmt.Errorf("cline adapter cannot plan runtime %q", runtime)
 	}
 
-	agentName := firstNonEmpty(input.Agent.Name, input.Active.Name, "agent")
-	agentSlug := slug(agentName)
-	projectRoot := firstNonEmpty(input.ProjectRoot, a.projectRoot, ".")
+	agentName := shared.FirstNonEmpty(input.Agent.Name, input.Active.Name, "agent")
+	agentSlug := shared.Slug(agentName)
+	projectRoot := shared.FirstNonEmpty(input.ProjectRoot, a.projectRoot, ".")
 	rulesPath := filepath.ToSlash(filepath.Join(projectRoot, ".clinerules", "avm", agentSlug+".md"))
 	mcpSettingsPath := filepath.ToSlash(filepath.Join(a.clineDataHome(), settingsDirName, mcpSettingsFileName))
 
@@ -223,7 +223,7 @@ func (a *Adapter) Render(ctx adapter.Context, plan *adapter.RenderPlan) (*adapte
 		return nil, fmt.Errorf("cline adapter cannot render runtime %q", normalized.Runtime)
 	}
 
-	managed := managedPathIndex(normalized.ManagedPaths)
+	managed := shared.ManagedPathIndex(normalized.ManagedPaths)
 	results := make([]adapter.RenderOperationResult, 0, len(normalized.Operations))
 	warnings := append([]string(nil), normalized.Warnings...)
 	for _, operation := range normalized.Operations {
@@ -347,7 +347,7 @@ type renderContext struct {
 
 func (r renderContext) hasRenderableMCPServers() bool {
 	for _, server := range r.input.Capabilities.MCPServers {
-		if mcpServerRenderable(server) {
+		if shared.MCPServerRenderable(server) {
 			return true
 		}
 	}
@@ -361,7 +361,7 @@ func (r renderContext) renderRulesFile() string {
 	var details []string
 	details = append(details, "Runtime: cline")
 	if r.input.Active.Kind != "" || r.input.Active.Name != "" {
-		details = append(details, "Active: "+strings.Trim(firstNonEmpty(r.input.Active.Kind, "active")+"/"+firstNonEmpty(r.input.Active.Name, "default"), "/"))
+		details = append(details, "Active: "+strings.Trim(shared.FirstNonEmpty(r.input.Active.Kind, "active")+"/"+shared.FirstNonEmpty(r.input.Active.Name, "default"), "/"))
 	}
 	if r.input.Agent.Description != "" {
 		details = append(details, "Description: "+r.input.Agent.Description)
@@ -375,7 +375,7 @@ func (r renderContext) renderRulesFile() string {
 		sections = append(sections, section("Developer instructions", r.input.Agent.Instructions.Developer))
 	}
 	if len(r.input.Agent.Instructions.References) > 0 {
-		sections = append(sections, bulletSection("Instruction references", sortedStrings(r.input.Agent.Instructions.References)))
+		sections = append(sections, bulletSection("Instruction references", shared.SortedStrings(r.input.Agent.Instructions.References)))
 	}
 	if modelLines := r.modelPreferenceLines(); len(modelLines) > 0 {
 		sections = append(sections, bulletSection("Requested model preferences", modelLines))
@@ -384,22 +384,22 @@ func (r renderContext) renderRulesFile() string {
 		sections = append(sections, bulletSection("Permission guidance", permissionLines))
 	}
 	if len(r.input.Capabilities.Skills) > 0 {
-		sections = append(sections, bulletSection("Active AVM skills", capabilityLines(r.input.Capabilities.Skills)))
+		sections = append(sections, bulletSection("Active AVM skills", shared.CapabilityLines(r.input.Capabilities.Skills)))
 	}
 	if len(r.input.Capabilities.Commands) > 0 {
-		sections = append(sections, bulletSection("Requested AVM commands", capabilityLines(r.input.Capabilities.Commands)))
+		sections = append(sections, bulletSection("Requested AVM commands", shared.CapabilityLines(r.input.Capabilities.Commands)))
 	}
 	if len(r.input.Capabilities.Hooks) > 0 {
-		sections = append(sections, bulletSection("Requested AVM hooks", capabilityLines(r.input.Capabilities.Hooks)))
+		sections = append(sections, bulletSection("Requested AVM hooks", shared.CapabilityLines(r.input.Capabilities.Hooks)))
 	}
 	if len(r.input.Capabilities.Toolsets) > 0 {
-		sections = append(sections, bulletSection("Requested toolsets", toolsetLines(r.input.Capabilities.Toolsets)))
+		sections = append(sections, bulletSection("Requested toolsets", shared.ToolsetLines(r.input.Capabilities.Toolsets)))
 	}
 	if len(r.input.Agent.MemoryRefs) > 0 {
-		sections = append(sections, bulletSection("AVM memory refs", memoryRefLines(r.input.Agent.MemoryRefs)))
+		sections = append(sections, bulletSection("AVM memory refs", shared.MemoryRefLines(r.input.Agent.MemoryRefs)))
 	}
 	if len(r.input.Memory) > 0 {
-		sections = append(sections, bulletSection("Portable memory", portableMemoryLines(r.input.Memory)))
+		sections = append(sections, bulletSection("Portable memory", shared.PortableMemoryLines(r.input.Memory)))
 	}
 	if mcpLines := r.mcpInstructionLines(); len(mcpLines) > 0 {
 		sections = append(sections, bulletSection("MCP servers configured by AVM", mcpLines))
@@ -431,10 +431,10 @@ func (r renderContext) permissionGuidanceLines() []string {
 	if r.input.Agent.Permissions.Sandbox != "" {
 		lines = append(lines, "sandbox="+r.input.Agent.Permissions.Sandbox)
 	}
-	for _, value := range sortedStrings(r.input.Agent.Permissions.Allow) {
+	for _, value := range shared.SortedStrings(r.input.Agent.Permissions.Allow) {
 		lines = append(lines, "allow="+value)
 	}
-	for _, value := range sortedStrings(r.input.Agent.Permissions.Deny) {
+	for _, value := range shared.SortedStrings(r.input.Agent.Permissions.Deny) {
 		lines = append(lines, "deny="+value)
 	}
 	sort.Strings(lines)
@@ -443,8 +443,8 @@ func (r renderContext) permissionGuidanceLines() []string {
 
 func (r renderContext) mcpInstructionLines() []string {
 	var lines []string
-	for _, server := range sortedMCPServers(r.input.Capabilities.MCPServers) {
-		if !mcpServerRenderable(server) {
+	for _, server := range shared.SortedMCPServers(r.input.Capabilities.MCPServers) {
+		if !shared.MCPServerRenderable(server) {
 			continue
 		}
 		lines = append(lines, server.Name)
@@ -454,8 +454,8 @@ func (r renderContext) mcpInstructionLines() []string {
 
 func (r renderContext) renderMCPSettingsPatch() string {
 	servers := make(map[string]clineMCPServer)
-	for _, server := range sortedMCPServers(r.input.Capabilities.MCPServers) {
-		if !mcpServerRenderable(server) {
+	for _, server := range shared.SortedMCPServers(r.input.Capabilities.MCPServers) {
+		if !shared.MCPServerRenderable(server) {
 			continue
 		}
 		servers[server.Name] = clineMCPServer{
@@ -645,9 +645,9 @@ func (r renderContext) mappings() []adapter.FieldMapping {
 		})
 	}
 
-	for _, server := range sortedMCPServers(r.input.Capabilities.MCPServers) {
+	for _, server := range shared.SortedMCPServers(r.input.Capabilities.MCPServers) {
 		source := "capabilities.mcp_servers." + server.Name
-		if mcpServerRenderable(server) {
+		if shared.MCPServerRenderable(server) {
 			mappings = append(mappings, adapter.FieldMapping{
 				SourcePath: source,
 				TargetPath: r.mcpSettingsPath + "#mcpServers." + server.Name,
@@ -667,8 +667,8 @@ func (r renderContext) mappings() []adapter.FieldMapping {
 
 func (r renderContext) warnings() []string {
 	var warnings []string
-	for _, server := range sortedMCPServers(r.input.Capabilities.MCPServers) {
-		if !mcpServerRenderable(server) {
+	for _, server := range shared.SortedMCPServers(r.input.Capabilities.MCPServers) {
+		if !shared.MCPServerRenderable(server) {
 			warnings = append(warnings, fmt.Sprintf("mcp server %q was not rendered because name and command or URL are required", server.Name))
 		}
 	}
@@ -702,7 +702,7 @@ func applyOperation(operation adapter.RenderOperation, managed adapter.ManagedPa
 		if managed.MergeMode != adapter.MergeModeWholeFile {
 			return false, nil, fmt.Errorf("cline write operation %q requires whole-file managed path %s", operation.ID, operation.Path)
 		}
-		changed, err := writeFileAtomic(operation.Path, operation.Content)
+		changed, err := shared.WriteFileAtomic(operation.Path, operation.Content)
 		return changed, nil, err
 	case adapter.OperationStructuredSet:
 		if managed.MergeMode != adapter.MergeModeStructuredSection {
@@ -806,7 +806,7 @@ func mergeMCPSettings(path string, content []byte) (bool, []string, error) {
 		return false, nil, err
 	}
 	next = append(next, '\n')
-	changed, err := writeFileAtomic(path, next)
+	changed, err := shared.WriteFileAtomic(path, next)
 	return changed, warnings, err
 }
 
@@ -886,50 +886,6 @@ func compactJSON(raw json.RawMessage) (json.RawMessage, error) {
 	return append(json.RawMessage(nil), buf.Bytes()...), nil
 }
 
-func writeFileAtomic(path string, content []byte) (bool, error) {
-	existing, err := os.ReadFile(path)
-	if err == nil && bytes.Equal(existing, content) {
-		return false, nil
-	}
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return false, err
-	}
-
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return false, err
-	}
-	temp, err := os.CreateTemp(filepath.Dir(path), ".avm-*.tmp")
-	if err != nil {
-		return false, err
-	}
-	tempName := temp.Name()
-	defer os.Remove(tempName)
-
-	if _, err := temp.Write(content); err != nil {
-		temp.Close()
-		return false, err
-	}
-	if err := temp.Chmod(0o600); err != nil {
-		temp.Close()
-		return false, err
-	}
-	if err := temp.Close(); err != nil {
-		return false, err
-	}
-	if err := os.Rename(tempName, path); err != nil {
-		return false, err
-	}
-	return true, nil
-}
-
-func managedPathIndex(paths []adapter.ManagedPath) map[string]adapter.ManagedPath {
-	managed := make(map[string]adapter.ManagedPath, len(paths))
-	for _, path := range paths {
-		managed[path.Path] = path
-	}
-	return managed
-}
-
 func section(title, body string) string {
 	return "## " + title + "\n\n" + strings.TrimSpace(body)
 }
@@ -948,108 +904,6 @@ func bulletSection(title string, lines []string) string {
 		b.WriteByte('\n')
 	}
 	return strings.TrimRight(b.String(), "\n")
-}
-
-func capabilityLines(refs []adapter.CapabilityRef) []string {
-	lines := make([]string, 0, len(refs))
-	for _, ref := range refs {
-		if ref.Name == "" {
-			continue
-		}
-		line := ref.Name
-		if ref.Path != "" {
-			line += " (" + ref.Path + ")"
-		}
-		lines = append(lines, line)
-	}
-	sort.Strings(lines)
-	return lines
-}
-
-func memoryRefLines(refs []adapter.MemoryRef) []string {
-	lines := make([]string, 0, len(refs))
-	for _, ref := range refs {
-		if ref.ID == "" {
-			continue
-		}
-		var parts []string
-		if ref.Scope != "" {
-			parts = append(parts, "scope="+ref.Scope)
-		}
-		if ref.Mode != "" {
-			parts = append(parts, "mode="+ref.Mode)
-		}
-		if ref.Path != "" {
-			parts = append(parts, "path="+ref.Path)
-		}
-		line := ref.ID
-		if len(parts) > 0 {
-			line += " (" + strings.Join(parts, ", ") + ")"
-		}
-		lines = append(lines, line)
-	}
-	sort.Strings(lines)
-	return lines
-}
-
-func portableMemoryLines(memory []adapter.PortableMemory) []string {
-	lines := make([]string, 0, len(memory))
-	for _, item := range memory {
-		if item.ID == "" {
-			continue
-		}
-		var parts []string
-		if item.Scope != "" {
-			parts = append(parts, "scope="+item.Scope)
-		}
-		if item.Mode != "" {
-			parts = append(parts, "mode="+item.Mode)
-		}
-		if item.Path != "" {
-			parts = append(parts, "path="+item.Path)
-		}
-		line := item.ID
-		if len(parts) > 0 {
-			line += " (" + strings.Join(parts, ", ") + ")"
-		}
-		lines = append(lines, line)
-	}
-	sort.Strings(lines)
-	return lines
-}
-
-func toolsetLines(toolsets []adapter.Toolset) []string {
-	lines := make([]string, 0, len(toolsets))
-	for _, toolset := range toolsets {
-		if toolset.Name == "" {
-			continue
-		}
-		line := toolset.Name
-		if toolset.Mode != "" {
-			line += "=" + toolset.Mode
-		}
-		lines = append(lines, line)
-	}
-	sort.Strings(lines)
-	return lines
-}
-
-func sortedStrings(values []string) []string {
-	out := append([]string(nil), values...)
-	sort.Strings(out)
-	return out
-}
-
-func sortedMCPServers(servers []adapter.MCPServer) []adapter.MCPServer {
-	out := append([]adapter.MCPServer(nil), servers...)
-	sort.SliceStable(out, func(i, j int) bool {
-		return out[i].Name < out[j].Name
-	})
-	return out
-}
-
-func mcpServerRenderable(server adapter.MCPServer) bool {
-	return server.Name != "" && (server.Command != "" || server.URL != "")
 }
 
 func envMap(env []adapter.EnvVar) map[string]string {
@@ -1092,37 +946,4 @@ func sortedSetValues(set map[string]bool) []string {
 
 func sortedUnique(values []string) []string {
 	return sortedSetValues(stringSet(values))
-}
-
-func slug(value string) string {
-	value = strings.TrimSpace(strings.ToLower(value))
-	var builder strings.Builder
-	lastDash := false
-	for _, r := range value {
-		if unicode.IsLetter(r) || unicode.IsDigit(r) {
-			builder.WriteRune(r)
-			lastDash = false
-			continue
-		}
-		if r == '-' || r == '_' || unicode.IsSpace(r) {
-			if !lastDash && builder.Len() > 0 {
-				builder.WriteByte('-')
-				lastDash = true
-			}
-		}
-	}
-	slugged := strings.Trim(builder.String(), "-")
-	if slugged == "" {
-		return "agent"
-	}
-	return slugged
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if strings.TrimSpace(value) != "" {
-			return value
-		}
-	}
-	return ""
 }

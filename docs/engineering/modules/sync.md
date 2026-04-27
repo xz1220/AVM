@@ -111,7 +111,7 @@ func (s *Syncer) renderTarget(runtime string, resolved *config.ResolvedActivatio
     }
 
     detection := adp.Detect(ctx)
-    if !detection.Installed {
+    if !detection.Found {
         return TargetResult{Runtime: runtime, Status: "skipped", Warning: "runtime not installed"}
     }
 
