@@ -20,6 +20,9 @@ Usage:
   scripts/dev/avm-runtime-home-test-env.sh status  # show current test env
   scripts/dev/avm-runtime-home-test-env.sh delete  # delete test env
 
+Options:
+  AVM_TEST_SHELL=zsh|bash       Override the shell used by start/enter.
+
 Inside the test shell, use AVM normally:
   avm agent list
   avm agent show codex-agent
@@ -51,6 +54,8 @@ save_state() {
     printf 'TEST_PROJECT=%q\n' "$TEST_PROJECT"
     printf 'BIN_DIR=%q\n' "$BIN_DIR"
     printf 'REAL_HOME=%q\n' "$REAL_HOME"
+    printf 'TEST_SHELL_NAME=%q\n' "$TEST_SHELL_NAME"
+    printf 'TEST_SHELL_PATH=%q\n' "$TEST_SHELL_PATH"
   } > "$STATE_FILE"
 }
 
@@ -163,9 +168,54 @@ agent_create_args() {
   printf '%s\0' "${args[@]}"
 }
 
+detect_test_shell() {
+  local requested="${AVM_TEST_SHELL:-${SHELL:-}}"
+  local name path
+
+  if [ -n "$requested" ]; then
+    name="$(basename "$requested")"
+  else
+    name=""
+  fi
+
+  case "$name" in
+    zsh|bash)
+      path="$(command -v "$name" 2>/dev/null || true)"
+      if [ -z "$path" ] && [ -x "$requested" ]; then
+        path="$requested"
+      fi
+      ;;
+    *)
+      if path="$(command -v zsh 2>/dev/null)"; then
+        name="zsh"
+      elif path="$(command -v bash 2>/dev/null)"; then
+        name="bash"
+      else
+        printf 'No supported shell found; need zsh or bash.\n' >&2
+        exit 1
+      fi
+      ;;
+  esac
+
+  if [ -z "$path" ]; then
+    printf 'Requested shell %q was not found on PATH.\n' "$name" >&2
+    exit 1
+  fi
+
+  TEST_SHELL_NAME="$name"
+  TEST_SHELL_PATH="$path"
+}
+
 write_shell_rc() {
   local script_path="$SCRIPT_DIR/avm-runtime-home-test-env.sh"
-  cat > "$TEST_HOME/.zshrc" <<EOF
+  local skills
+  if [ -s "$ROOT/superpowers-skill-list" ]; then
+    skills="$(cat "$ROOT/superpowers-skill-list")"
+  else
+    skills="none"
+  fi
+
+  cat > "$TEST_HOME/.avm-test-shell-common.sh" <<EOF
 export AVM_TEST_ROOT=$(shell_quote "$ROOT")
 export AVM_REAL_HOME=$(shell_quote "$REAL_HOME")
 export AVM_BIN=$(shell_quote "$BIN_DIR/avm")
@@ -181,14 +231,24 @@ avm-delete-test-env() {
 }
 
 avm-activate coding
-eval "\$(avm shell init zsh)"
 
 printf '\\nAVM runtime-home test shell\\n'
+printf '  shell=%s\\n' $(shell_quote "$TEST_SHELL_NAME")
 printf '  HOME=%s\\n' "\$HOME"
 printf '  project=%s\\n' "$(shell_quote "$TEST_PROJECT")"
 printf '  CODEX_HOME=%s\\n' "\${CODEX_HOME:-}"
 printf '  CLAUDE_CONFIG_DIR=%s\\n' "\${CLAUDE_CONFIG_DIR:-}"
-printf '  skills=%s\\n' "$(if [ -s "$ROOT/superpowers-skill-list" ]; then cat "$ROOT/superpowers-skill-list"; else printf none; fi)"
+if [ -n "\${ANTHROPIC_API_KEY:-}" ]; then
+  printf '  ANTHROPIC_API_KEY=set\\n'
+else
+  printf '  ANTHROPIC_API_KEY=unset\\n'
+fi
+if [ -n "\${ANTHROPIC_AUTH_TOKEN:-}" ]; then
+  printf '  ANTHROPIC_AUTH_TOKEN=set\\n'
+else
+  printf '  ANTHROPIC_AUTH_TOKEN=unset\\n'
+fi
+printf '  skills=%s\\n' $(shell_quote "$skills")
 printf '\\nTry:\\n'
 printf '  codex\\n'
 printf '  # then run /mcp inside Codex\\n'
@@ -199,10 +259,21 @@ printf '  # claude will ask you to log in here if this temporary HOME has no Cla
 printf '\\nCleanup from your normal shell:\\n'
 printf '  %s delete\\n\\n' "$(shell_quote "$script_path")"
 EOF
+
+  cat > "$TEST_HOME/.zshrc" <<'EOF'
+source "$HOME/.avm-test-shell-common.sh"
+eval "$(avm shell init zsh)"
+EOF
+
+  cat > "$TEST_HOME/.bashrc" <<'EOF'
+source "$HOME/.avm-test-shell-common.sh"
+eval "$(avm shell init bash)"
+EOF
 }
 
 create_env() {
   ensure_not_existing
+  detect_test_shell
 
   REAL_HOME="${AVM_REAL_HOME:-$HOME}"
   ROOT="$(mktemp -d /tmp/avm-runtime-home-test.XXXXXX)"
@@ -245,8 +316,25 @@ enter_env() {
     create_env
   fi
   load_state
+  TEST_SHELL_NAME="${TEST_SHELL_NAME:-zsh}"
+  TEST_SHELL_PATH="${TEST_SHELL_PATH:-$(command -v "$TEST_SHELL_NAME" 2>/dev/null || true)}"
+  if [ -z "$TEST_SHELL_PATH" ]; then
+    printf 'Configured test shell %q is not available.\n' "$TEST_SHELL_NAME" >&2
+    exit 1
+  fi
   printf 'Entering test shell. Type exit to return.\n'
-  HOME="$TEST_HOME" ZDOTDIR="$TEST_HOME" AVM_REAL_HOME="$REAL_HOME" AVM_TEST_ROOT="$ROOT" PATH="$BIN_DIR:$PATH" zsh -i
+  case "$TEST_SHELL_NAME" in
+    zsh)
+      HOME="$TEST_HOME" ZDOTDIR="$TEST_HOME" AVM_REAL_HOME="$REAL_HOME" AVM_TEST_ROOT="$ROOT" PATH="$BIN_DIR:$PATH" "$TEST_SHELL_PATH" -i
+      ;;
+    bash)
+      HOME="$TEST_HOME" AVM_REAL_HOME="$REAL_HOME" AVM_TEST_ROOT="$ROOT" PATH="$BIN_DIR:$PATH" "$TEST_SHELL_PATH" --rcfile "$TEST_HOME/.bashrc" -i
+      ;;
+    *)
+      printf 'Unsupported test shell %q.\n' "$TEST_SHELL_NAME" >&2
+      exit 1
+      ;;
+  esac
 }
 
 delete_env() {
@@ -273,6 +361,7 @@ print_status() {
   printf '  HOME:    %s\n' "$TEST_HOME"
   printf '  project: %s\n' "$TEST_PROJECT"
   printf '  avm:     %s\n' "$BIN_DIR/avm"
+  printf '  shell:   %s (%s)\n' "${TEST_SHELL_NAME:-unknown}" "${TEST_SHELL_PATH:-unknown}"
 }
 
 cmd="${1:-start}"
