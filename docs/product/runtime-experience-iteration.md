@@ -24,6 +24,31 @@ opencode
 
 The user should not need to understand templates, symlinks, or runtime config file layouts before they can start.
 
+## Create Experience Loop
+
+The next friction point is not installation; it is turning an existing local setup into a focused profile.
+
+Implemented in this iteration:
+
+- `avm create --from <profile>` copies an existing AVM profile, so users can start from `default` without editing YAML by hand.
+- `avm create --from-import <runtime>/<candidate>` promotes a runtime import-report candidate into an AVM profile.
+- Interactive `avm create` now shows package, profile, and import candidates as creation sources.
+- Interactive `avm create` lists installed skills and MCP servers from the local registry, includes skill summaries from `SKILL.md`, and lets the user select by number or name.
+- `avm skill list` gives users a standalone inventory with skill summaries before they create a scenario-specific profile.
+- `avm runtime list` shows detected runtimes and exact `avm create --from-import ...` commands for import candidates.
+- `avm runtime scan` refreshes detection without forcing users to rerun full initialization.
+
+Example:
+
+```bash
+avm skill list
+avm runtime list
+avm create --from default --name api-coder
+avm create --from-import claude-code/reviewer --name reviewer-copy
+```
+
+This keeps package-first onboarding while adding a path for users who already have useful local configuration.
+
 ## Runtime Priorities
 
 Recommended first-class runtimes:

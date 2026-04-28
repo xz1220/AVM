@@ -1,6 +1,6 @@
 # Agent VM — 验收标准
 
-> 最后更新：2026-04-29（v8 — OpenCode runtime support）
+> 最后更新：2026-04-29（v10 — Create wizard and runtime discovery UX）
 
 本文档定义 Phase 1 MVP 的验收标准，并标注当前 `main` 的可执行基线。验收重点是 Agent Profile、能力引用、多 runtime Environment 映射、Claude Code/Codex/OpenCode/Cline/Cursor adapter、render mapping 和数据安全。
 
@@ -8,7 +8,7 @@
 
 ## 验收原则
 
-1. 当前已合入的 Phase 1 命令可用：`init`、`agent create/list/show`、`agent show --runtime`、`env create`、`env create --local`、`memory import --dry-run`、`use/status/deactivate`、`sync`、`shell init`、`export/import`。
+1. 当前已合入的 Phase 1 命令可用：`init`、`create`、`skill list`、`runtime list/scan`、`agent create/list/show`、`agent show --runtime`、`env create`、`env create --local`、`memory import --dry-run`、`use/status/deactivate`、`sync`、`shell init`、`export/import`。
 2. `~/.avm` 是 Agent Profile 的 source of truth。
 3. `avm init` 只写 `~/.avm/**` 默认配置和 state，包括 read-only runtime scan 的 `state/import-report.json`；不得修改 runtime 配置。
 4. 不默认覆盖用户 instruction 文件。

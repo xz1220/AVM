@@ -11,6 +11,8 @@ func addCommands(root *cobra.Command) {
 		newInitCommand(),
 		newCreateCommand(),
 		newPackageCommand(),
+		newSkillCommand(),
+		newRuntimeCommand(),
 		newAgentCommand(),
 		newEnvCommand(),
 		newMemoryCommand(),

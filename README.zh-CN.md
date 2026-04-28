@@ -145,8 +145,10 @@ memory_refs:
 现在可用：
 
 - `avm init`
-- `avm create <package>`，用于首次从 package 创建 profile
+- `avm create <package>`、`avm create --from <profile>`、`avm create --from-import <runtime>/<candidate>`，用于首次创建 profile
 - `avm package list/show`，用于查看内置 create package
+- `avm skill list`，用于查看已安装 skills
+- `avm runtime list/scan`，用于查看 runtime 探测结果和可导入候选项
 - `avm agent create/list/show`，包括 `avm agent show --runtime <runtime>`
 - `avm env create`，包括 `avm env create --local`
 - `avm memory import --from <file> --dry-run`
@@ -201,6 +203,26 @@ avm package list
 avm package show reviewer
 ```
 
+创建前先看本地已经安装了哪些 skills 以及它们的简介：
+
+```bash
+avm skill list
+```
+
+查看 AVM 能从现有 runtime 配置里抽取出哪些候选项：
+
+```bash
+avm runtime list
+avm runtime scan
+```
+
+也可以从已有配置或 runtime 扫描出来的候选项创建：
+
+```bash
+avm create --from default --name api-coder
+avm create --from-import claude-code/reviewer --name reviewer-copy
+```
+
 从源码运行可用于开发和本地测试：
 
 ```bash
@@ -233,6 +255,7 @@ avm agent create cursor-helper --runtime cursor --skills rules
 
 avm agent list
 avm agent show backend-coder
+avm skill list
 ```
 
 创建 environments：

@@ -155,8 +155,10 @@ managed activation path are in place.
 Working today:
 
 - `avm init`
-- `avm create <package>` for first-run profile creation
+- `avm create <package>`, `avm create --from <profile>`, and `avm create --from-import <runtime>/<candidate>` for first-run profile creation
 - `avm package list/show` for built-in create packages
+- `avm skill list` for installed skill inventory
+- `avm runtime list/scan` for runtime detection and import candidates
 - `avm agent create/list/show`, including `avm agent show --runtime <runtime>`
 - `avm env create`, including `avm env create --local`
 - `avm memory import --from <file> --dry-run`
@@ -213,6 +215,26 @@ avm package list
 avm package show reviewer
 ```
 
+Inspect installed skills and their summaries before deciding what belongs in a profile:
+
+```bash
+avm skill list
+```
+
+Inspect existing runtime configuration that AVM can turn into profiles:
+
+```bash
+avm runtime list
+avm runtime scan
+```
+
+Create from something you already have instead of starting from a package:
+
+```bash
+avm create --from default --name api-coder
+avm create --from-import claude-code/reviewer --name reviewer-copy
+```
+
 Run from source for development or local testing:
 
 ```bash
@@ -246,6 +268,7 @@ avm agent create cursor-helper --runtime cursor --skills rules
 
 avm agent list
 avm agent show backend-coder
+avm skill list
 ```
 
 Create environments:

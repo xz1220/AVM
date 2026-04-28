@@ -149,11 +149,15 @@ avm env create coding --codex backend-coder --claude-code reviewer
    - Multi-runtime environment
    - Install package as-is
 2. 如果选择 profile：
-   - 选择 package，默认 `backend-coder`
+   - 选择来源：package、已有 AVM profile、runtime import-report candidate
+   - 如果选择 package，默认 `backend-coder`
+   - 如果选择已有 profile，可从 `default` 复制出新 profile
+   - 如果选择 import candidate，可把 Claude/OpenCode 等 runtime 已有 agent 抽取成 AVM profile
    - 输入本地 agent name，默认使用 package 建议名
    - 选择 runtime：Codex、Claude Code、OpenCode、Cline、Cursor
    - 选择 model/reasoning，提供默认值
-   - 选择 skills、MCP、memory refs，可先跳过
+   - 从本地 registry 已安装 skills/MCP 中选择，也可手动输入未安装引用
+   - 选择 memory refs，可先跳过
    - 选择保存范围：global 或 current project
 3. 展示 preview：
    - 即将写入的 AVM YAML
@@ -186,6 +190,10 @@ Then start your runtime:
 - 非 TTY 环境不弹 prompt，给出稳定错误和建议 `--yes` 或完整 flags。
 - 所有 wizard 都有等价的 flag 命令，便于 CI 和文档复现。
 - 支持 `--name`、`--runtime`、`--yes`、`--no-input`。
+- 支持 `--from <profile>`，用于从已有 AVM profile 克隆。
+- 支持 `--from-import <runtime>/<candidate>`，用于从 import report 候选项创建。
+- skills 选择需要展示 `SKILL.md` 摘要，避免用户只能靠目录名猜用途。
+- 支持 `avm runtime list/scan`，让用户先看清楚现有 runtime 配置能抽取出哪些候选项。
 
 ## 6. Package 模型
 
