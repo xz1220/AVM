@@ -218,6 +218,7 @@ create_env() {
 
   copy_if_present "$REAL_HOME/.codex/auth.json" "$TEST_HOME/.codex/auth.json"
   copy_if_present "$REAL_HOME/.claude.json" "$TEST_HOME/.claude.json"
+  copy_if_present "$REAL_HOME/.claude/.credentials.json" "$TEST_HOME/.claude/.credentials.json"
 
   HOME="$TEST_HOME" PATH="$BIN_DIR:$PATH" "$BIN_DIR/avm" init >/dev/null
   install_filesystem_mcp

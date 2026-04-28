@@ -547,6 +547,8 @@ func captureRuntimeHomeSidecars(runtime, runtimeHome string) ([]runtimeHomeSidec
 	switch runtime {
 	case "codex":
 		return captureNamedSidecars([]string{"auth.json"}, codexSidecarSourceDirs(runtimeHome))
+	case "claude-code":
+		return captureNamedSidecars([]string{".credentials.json"}, claudeSidecarSourceDirs(runtimeHome))
 	default:
 		return nil, nil
 	}
@@ -559,6 +561,17 @@ func codexSidecarSourceDirs(runtimeHome string) []string {
 	}
 	if userHome, err := os.UserHomeDir(); err == nil && userHome != "" {
 		dirs = append(dirs, filepath.Join(userHome, ".codex"))
+	}
+	return uniqueCleanPaths(dirs)
+}
+
+func claudeSidecarSourceDirs(runtimeHome string) []string {
+	dirs := []string{runtimeHome}
+	if envHome := strings.TrimSpace(os.Getenv("CLAUDE_CONFIG_DIR")); envHome != "" {
+		dirs = append(dirs, envHome)
+	}
+	if userHome, err := os.UserHomeDir(); err == nil && userHome != "" {
+		dirs = append(dirs, filepath.Join(userHome, ".claude"))
 	}
 	return uniqueCleanPaths(dirs)
 }

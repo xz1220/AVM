@@ -254,6 +254,7 @@ runtime_homes:
 - `avm activate <profile-or-env>` 输出 eval-safe shell assignments，包括 `CODEX_HOME`、`CLAUDE_CONFIG_DIR` 和 `AVM_CLAUDE_MCP_CONFIG`。
 - `avm shell init` 仍负责 prompt 展示，并在有 `AVM_CLAUDE_MCP_CONFIG` 时包装 `claude` 命令，自动传入 `--strict-mcp-config --mcp-config=<file>`。这里使用等号形式，避免 Claude Code 的可变长 `--mcp-config` 参数吞掉后面的 prompt 或 `agents` 等子命令。
 - Codex runtime home 重建时会保留或复制 `auth.json` 认证侧车文件，避免 `CODEX_HOME` 指到隔离目录后真实 `codex exec` 变成未登录状态；原始 `~/.codex` 仍只读、不回写。
+- Claude Code runtime home 重建时会保留或复制 `.credentials.json` 认证侧车文件。Claude Code 官方认证文档说明 Linux/Windows 凭据默认在 `~/.claude/.credentials.json`，设置 `CLAUDE_CONFIG_DIR` 后则在该目录下的 `.credentials.json`。
 
 推荐路线：
 

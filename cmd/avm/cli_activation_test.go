@@ -229,6 +229,8 @@ func TestActivatePrintsShellExportsForIsolatedRuntimeHomes(t *testing.T) {
 	t.Setenv("HOME", home)
 	sourceCodexHome := setupCodexHome(t, home)
 	writeFileForTest(t, filepath.Join(sourceCodexHome, "auth.json"), "{\"auth_mode\":\"source\"}\n")
+	sourceClaudeHome := filepath.Join(home, ".claude")
+	writeFileForTest(t, filepath.Join(sourceClaudeHome, ".credentials.json"), "{\"type\":\"oauth\"}\n")
 	chdir(t, project)
 
 	if _, err := executeCommand("init"); err != nil {
@@ -271,14 +273,21 @@ func TestActivatePrintsShellExportsForIsolatedRuntimeHomes(t *testing.T) {
 		t.Fatalf("codex auth sidecar was not copied into runtime home: %q", got)
 	}
 	assertPathExistsForTest(t, filepath.Join(claudeHome, "settings.json"))
+	if got := readFileForTest(t, filepath.Join(claudeHome, ".credentials.json")); got != "{\"type\":\"oauth\"}\n" {
+		t.Fatalf("claude credentials sidecar was not copied into runtime home: %q", got)
+	}
 
 	writeFileForTest(t, filepath.Join(codexHome, "auth.json"), "{\"auth_mode\":\"isolated-login\"}\n")
+	writeFileForTest(t, filepath.Join(claudeHome, ".credentials.json"), "{\"type\":\"isolated-oauth\"}\n")
 	out, err = executeCommand("activate", "--kind", "env", "dual-runtime")
 	if err != nil {
 		t.Fatalf("second activate returned error: %v\n%s", err, out)
 	}
 	if got := readFileForTest(t, filepath.Join(codexHome, "auth.json")); got != "{\"auth_mode\":\"isolated-login\"}\n" {
 		t.Fatalf("codex auth sidecar was not preserved across runtime home reset: %q", got)
+	}
+	if got := readFileForTest(t, filepath.Join(claudeHome, ".credentials.json")); got != "{\"type\":\"isolated-oauth\"}\n" {
+		t.Fatalf("claude credentials sidecar was not preserved across runtime home reset: %q", got)
 	}
 }
 
