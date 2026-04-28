@@ -515,7 +515,7 @@ func runtimeHomesForActivation(active config.ActiveRef, targets []string, overri
 
 func runtimeUsesIsolatedHome(runtime string) bool {
 	switch runtime {
-	case "codex", "claude-code":
+	case "codex", "claude-code", "opencode":
 		return true
 	default:
 		return false

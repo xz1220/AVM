@@ -72,13 +72,14 @@ avm --help
 export HOME="$TEST_ROOT/home"
 export CODEX_HOME="$HOME/.codex"                    # Codex adapter: os.Getenv("CODEX_HOME"), 默认 ~/.codex
 export CLAUDE_CONFIG_DIR="$HOME/.claude"            # Claude adapter: os.Getenv("CLAUDE_CONFIG_DIR"), 默认 ~/.claude
+export OPENCODE_CONFIG_DIR="$HOME/.config/opencode" # OpenCode adapter: os.Getenv("OPENCODE_CONFIG_DIR"), 默认 ~/.config/opencode
 export CLINE_DATA_HOME="$HOME/.cline/data"          # Cline adapter: os.Getenv("CLINE_DATA_HOME"), 默认 ~/.cline/data
 export PROJECT_ROOT="$TEST_ROOT/project"
-mkdir -p "$HOME" "$CODEX_HOME" "$CLAUDE_CONFIG_DIR" "$CLINE_DATA_HOME" "$PROJECT_ROOT"
+mkdir -p "$HOME" "$CODEX_HOME" "$CLAUDE_CONFIG_DIR" "$OPENCODE_CONFIG_DIR" "$CLINE_DATA_HOME" "$PROJECT_ROOT"
 cd "$PROJECT_ROOT"
 ```
 
-> 注：以上环境变量均为各 runtime adapter 在代码中显式支持的隔离机制（见 `internal/adapter/*/`），非 AVM 自定义。Codex、Claude Code、Cline 的隔离目录放在 `$HOME` 默认路径下，是为了让真实 runtime CLI 即使只按默认路径读取配置，也能读到 AVM 写入结果。Cursor adapter 不使用环境变量，而是通过 `projectRoot` 参数定位 `<projectRoot>/.cursor/`。
+> 注：以上环境变量均为各 runtime adapter 在代码中显式支持的隔离机制（见 `internal/adapter/*/`），非 AVM 自定义。Codex、Claude Code、OpenCode、Cline 的隔离目录放在 `$HOME` 默认路径下，是为了让真实 runtime CLI 即使只按默认路径读取配置，也能读到 AVM 写入结果。Cursor adapter 不使用环境变量，而是通过 `projectRoot` 参数定位 `<projectRoot>/.cursor/`。
 
 通过标准：
 

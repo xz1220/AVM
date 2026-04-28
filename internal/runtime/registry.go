@@ -6,6 +6,7 @@ import (
 	"github.com/xz1220/agent-vm/internal/adapter/cline"
 	"github.com/xz1220/agent-vm/internal/adapter/codex"
 	"github.com/xz1220/agent-vm/internal/adapter/cursor"
+	"github.com/xz1220/agent-vm/internal/adapter/opencode"
 )
 
 type Registry struct {
@@ -19,6 +20,7 @@ func NewRegistry() *Registry {
 			"cline":       cline.New(),
 			"codex":       codex.New(),
 			"cursor":      cursor.New(),
+			"opencode":    opencode.New(),
 		},
 	}
 }

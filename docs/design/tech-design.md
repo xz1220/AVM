@@ -60,7 +60,7 @@ Agent Profile
   -> Runtime Native Config
 ```
 
-`avm agent create/list/show` 管理 Agent Profile；`avm use <agent-profile>` 激活单个 profile；`avm env create` 只绑定 `codex -> backend-coder`、`claude-code -> code-reviewer` 这类 runtime 到 profile 的映射；`avm use <env>` 把映射后的 profiles 渲染到 Claude Code、Codex、Cline 等运行时。
+`avm agent create/list/show` 管理 Agent Profile；`avm use <agent-profile>` 激活单个 profile；`avm env create` 只绑定 `codex -> backend-coder`、`claude-code -> code-reviewer`、`opencode -> opencode-coder` 这类 runtime 到 profile 的映射；`avm use <env>` 把映射后的 profiles 渲染到 Claude Code、Codex、OpenCode、Cline 等运行时。
 
 ### 2. 最小统一抽象，不追求最低公倍数
 
@@ -159,6 +159,7 @@ skills 这类目录资源仍可通过 active symlink 快速切换：
 |---------|--------------|
 | Claude Code | 完整 adapter：agents、skills、MCP、settings、memory 引用渲染；native memory 只在显式 memory 命令中读写 |
 | Codex | 完整 adapter：profiles、agent roles、MCP、instructions |
+| OpenCode | 完整 adapter：`OPENCODE_CONFIG`、`OPENCODE_CONFIG_DIR`、agent markdown、skills、MCP、permission |
 | Cline | 完整 adapter：rules、MCP、auto-approval、subagents 开关只做能力状态 |
 | Cursor | 文件级 PoC：rules/MCP 映射，暂不承诺完整 Agent adapter |
 | OpenClaw | 不实现 adapter，只作为 gateway/channel/remote workspace 设计约束；workspace/routing 字段进入 `runtime_extensions.openclaw` |
@@ -173,7 +174,7 @@ skills 这类目录资源仍可通过 active symlink 快速切换：
    Runtime 配置文件是派生产物；`AGENTS.md`、`CLAUDE.md`、`.clinerules`、`.mcp.json`、`config.toml` 等文件可以被导入或渲染，但不再是 AVM 内部的主数据。
 
 2. **`avm init` 只读扫描，不接管 runtime 配置。**
-   `init` 可以创建 `~/.avm`、导入候选 Agent Profile/Capability/Environment、记录来源和映射状态，但不得修改 Claude Code、Codex、Cline、Cursor 等 runtime 的原始配置文件。
+   `init` 可以创建 `~/.avm`、导入候选 Agent Profile/Capability/Environment、记录来源和映射状态，但不得修改 Claude Code、Codex、OpenCode、Cline、Cursor 等 runtime 的原始配置文件。
 
 3. **`avm use <profile/env>` 才进入受控写入。**
    激活 profile/env 时，AVM 只能写 adapter 声明的 managed paths、managed sections 或 AVM 自己的 fragment/agent/profile 文件；首次写入前必须备份并做冲突检测。

@@ -248,6 +248,43 @@ sandbox_mode = "workspace-write"
 
 ---
 
+## OpenCode Adapter
+
+### 写入目标
+
+| AVM 字段 | OpenCode 目标 | 状态 |
+|----------|---------------|------|
+| active default agent | `opencode.json#default_agent` | native |
+| agent definition | `agents/<agent>.md` | native |
+| permissions | agent/config `permission` | native |
+| MCP | `opencode.json#mcp` | native |
+| skills with `SKILL.md` source | `skills/<skill>/SKILL.md` | native |
+| unresolved skill names | agent body | rendered_as_instructions |
+| reasoning/verbosity | agent body | rendered_as_instructions |
+| project `AGENTS.md` / `.opencode/` | user-owned | ignored |
+
+### Isolated Runtime Home
+
+OpenCode supports environment-variable isolation:
+
+```bash
+export OPENCODE_CONFIG="$AVM_RUNTIME_HOME/opencode.json"
+export OPENCODE_CONFIG_DIR="$AVM_RUNTIME_HOME"
+```
+
+AVM writes:
+
+```text
+$AVM_RUNTIME_HOME/
+  opencode.json
+  agents/<agent>.md
+  skills/<skill>/SKILL.md
+```
+
+The adapter must not overwrite `~/.config/opencode` or project `.opencode/`.
+
+---
+
 ## Cline Adapter
 
 ### 写入目标

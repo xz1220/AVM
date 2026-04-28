@@ -24,6 +24,7 @@ func TestInitImportReportGeneratedReadOnly(t *testing.T) {
 	t.Setenv("CODEX_HOME", filepath.Join(runtimeRoot, "codex"))
 	t.Setenv("CLAUDE_CONFIG_DIR", filepath.Join(runtimeRoot, "claude"))
 	t.Setenv("CLINE_DATA_HOME", filepath.Join(runtimeRoot, "cline-data"))
+	t.Setenv("OPENCODE_CONFIG_DIR", filepath.Join(runtimeRoot, "opencode"))
 	chdirForTest(t, project)
 
 	runtimeFiles := []string{
@@ -31,6 +32,7 @@ func TestInitImportReportGeneratedReadOnly(t *testing.T) {
 		writeTestFile(t, filepath.Join(runtimeRoot, "claude", "agents", "global-reviewer.md"), "---\nname: global-reviewer\ndescription: global agent\n---\nReview globally.\n"),
 		writeTestFile(t, filepath.Join(project, ".claude", "agents", "project-coder.md"), "---\nname: project-coder\ndescription: project agent\n---\nCode locally.\n"),
 		writeTestFile(t, filepath.Join(runtimeRoot, "cline-data", "settings", "cline_mcp_settings.json"), "{}\n"),
+		writeTestFile(t, filepath.Join(runtimeRoot, "opencode", "opencode.json"), "{}\n"),
 		writeTestFile(t, filepath.Join(project, ".cursor", "mcp.json"), "{}\n"),
 	}
 	before := hashFiles(t, runtimeFiles)
@@ -61,7 +63,7 @@ func TestInitImportReportGeneratedReadOnly(t *testing.T) {
 		t.Fatalf("generated_at is not RFC3339Nano: %q", report.GeneratedAt)
 	}
 
-	for _, runtimeName := range []string{"claude-code", "cline", "codex", "cursor"} {
+	for _, runtimeName := range []string{"claude-code", "cline", "codex", "cursor", "opencode"} {
 		runtimeReport := mustInitRuntimeReport(t, report, runtimeName)
 		if !runtimeReport.Found {
 			t.Fatalf("%s not marked found in report: %#v", runtimeName, runtimeReport)

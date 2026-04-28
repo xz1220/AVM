@@ -127,6 +127,7 @@ type MCPServer struct {
 	Args    []string `json:"args,omitempty"`
 	Env     []EnvVar `json:"env,omitempty"`
 	URL     string   `json:"url,omitempty"`
+	Headers []EnvVar `json:"headers,omitempty"`
 }
 
 // EnvVar preserves environment variable references without expanding secrets.

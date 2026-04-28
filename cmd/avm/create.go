@@ -164,7 +164,7 @@ func resolveCreateValues(cmd *cobra.Command, reader *bufio.Reader, out io.Writer
 		if err != nil {
 			return values, err
 		}
-		values.Runtime, err = promptString(reader, out, "Runtime (codex, claude-code, cline, cursor)", values.Runtime)
+		values.Runtime, err = promptString(reader, out, "Runtime (codex, claude-code, opencode, cline, cursor)", values.Runtime)
 		if err != nil {
 			return values, err
 		}
@@ -289,6 +289,8 @@ func runtimeStartCommand(runtime string) string {
 		return "codex"
 	case "claude-code":
 		return "claude"
+	case "opencode":
+		return "opencode"
 	case "cline":
 		return "cline"
 	case "cursor":

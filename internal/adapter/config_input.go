@@ -193,6 +193,7 @@ func mcpServerFromConfig(server config.ResolvedMCPServer) MCPServer {
 		Args:    append([]string(nil), server.Args...),
 		Env:     envVars(server.Env),
 		URL:     server.URL,
+		Headers: envVars(server.Headers),
 	}
 }
 

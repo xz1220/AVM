@@ -1,12 +1,12 @@
 # Agent VM — 顶层架构设计
 
-> 最后更新：2026-04-27（v7 — 对齐实际包结构）
+> 最后更新：2026-04-29（v8 — OpenCode adapter）
 
 ## 设计目标
 
 1. **Agent Profile 一等对象** — 用 `AgentProfile` 描述一个可迁移的 agent，而不是只同步某几个配置文件。
 2. **能力和记忆跟随 Profile** — skills、MCP、hooks、commands、permissions 和 memory refs 由 Agent Profile 引用；Environment 不重复定义能力或 memory。
-3. **运行时适配** — adapter 把统一模型渲染为 Claude Code、Codex、Cline 等原生配置，并输出字段级映射状态。
+3. **运行时适配** — adapter 把统一模型渲染为 Claude Code、Codex、OpenCode、Cline 等原生配置，并输出字段级映射状态。
 4. **多 runtime 映射** — Environment 只负责把 runtime 绑定到各自的默认 Agent Profile。
 5. **安全写入** — 默认只写 AVM 管理区或结构化字段；写前冲突检测和备份。
 
@@ -57,7 +57,7 @@
 │ └───────────────────────┬─────────────────────────┘          │
 ├─────────────────────────┼────────────────────────────────────┤
 │ Adapter 层 internal/adapter                                  │
-│ Claude Code | Codex | Cline | Cursor PoC | future OpenClaw    │
+│ Claude Code | Codex | OpenCode | Cline | Cursor PoC | future  │
 │ Detect / Import / Plan / Render / ManagedPaths                │
 ├──────────────────────────────────────────────────────────────┤
 │ 文件系统层                                                    │
@@ -160,6 +160,7 @@ type FieldMapping struct {
 |---------|-------|--------|-----|-------------|--------|------|
 | Claude Code | native `.claude/agents/*.md` | native/symlink | native `.mcp.json` / settings | native settings | native scope 或 instruction | 完整 adapter |
 | Codex | native `[agents]` + role TOML | instruction 或 future | native `[mcp_servers]` | native profile | instruction refs | 完整 adapter |
+| OpenCode | native `agents/*.md` | native `skills/*/SKILL.md` | native `mcp` | native `permission` | instruction refs | 完整 adapter |
 | Cline | rendered rules | rules/skills toggles | native `cline_mcp_settings.json` | native global state 部分字段 | rules/instructions | 完整 adapter，Agent 非原生 |
 | Cursor | rendered rules | unsupported | native `.cursor/mcp.json` | unsupported | rules/instructions | 文件级 PoC |
 | OpenClaw | future `agents.list[]` | native workspace skills | native `mcp.servers` | native sandbox/gateway | native/future | 仅设计约束 |

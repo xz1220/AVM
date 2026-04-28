@@ -13,7 +13,7 @@
 <p align="center">
   <a href="https://github.com/xz1220/Agent-VM/actions/workflows/ci.yml"><img src="https://github.com/xz1220/Agent-VM/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <img src="https://img.shields.io/badge/status-early_preview-0f766e" alt="Status: early preview">
-  <img src="https://img.shields.io/badge/runtime-Codex%20%7C%20Claude%20Code%20%7C%20Cline%20%7C%20Cursor-1d4ed8" alt="Supported runtime targets">
+  <img src="https://img.shields.io/badge/runtime-Codex%20%7C%20Claude%20Code%20%7C%20OpenCode-1d4ed8" alt="Supported runtime targets">
   <img src="https://img.shields.io/badge/language-Go-00ADD8" alt="Go">
 </p>
 
@@ -24,8 +24,8 @@
 Agent VM, or `avm`, is a local control plane for AI coding agent profiles. It
 keeps an agent's role, tools, permissions, model preferences, and memory refs in
 one portable profile, then lets adapters render that profile into runtimes such
-as Codex, Claude Code, Cline, and Cursor. Cursor support is a conservative
-Phase 1 rules/MCP PoC.
+as Codex, Claude Code, and OpenCode. Cline and Cursor remain available as
+compatibility adapters; Cursor support is a conservative Phase 1 rules/MCP PoC.
 
 <p align="center">
   <img src="assets/avm-before-after.svg" alt="Before AVM config is scattered; after AVM one profile activates an agent" width="100%">
@@ -50,6 +50,7 @@ backend-coder package
       -> eval "$(avm activate backend-coder)"
         -> Codex profile
         -> Claude Code agent
+        -> OpenCode config/agent/skills
         -> Cline rules/MCP settings
         -> Cursor rules/MCP PoC
 ```
@@ -72,7 +73,7 @@ must report how fields map: `native`, `rendered_as_instructions`, `ignored`, or
 | Layer | Example |
 | --- | --- |
 | Identity | `backend-coder`, `pr-reviewer`, `incident-runner` |
-| Runtime | `codex`, `claude-code`, `cline`, `cursor` |
+| Runtime | `codex`, `claude-code`, `opencode`, `cline`, `cursor` |
 | Model run | model name, reasoning effort, verbosity |
 | Capabilities | skills, commands, hooks, MCP servers, toolsets |
 | Permissions | approval mode, sandbox intent, allow/deny policy |
@@ -164,7 +165,7 @@ Working today:
 - `avm shell init bash|zsh|fish`
 - `avm export`, `avm import`, and `avm install <file.avm.zip>`
 - `avm init` runtime import/report scan with `state/import-report.json`
-- managed Codex, Claude Code, Cline, and Cursor render outputs
+- managed Codex, Claude Code, OpenCode, Cline, and Cursor render outputs
 - config validation and resolution tests
 - adapter contract, fake adapter, and Phase 1 fixtures
 
@@ -197,6 +198,14 @@ eval "$(avm activate backend-coder)"
 codex
 ```
 
+Use OpenCode instead by selecting it during creation or passing a flag:
+
+```bash
+avm create backend-coder --runtime opencode
+eval "$(avm activate backend-coder)"
+opencode
+```
+
 Inspect available packages:
 
 ```bash
@@ -216,7 +225,7 @@ For a local smoke run without installed runtime CLIs, create the runtime config
 directories before activation:
 
 ```bash
-mkdir -p "$HOME/.codex" "$HOME/.claude" "$HOME/.cline/data" .cursor
+mkdir -p "$HOME/.codex" "$HOME/.claude" "$HOME/.config/opencode" "$HOME/.cline/data" .cursor
 ```
 
 Create and inspect profiles:
@@ -231,6 +240,7 @@ avm agent create backend-coder \
   --memory backend-standards:project
 
 avm agent create reviewer --runtime claude-code --skills review
+avm agent create opencode-coder --runtime opencode --skills git,test
 avm agent create cline-helper --runtime cline --skills test
 avm agent create cursor-helper --runtime cursor --skills rules
 
@@ -244,6 +254,7 @@ Create environments:
 avm env create all-runtimes \
   --codex backend-coder \
   --claude-code reviewer \
+  --opencode opencode-coder \
   --cline cline-helper \
   --cursor cursor-helper
 
@@ -332,7 +343,7 @@ AVM is designed to be conservative by default:
 | Phase | Theme | Headline |
 | --- | --- | --- |
 | 1 | Local profile activation | `avm use <profile>` |
-| 2 | Runtime coverage | Codex, Claude Code, Cline, Cursor PoC adapters |
+| 2 | Runtime coverage | Codex, Claude Code, OpenCode, plus Cline/Cursor compatibility adapters |
 | 3 | Portable memory | explicit import/export/diff/push/pull |
 | 4 | Team registry | shareable agent profiles with policy and audit |
 
@@ -365,8 +376,8 @@ The main package is `cmd/avm`. Core packages live under `internal/config`,
 
 AVM is early. The most useful contributions right now are narrow and concrete:
 
-- runtime mapping research for Codex, Claude Code, Cline, Cursor, and GitHub
-  Copilot custom agents
+- runtime mapping research for Codex, Claude Code, OpenCode, Cline, Cursor, and
+  GitHub Copilot custom agents
 - adapter fixtures
 - CLI behavior tests
 - docs that explain real workflows

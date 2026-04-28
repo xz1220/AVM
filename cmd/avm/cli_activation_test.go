@@ -229,7 +229,10 @@ func TestActivatePrintsShellExportsForIsolatedRuntimeHomes(t *testing.T) {
 	if _, err := executeCommand("agent", "create", "claude-agent", "--runtime", "claude-code"); err != nil {
 		t.Fatalf("create claude agent: %v", err)
 	}
-	if _, err := executeCommand("env", "create", "dual-runtime", "--codex", "codex-agent", "--claude-code", "claude-agent"); err != nil {
+	if _, err := executeCommand("agent", "create", "opencode-agent", "--runtime", "opencode"); err != nil {
+		t.Fatalf("create opencode agent: %v", err)
+	}
+	if _, err := executeCommand("env", "create", "dual-runtime", "--codex", "codex-agent", "--claude-code", "claude-agent", "--opencode", "opencode-agent"); err != nil {
 		t.Fatalf("create env: %v", err)
 	}
 
@@ -240,6 +243,7 @@ func TestActivatePrintsShellExportsForIsolatedRuntimeHomes(t *testing.T) {
 	active := config.ActiveRef{Kind: config.ActiveKindEnv, Name: "dual-runtime"}
 	codexHome := config.RuntimeHomeDir(active, "codex")
 	claudeHome := config.RuntimeHomeDir(active, "claude-code")
+	opencodeHome := config.RuntimeHomeDir(active, "opencode")
 	for _, want := range []string{
 		"export AVM_HOME='" + filepath.Join(home, ".avm") + "'",
 		"export AVM_ACTIVE='env:dual-runtime'",
@@ -247,6 +251,8 @@ func TestActivatePrintsShellExportsForIsolatedRuntimeHomes(t *testing.T) {
 		"export CLAUDE_CONFIG_DIR='" + claudeHome + "'",
 		"export AVM_CLAUDE_MCP_CONFIG='" + filepath.Join(claudeHome, "mcp.json") + "'",
 		"export AVM_CLAUDE_AGENT='claude-agent'",
+		"export OPENCODE_CONFIG='" + filepath.Join(opencodeHome, "opencode.json") + "'",
+		"export OPENCODE_CONFIG_DIR='" + opencodeHome + "'",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("activate output missing %q:\n%s", want, out)
@@ -263,6 +269,8 @@ func TestActivatePrintsShellExportsForIsolatedRuntimeHomes(t *testing.T) {
 	if got := readFileForTest(t, filepath.Join(claudeHome, ".credentials.json")); got != "{\"type\":\"oauth\"}\n" {
 		t.Fatalf("claude credentials sidecar was not copied into runtime home: %q", got)
 	}
+	assertPathExistsForTest(t, filepath.Join(opencodeHome, "opencode.json"))
+	assertPathExistsForTest(t, filepath.Join(opencodeHome, "agents", "opencode-agent.md"))
 
 	writeFileForTest(t, filepath.Join(codexHome, "auth.json"), "{\"auth_mode\":\"isolated-login\"}\n")
 	writeFileForTest(t, filepath.Join(claudeHome, ".credentials.json"), "{\"type\":\"isolated-oauth\"}\n")

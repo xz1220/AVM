@@ -8,6 +8,7 @@ STATE_FILE="$STATE_DIR/state"
 
 CODEX_MODEL="${AVM_TEST_CODEX_MODEL:-gpt-5.4-mini}"
 CLAUDE_MODEL="${AVM_TEST_CLAUDE_MODEL:-sonnet}"
+OPENCODE_MODEL="${AVM_TEST_OPENCODE_MODEL:-anthropic/claude-sonnet-4-5}"
 SUPERPOWERS_REPO="${AVM_TEST_SUPERPOWERS_REPO:-https://github.com/obra/superpowers.git}"
 SUPERPOWERS_REF="${AVM_TEST_SUPERPOWERS_REF:-main}"
 
@@ -23,6 +24,7 @@ Usage:
 Options:
   AVM_TEST_SHELL=zsh|bash       Override the shell used by start/enter.
   AVM_TEST_CLAUDE_MODEL=sonnet  Override the Claude Code agent model.
+  AVM_TEST_OPENCODE_MODEL=...    Override the OpenCode agent model.
 
 Inside the test shell, use AVM normally:
   avm agent list
@@ -32,6 +34,7 @@ Inside the test shell, use AVM normally:
   codex exec --skip-git-repo-check --ephemeral "Reply exactly AVM_CODEX_OK."
   # In interactive codex, run /mcp to inspect the filesystem MCP server.
   claude agents
+  opencode
 EOF
 }
 
@@ -239,6 +242,8 @@ printf '  HOME=%s\\n' "\$HOME"
 printf '  project=%s\\n' "$(shell_quote "$TEST_PROJECT")"
 printf '  CODEX_HOME=%s\\n' "\${CODEX_HOME:-}"
 printf '  CLAUDE_CONFIG_DIR=%s\\n' "\${CLAUDE_CONFIG_DIR:-}"
+printf '  OPENCODE_CONFIG=%s\\n' "\${OPENCODE_CONFIG:-}"
+printf '  OPENCODE_CONFIG_DIR=%s\\n' "\${OPENCODE_CONFIG_DIR:-}"
 if [ -n "\${ANTHROPIC_API_KEY:-}" ]; then
   printf '  ANTHROPIC_API_KEY=set\\n'
 else
@@ -261,6 +266,7 @@ printf '  # then run /mcp inside Codex\\n'
 printf '  codex exec --skip-git-repo-check --ephemeral "Reply exactly AVM_CODEX_OK."\\n'
 printf '  claude agents\\n'
 printf '  claude auth status --text\\n'
+printf '  opencode\\n'
 printf '  # claude will ask you to log in here if this temporary HOME has no Claude auth\\n'
 printf '\\nCleanup from your normal shell:\\n'
 printf '  %s delete\\n\\n' "$(shell_quote "$script_path")"
@@ -303,11 +309,14 @@ create_env() {
 
   local codex_args=()
   local claude_args=()
+  local opencode_args=()
   while IFS= read -r -d '' arg; do codex_args+=("$arg"); done < <(agent_create_args codex "$CODEX_MODEL" codex-agent)
   while IFS= read -r -d '' arg; do claude_args+=("$arg"); done < <(agent_create_args claude-code "$CLAUDE_MODEL" claude-agent)
+  while IFS= read -r -d '' arg; do opencode_args+=("$arg"); done < <(agent_create_args opencode "$OPENCODE_MODEL" opencode-agent)
   HOME="$TEST_HOME" PATH="$BIN_DIR:$PATH" "$BIN_DIR/avm" "${codex_args[@]}" >/dev/null
   HOME="$TEST_HOME" PATH="$BIN_DIR:$PATH" "$BIN_DIR/avm" "${claude_args[@]}" >/dev/null
-  HOME="$TEST_HOME" PATH="$BIN_DIR:$PATH" "$BIN_DIR/avm" env create coding --codex codex-agent --claude-code claude-agent >/dev/null
+  HOME="$TEST_HOME" PATH="$BIN_DIR:$PATH" "$BIN_DIR/avm" "${opencode_args[@]}" >/dev/null
+  HOME="$TEST_HOME" PATH="$BIN_DIR:$PATH" "$BIN_DIR/avm" env create coding --codex codex-agent --claude-code claude-agent --opencode opencode-agent >/dev/null
 
   write_shell_rc
   save_state

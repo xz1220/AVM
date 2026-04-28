@@ -30,6 +30,7 @@ Goal: support the runtimes that AI coding power users actually combine.
 
 - [x] Codex profile rendering
 - [x] Claude Code agent and MCP rendering
+- [x] OpenCode config, agent, permission, MCP, and skill rendering
 - [x] Cline rules and MCP rendering
 - [x] Cursor PoC rendering
 - [x] support matrix in `avm status`

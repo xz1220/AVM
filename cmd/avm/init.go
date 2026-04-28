@@ -103,7 +103,7 @@ func defaultGlobalConfig() *config.GlobalConfig {
 		},
 		Defaults: config.DefaultsConfig{
 			SourceScope:      string(config.ScopeGlobal),
-			Targets:          []string{"claude-code", "codex", "cline"},
+			Targets:          []string{"claude-code", "codex", "opencode"},
 			ConflictStrategy: "prompt",
 		},
 		Settings: config.Settings{
@@ -137,9 +137,9 @@ func defaultEnvironment() *config.Environment {
 		RuntimeAgents: map[string]config.RuntimeAgent{
 			"claude-code": {Primary: "default"},
 			"codex":       {Primary: "default"},
-			"cline":       {Primary: "default"},
+			"opencode":    {Primary: "default"},
 		},
-		Targets: []string{"claude-code", "codex", "cline"},
+		Targets: []string{"claude-code", "codex", "opencode"},
 	}
 	env.ApplyDefaults()
 	return env

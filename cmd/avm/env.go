@@ -31,6 +31,7 @@ func newEnvCreateCommand() *cobra.Command {
 	cmd.Flags().Bool("local", false, "create the environment for the current workspace")
 	cmd.Flags().String("codex", "", "agent profile for Codex")
 	cmd.Flags().String("claude-code", "", "agent profile for Claude Code")
+	cmd.Flags().String("opencode", "", "agent profile for OpenCode")
 	cmd.Flags().String("cline", "", "agent profile for Cline")
 	cmd.Flags().String("cursor", "", "agent profile for Cursor")
 	return cmd
@@ -180,4 +181,4 @@ func validateRuntimeAgentProfile(name, cwd string) error {
 	return fmt.Errorf("profile %q not found in %s or %s", name, config.ProjectAgentPath(cwd, name), config.AgentPath(name))
 }
 
-var envCreateRuntimeOrder = []string{"codex", "claude-code", "cline", "cursor"}
+var envCreateRuntimeOrder = []string{"codex", "claude-code", "opencode", "cline", "cursor"}

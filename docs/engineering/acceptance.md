@@ -1,8 +1,8 @@
 # Agent VM — 验收标准
 
-> 最后更新：2026-04-26（v7 — Stage 6 Acceptance Polish）
+> 最后更新：2026-04-29（v8 — OpenCode runtime support）
 
-本文档定义 Phase 1 MVP 的验收标准，并标注当前 `main` 的可执行基线。验收重点是 Agent Profile、能力引用、多 runtime Environment 映射、Claude Code/Codex/Cline/Cursor adapter、render mapping 和数据安全。
+本文档定义 Phase 1 MVP 的验收标准，并标注当前 `main` 的可执行基线。验收重点是 Agent Profile、能力引用、多 runtime Environment 映射、Claude Code/Codex/OpenCode/Cline/Cursor adapter、render mapping 和数据安全。
 
 ---
 
@@ -65,7 +65,7 @@ avm init
 
 前置：
 
-- 准备 Claude Code、Codex、Cline、Cursor 的 fixture 配置文件。
+- 准备 Claude Code、Codex、OpenCode、Cline、Cursor 的 fixture 配置文件。
 
 执行：
 
@@ -155,6 +155,7 @@ avm agent show backend-coder --runtime codex
 avm env create backend-dev \
   --codex backend-coder \
   --claude-code code-reviewer \
+  --opencode opencode-coder \
   --cline backend-assistant \
   --cursor cursor-helper
 ```
@@ -164,6 +165,7 @@ avm env create backend-dev \
 - 创建 `~/.avm/envs/backend-dev.yaml`。
 - `runtime_agents.codex.primary = backend-coder`。
 - `runtime_agents.claude-code.primary = code-reviewer`。
+- `runtime_agents.opencode.primary = opencode-coder`。
 - `runtime_agents.cline.primary = backend-assistant`。
 - `runtime_agents.cursor.primary = cursor-helper`。
 - env YAML 不包含 `capabilities` 或 `memory_layers`。
@@ -234,10 +236,12 @@ avm use --kind env backend-dev
 - `active/manifest.yaml` 记录 `active.kind = env` 和 `active.name = backend-dev`。
 - `runtime_agents.codex = backend-coder`。
 - `runtime_agents.claude-code = code-reviewer`。
+- `runtime_agents.opencode = opencode-coder`。
 - `runtime_agents.cline = backend-assistant`。
 - `runtime_agents.cursor = cursor-helper`。
 - Codex 只渲染 `backend-coder` 的 capabilities/memory refs。
 - Claude Code 只渲染 `code-reviewer` 的 capabilities/memory refs。
+- OpenCode 只渲染 `opencode-coder` 的 capabilities/memory refs。
 - Cline 只渲染 `backend-assistant` 的 capabilities/memory refs。
 - Cursor 只渲染 `cursor-helper` 的 rules/MCP PoC。
 - 更新 `state/current-active = env:backend-dev`。
@@ -268,7 +272,20 @@ avm use --kind env backend-dev
 - 不覆盖项目 `AGENTS.md`。
 - `sync-state.json` 记录 skills/memory `rendered_as_instructions`。
 
-### 4.5 Cline 输出
+### 4.5 OpenCode 输出
+
+前置：target 包含 `opencode`。
+
+预期：
+
+- `avm activate` 导出 `OPENCODE_CONFIG=<runtime-home>/opencode.json`。
+- `avm activate` 导出 `OPENCODE_CONFIG_DIR=<runtime-home>`。
+- 写 `<runtime-home>/opencode.json`，包含 `default_agent`、`permission` 和可表达 MCP。
+- 写 `<runtime-home>/agents/<agent>.md`。
+- 写 `<runtime-home>/skills/<skill>/SKILL.md`，仅清理 AVM-managed stale skill。
+- 不覆盖 `~/.config/opencode` 或项目 `.opencode/`。
+
+### 4.6 Cline 输出
 
 前置：target 包含 `cline`。
 
@@ -281,7 +298,7 @@ avm use --kind env backend-dev
 - 保留已有 `.clinerules/` 文件。
 - 高风险 `autoApprovalSettings.actions.executeAllCommands` 默认不被打开。
 
-### 4.6 Cursor PoC
+### 4.7 Cursor PoC
 
 前置：target 包含 `cursor`。
 
@@ -323,7 +340,7 @@ avm shell init fish
 - prompt 显示 `(avm:backend-coder)` 或按配置等价显示。
 - 执行 `avm use tech-writer` 后，下一次 prompt 显示 `(avm:tech-writer)`。
 - 执行 `avm use backend-dev` 后，下一次 prompt 显示 `(avm:backend-dev)`。
-- 在同一 shell 中运行 `codex`、`claude`、`cline` 时，使用的是 `avm use` 已渲染的当前 runtime 配置。
+- 在同一 shell 中运行 `codex`、`claude`、`opencode`、`cline` 时，使用的是 `avm use` 已渲染的当前 runtime 配置。
 
 ### 5.3 退出环境
 

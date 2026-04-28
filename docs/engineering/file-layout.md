@@ -193,6 +193,26 @@ AVM Phase 1 策略：
 - role: 写 `[agents.<role>]` 和 `.codex/agents/<role>.toml`。
 - instructions: 写 role TOML 的 `developer_instructions`；不默认覆盖项目 `AGENTS.md`。
 
+### OpenCode
+
+```
+~/.avm/runtime-homes/<active>/opencode/
+├── opencode.json
+├── agents/
+│   └── backend-coder.md
+└── skills/
+    └── test/
+        └── SKILL.md
+```
+
+AVM Phase 1 策略：
+
+- activation: 导出 `OPENCODE_CONFIG` 和 `OPENCODE_CONFIG_DIR` 指向 isolated runtime home。
+- config: 写 `default_agent`、`permission` 和 `mcp`。
+- agent: 写 `agents/<agent>.md`，不写用户全局或项目 `.opencode/agents`。
+- skills: 仅复制 active skill set 中有 `SKILL.md` source 的条目。
+- instructions: reasoning、verbosity、unresolved skill names 写入 agent body。
+
 ### Cline
 
 ```

@@ -1,6 +1,6 @@
 # Agent VM — Runtime 配置映射调研
 
-> 最后更新：2026-04-24（v1 — agent-frameworks 关键运行时）
+> 最后更新：2026-04-29（v2 — added OpenCode from official docs）
 
 本文档记录从 `agent-frameworks/` 读取到的关键 runtime 配置面。它是 `internal/adapter` 的实现依据，不是用户手册。
 
@@ -12,6 +12,7 @@
 |---------|----------|------------|------------|--------|--------------|
 | Claude Code | `~/.claude/settings.json`、`<project>/.claude/settings*.json`、`.mcp.json` | `.claude/agents/<name>.md` | skills、hooks、MCP、tools | `agent-memory/<agent>/MEMORY.md` | 完整 adapter |
 | Codex | `~/.codex/config.toml`、`.codex/agents/*.toml`、`AGENTS.md` | `[agents.<role>]` + role TOML | MCP、profiles、tool/permission config | instruction 引用为主 | 完整 adapter |
+| OpenCode | `~/.config/opencode/opencode.json`、`OPENCODE_CONFIG`、`OPENCODE_CONFIG_DIR`、`.opencode/` | `agent.<name>` 或 `agents/<name>.md` | MCP、permissions、skills、commands | instruction 引用为主 | 完整 adapter |
 | Cline | `<cline-data>/globalState.json`、`<cline-data>/settings/cline_mcp_settings.json`、`.clinerules/` | 无稳定 Agent Profile；subagents 是实验研究工具 | rules、MCP、auto approval、skills/workflows/hooks toggles | rules/memory-bank instructions | 完整 adapter，但 agent 以 instructions 渲染 |
 | Cursor | `.cursor/mcp.json`、`.cursor/rules/` / `.cursorrules` | 无统一本地 Agent Profile | MCP、rules | rules/instructions | 文件级 PoC |
 | OpenClaw | `~/.openclaw/openclaw.json` | `agents.list[]`、`bindings[]` | gateway tools、channels、skills、MCP | `memory` config | Phase 1 不实现，仅保留设计约束 |
@@ -183,6 +184,127 @@ sandbox_mode = "read-only"
 - 直接发现的 role 文件需要非空 `name` 和 `developer_instructions`。
 - `config_file` 可相对 `config.toml`。
 - 项目 `AGENTS.md` 是用户/项目指导文件，AVM 不默认覆盖。
+
+---
+
+## OpenCode
+
+资料来源：
+
+- Config: <https://opencode.ai/docs/config/>
+- Agents: <https://opencode.ai/docs/agents/>
+- Permissions: <https://opencode.ai/docs/permissions/>
+- MCP servers: <https://opencode.ai/docs/mcp-servers>
+- Skills: <https://opencode.ai/docs/skills/>
+
+### 路径和来源
+
+OpenCode 的配置文件支持 JSON/JSONC，并会合并多个来源。关键路径：
+
+- 全局 config：`~/.config/opencode/opencode.json`
+- 项目 config：`opencode.json`
+- 自定义 config：`OPENCODE_CONFIG=/path/to/opencode.json`
+- 自定义 config directory：`OPENCODE_CONFIG_DIR=/path/to/dir`
+- agent 目录：`~/.config/opencode/agents/`、`.opencode/agents/`
+- skill 目录：`~/.config/opencode/skills/`、`.opencode/skills/`
+
+AVM adapter 使用 isolated runtime home：
+
+```bash
+export OPENCODE_CONFIG="$AVM_HOME/runtime-homes/<active>/opencode/opencode.json"
+export OPENCODE_CONFIG_DIR="$AVM_HOME/runtime-homes/<active>/opencode"
+```
+
+这样不需要软链接，不覆盖用户的 `~/.config/opencode`，也能让 OpenCode 读取 AVM 渲染的 agents 和 skills。
+
+### Agent 映射
+
+OpenCode 支持 `opencode.json` 里的 `agent` 对象，也支持 Markdown agent 文件。AVM Phase 1 采用 Markdown agent 文件，配合 config 里的 `default_agent`：
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "default_agent": "backend-coder"
+}
+```
+
+```markdown
+---
+description: "Backend implementation agent"
+mode: "primary"
+model: "anthropic/claude-sonnet-4-5"
+permission:
+  edit: allow
+  bash:
+    "*": ask
+    "go test ./...": allow
+---
+
+Developer instructions:
+Prefer small, reviewable changes.
+```
+
+映射策略：
+
+- `agent.name`：文件名和 `default_agent`
+- `agent.description`：frontmatter `description`
+- `agent.instructions.system/developer`：agent body
+- `agent.model.model`：frontmatter `model` 和 config `model`
+- `agent.model.temperature`：frontmatter `temperature`
+- `agent.model.reasoning_effort`、`verbosity`：OpenCode 无 AVM 等价字段，写入 body 并标记 `rendered_as_instructions`
+
+### Permissions 映射
+
+OpenCode 的 `permission` 支持 `allow`、`ask`、`deny`，并可对 `bash`、`edit`、`read`、`external_directory` 等 key 做细粒度规则。AVM 映射：
+
+- `permissions.approval = never` -> 默认 `allow`
+- `permissions.approval = on-request|prompt|on-risky-actions|untrusted` -> 默认 `ask`
+- `permissions.sandbox = read-only` -> `edit: deny`，`bash` 至少 `ask`
+- `permissions.sandbox = workspace-write|danger-full-access` -> `edit: allow`
+- `permissions.allow/deny` 中的 `Bash(<pattern>)` -> `permission.bash.<pattern>`
+- `permissions.additional_directories` -> `permission.external_directory.<path>: allow`
+
+### MCP 映射
+
+OpenCode config 使用 `mcp`：
+
+```json
+{
+  "mcp": {
+    "github": {
+      "type": "local",
+      "command": ["npx", "-y", "@modelcontextprotocol/server-github"],
+      "environment": {
+        "GITHUB_TOKEN": "${GITHUB_TOKEN}"
+      },
+      "enabled": true
+    }
+  }
+}
+```
+
+远程 MCP 使用：
+
+```json
+{
+  "mcp": {
+    "context7": {
+      "type": "remote",
+      "url": "https://mcp.context7.com/mcp",
+      "headers": {
+        "CONTEXT7_API_KEY": "{env:CONTEXT7_API_KEY}"
+      },
+      "enabled": true
+    }
+  }
+}
+```
+
+AVM 会把 command 型 MCP 渲染为 local server；URL 型 MCP 渲染为 remote server。remote server 的 env 不能等价表达为 OpenCode 的 `headers` 时，会保留 warning。
+
+### Skills 映射
+
+OpenCode skill 使用 `<dir>/skills/<skill>/SKILL.md`，frontmatter 需要 `name` 和 `description`。AVM 从 active skill set 复制 `SKILL.md` 到 isolated runtime home，并添加 `avm_managed: true` 作为清理边界。没有 source path 的 skill name 只写入 agent instructions，并标记 `rendered_as_instructions`。
 
 ---
 

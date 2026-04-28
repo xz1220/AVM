@@ -67,6 +67,9 @@ func printShellActivation(out io.Writer, result *activationResult) {
 			if target.AgentName != "" {
 				writeShellExport(out, "AVM_CLAUDE_AGENT", target.AgentName)
 			}
+		case "opencode":
+			writeShellExport(out, "OPENCODE_CONFIG", filepath.Join(home, "opencode.json"))
+			writeShellExport(out, "OPENCODE_CONFIG_DIR", home)
 		}
 	}
 }

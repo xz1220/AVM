@@ -57,6 +57,7 @@ PRD 已明确：Phase 1 不做 `sync --watch`，不做 `workspace_isolation` 主
 | Stage 6 P0 | `DONE` | Acceptance polish 边界决策、prompts、Cursor 状态语义收敛 | `git diff --check` |
 | Stage 6 P1-P3 | `DONE` | `origin/feat/mapping-preview`、`origin/feat/init-import-report`、`origin/feat/docs-polish` | 各分支 `go test ./...`、`go vet ./...` 或 `git diff --check` |
 | Stage 6 P4 | `DONE` | Stage 6 branch integration、README/acceptance 状态修正 | `go test ./...`、`go vet ./...`、CLI smoke |
+| Stage 7 P0 | `DONE` | OpenCode adapter、OpenCode activation env、README/docs 对齐 | `go test ./...`、`go vet ./...`、OpenCode first-run smoke |
 
 Round 1 合并后的能力基线：
 
@@ -70,7 +71,7 @@ Round 1 合并后的能力基线：
 
 状态：`S6-P4 DONE`。`agent show --runtime` mapping preview、`init` read-only runtime import report、README/examples/docs 对齐都已合并。Cursor Phase 1 状态语义已定：成功写入时保持 `synced`，partial 能力边界必须通过 warnings 和 mapping status 明确展示。
 
-当前 `avm use` 会重建 active、调用 sync、写 sync-state，并可通过 Codex / Claude Code / Cline / Cursor adapters 写入 AVM-managed config。Cursor 仍是 Phase 1 partial adapter，必须通过 warnings 和 mapping status 明确说明能力边界。
+当前 `avm use` 会重建 active、调用 sync、写 sync-state，并可通过 Codex / Claude Code / OpenCode / Cline / Cursor adapters 写入 AVM-managed config。Cursor 仍是 Phase 1 partial adapter，必须通过 warnings 和 mapping status 明确说明能力边界。
 
 已锁定的 Round 3 边界：
 
@@ -666,7 +667,7 @@ Owner：
 任务：
 - `avm init` 完成默认 config/agent/env/sync-state 后，read-only 扫描已注册 runtime adapters：调用 Detect 和 Import。
 - 写 `~/.avm/state/import-report.json`，结构稳定，至少包含 version、generated_at、runtimes[]、found/config_dir/version、agents candidates、warnings/errors。
-- 扫描只能读 runtime 文件，不得创建/修改/删除 Codex/Claude/Cline/Cursor runtime 配置；不得自动 `avm use`；不得把 candidate 直接写入 agents/envs。
+- 扫描只能读 runtime 文件，不得创建/修改/删除 Codex/Claude/OpenCode/Cline/Cursor runtime 配置；不得自动 `avm use`；不得把 candidate 直接写入 agents/envs。
 - adapter Import 返回错误时记录到 report，不让整个 init 失败，除非 report 文件本身写入失败。
 - `init --force` 也应刷新 report；已有用户额外 `~/.avm/**` 文件不得删除。
 
@@ -937,7 +938,7 @@ Phase 1 coding 完成时至少满足：
 3. `avm memory import --dry-run` 可用，且不写 runtime native memory。
 4. `avm use <profile>` 可重建 active 并调用 adapter render。
 5. `avm env create/use` 可按 runtime 选择不同 Agent Profile。
-6. Codex、Claude Code、Cline 至少有 fixture 覆盖。
+6. Codex、Claude Code、OpenCode、Cline 至少有 fixture 覆盖。
 7. Cursor Phase 1 partial support 通过 warnings 和 mapping status 明确展示。
 8. `workspace_isolation` 不存在于 Agent Profile 主模型。
 9. mapping status 无 silent drop。

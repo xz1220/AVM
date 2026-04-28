@@ -87,7 +87,7 @@ func (c *GlobalConfig) ApplyDefaults() {
         c.Defaults.SourceScope = "global"
     }
     if len(c.Defaults.Targets) == 0 {
-        c.Defaults.Targets = []string{"claude-code", "codex", "cline"}
+        c.Defaults.Targets = []string{"claude-code", "codex", "opencode"}
     }
     if c.Defaults.ConflictStrategy == "" {
         c.Defaults.ConflictStrategy = "prompt"

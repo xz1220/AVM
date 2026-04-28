@@ -13,7 +13,7 @@
 - 安装路径仍以 `git clone`、`go run ./cmd/avm`、`make build` 为主。用户看不到一个稳定的 release binary、安装脚本或包管理入口。
 - 安装后还要求用户手动执行 `avm init`。这一步对用户没有明显价值，且容易让首次路径变长。
 - `agent create` 依赖很多 flag，例如 `--runtime`、`--skills`、`--mcps`、`--memory`。这适合脚本和 CI，不适合第一次理解概念。
-- README 主路径强调 `avm use`，但 CLI runtime 的真实生效路径还需要 `avm activate` 输出 shell env，例如 `CODEX_HOME`。首次用户容易误解“use 之后我到底怎么启动 Codex/Claude”。
+- README 主路径强调 `avm use`，但 CLI runtime 的真实生效路径还需要 `avm activate` 输出 shell env，例如 `CODEX_HOME`、`CLAUDE_CONFIG_DIR`、`OPENCODE_CONFIG`。首次用户容易误解“use 之后我到底怎么启动 Codex/Claude/OpenCode”。
 - `export/import` 已经能表达 `.avm.zip` package，但还没有面向用户的 package 发现、创建和安装路径。
 
 ## 2. 推荐的首次用户路径
@@ -151,7 +151,7 @@ avm env create coding --codex backend-coder --claude-code reviewer
 2. 如果选择 profile：
    - 选择 package，默认 `backend-coder`
    - 输入本地 agent name，默认使用 package 建议名
-   - 选择 runtime：Codex、Claude Code、Cline、Cursor
+   - 选择 runtime：Codex、Claude Code、OpenCode、Cline、Cursor
    - 选择 model/reasoning，提供默认值
    - 选择 skills、MCP、memory refs，可先跳过
    - 选择保存范围：global 或 current project
@@ -303,6 +303,7 @@ avm status
 ```bash
 rm -rf ~/.avm
 avm agent create backend-coder --runtime codex
+avm agent create opencode-coder --runtime opencode
 test -f ~/.avm/config.yaml
 ```
 
@@ -331,6 +332,7 @@ codex
 
 ```bash
 avm create backend-coder --name api-coder --runtime codex --yes
+avm create backend-coder --name api-coder --runtime opencode --yes
 avm agent show api-coder
 ```
 
@@ -383,5 +385,5 @@ codex
 然后再解释：
 
 - `Agent Profile`：一个 agent 角色，例如 `backend-coder`。
-- `Environment`：多 runtime 映射，例如 Codex 用 backend-coder，Claude Code 用 reviewer。
+- `Environment`：多 runtime 映射，例如 Codex 用 backend-coder，Claude Code 用 reviewer，OpenCode 用 opencode-coder。
 - `Package`：可创建、分享和安装的 AVM 分发单元。
