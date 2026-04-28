@@ -8,6 +8,7 @@ import (
 type Options struct {
 	ProjectRoot  string
 	ActiveDir    string
+	RuntimeHomes map[string]string
 	StatePath    string
 	BackupDir    string
 	UpdateActive bool
@@ -33,6 +34,7 @@ type TargetResult struct {
 	Status       TargetStatus           `json:"status"`
 	Active       config.ActiveRef       `json:"active"`
 	AgentName    string                 `json:"agent_name,omitempty"`
+	RuntimeHome  string                 `json:"runtime_home,omitempty"`
 	Plan         *adapter.RenderPlan    `json:"plan,omitempty"`
 	RenderResult *adapter.RenderResult  `json:"render_result,omitempty"`
 	ManagedPaths []adapter.ManagedPath  `json:"managed_paths,omitempty"`

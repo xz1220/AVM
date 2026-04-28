@@ -20,19 +20,21 @@ import (
 )
 
 const (
-	runtimeName       = "claude-code"
-	claudeBinaryName  = "claude"
-	claudeDirName     = ".claude"
-	agentsDirName     = "agents"
-	skillsDirName     = "skills"
-	skillFileName     = "SKILL.md"
-	mcpFileName       = ".mcp.json"
-	agentOperationID  = "claude-agent"
-	mcpOperationID    = "claude-mcp"
-	skillOperationID  = "claude-skill"
-	avmManagedKey     = "avm_managed"
-	avmMetadataKey    = "_avm"
-	avmMetadataSubkey = "claude-code"
+	runtimeName         = "claude-code"
+	claudeBinaryName    = "claude"
+	claudeDirName       = ".claude"
+	agentsDirName       = "agents"
+	skillsDirName       = "skills"
+	skillFileName       = "SKILL.md"
+	settingsFileName    = "settings.json"
+	mcpFileName         = "mcp.json"
+	agentOperationID    = "claude-agent"
+	settingsOperationID = "claude-settings"
+	mcpOperationID      = "claude-mcp"
+	skillOperationID    = "claude-skill"
+	avmManagedKey       = "avm_managed"
+	avmMetadataKey      = "_avm"
+	avmMetadataSubkey   = "claude-code"
 )
 
 // Adapter renders the conservative Phase 1 Claude Code path.
@@ -139,11 +141,12 @@ func (a *Adapter) Plan(ctx adapter.Context, input adapter.RenderInput) (*adapter
 
 	agentName := shared.FirstNonEmpty(input.Agent.Name, input.Active.Name, "agent")
 	agentFileName := shared.Slug(agentName)
-	projectRoot := shared.FirstNonEmpty(input.ProjectRoot, a.projectRoot, ".")
-	agentPath := filepath.ToSlash(filepath.Join(projectRoot, claudeDirName, agentsDirName, agentFileName+".md"))
-	mcpPath := filepath.ToSlash(filepath.Join(projectRoot, mcpFileName))
-	skillFiles, skillWarnings := claudeSkillFiles(input, a.claudeHome())
-	staleSkillFiles := staleClaudeSkillFiles(a.claudeHome(), skillFileNames(skillFiles))
+	configDir := a.claudeHomeForInput(input)
+	agentPath := filepath.ToSlash(filepath.Join(configDir, agentsDirName, agentFileName+".md"))
+	settingsPath := filepath.ToSlash(filepath.Join(configDir, settingsFileName))
+	mcpPath := filepath.ToSlash(filepath.Join(configDir, mcpFileName))
+	skillFiles, skillWarnings := claudeSkillFiles(input, configDir)
+	staleSkillFiles := staleClaudeSkillFiles(configDir, skillFileNames(skillFiles))
 
 	render := renderContext{
 		input:         input,
@@ -157,7 +160,14 @@ func (a *Adapter) Plan(ctx adapter.Context, input adapter.RenderInput) (*adapter
 		{
 			Path:        agentPath,
 			Owner:       "avm",
-			Description: "Claude Code agent definition rendered from the AVM profile.",
+			Description: "Claude Code agent definition rendered into an isolated AVM-owned runtime home.",
+			Required:    true,
+			MergeMode:   adapter.MergeModeWholeFile,
+		},
+		{
+			Path:        settingsPath,
+			Owner:       "avm",
+			Description: "Claude Code settings selecting the active AVM agent inside the isolated runtime home.",
 			Required:    true,
 			MergeMode:   adapter.MergeModeWholeFile,
 		},
@@ -169,6 +179,14 @@ func (a *Adapter) Plan(ctx adapter.Context, input adapter.RenderInput) (*adapter
 			Path:        agentPath,
 			Content:     []byte(render.renderAgentFile()),
 			Description: "write Claude Code AVM-managed agent file",
+			Required:    true,
+		},
+		{
+			ID:          settingsOperationID,
+			Action:      adapter.OperationWriteFile,
+			Path:        settingsPath,
+			Content:     []byte(render.renderSettingsFile()),
+			Description: "write Claude Code AVM-managed settings file",
 			Required:    true,
 		},
 	}
@@ -209,17 +227,17 @@ func (a *Adapter) Plan(ctx adapter.Context, input adapter.RenderInput) (*adapter
 	if len(render.renderableMCPServers()) > 0 {
 		managedPaths = append(managedPaths, adapter.ManagedPath{
 			Path:        mcpPath,
-			Owner:       "shared-section",
-			Description: "Claude Code project MCP server entries managed by AVM.",
+			Owner:       "avm",
+			Description: "Claude Code MCP config rendered into the isolated AVM-owned runtime home.",
 			Required:    true,
-			MergeMode:   adapter.MergeModeStructuredSection,
+			MergeMode:   adapter.MergeModeWholeFile,
 		})
 		operations = append(operations, adapter.RenderOperation{
 			ID:          mcpOperationID,
-			Action:      adapter.OperationStructuredSet,
+			Action:      adapter.OperationWriteFile,
 			Path:        mcpPath,
 			Content:     []byte(render.renderMCPDocument()),
-			Description: "merge Claude Code AVM-managed MCP server entries",
+			Description: "write Claude Code AVM-managed MCP config file",
 			Required:    true,
 		})
 	}
@@ -302,6 +320,13 @@ func (a *Adapter) claudeHome() string {
 	return ".claude"
 }
 
+func (a *Adapter) claudeHomeForInput(input adapter.RenderInput) string {
+	if input.RuntimeHome != "" {
+		return input.RuntimeHome
+	}
+	return a.claudeHome()
+}
+
 func (a *Adapter) defaultProjectRoot() string {
 	if a.projectRoot != "" {
 		return a.projectRoot
@@ -351,6 +376,16 @@ func (r renderContext) renderAgentFile() string {
 	b.WriteString(r.agentInstructions())
 	b.WriteByte('\n')
 	return b.String()
+}
+
+func (r renderContext) renderSettingsFile() string {
+	data, err := shared.MarshalJSON(map[string]any{
+		"agent": r.agentFileName,
+	})
+	if err != nil {
+		return "{\n  \"agent\": " + strconv.Quote(r.agentFileName) + "\n}\n"
+	}
+	return string(data)
 }
 
 func (r renderContext) renderMCPDocument() string {

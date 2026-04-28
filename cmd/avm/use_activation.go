@@ -24,8 +24,10 @@ type activationResult struct {
 }
 
 type activationTargetResult struct {
-	Runtime string
-	Status  avmsync.TargetStatus
+	Runtime     string
+	Status      avmsync.TargetStatus
+	AgentName   string
+	RuntimeHome string
 }
 
 type activationResolveError struct {
@@ -147,8 +149,10 @@ func activationResultFromSync(result *avmsync.Result) *activationResult {
 	}
 	for _, target := range result.Targets {
 		out.Targets = append(out.Targets, activationTargetResult{
-			Runtime: target.Runtime,
-			Status:  target.Status,
+			Runtime:     target.Runtime,
+			Status:      target.Status,
+			AgentName:   target.AgentName,
+			RuntimeHome: target.RuntimeHome,
 		})
 		for _, warning := range target.Warnings {
 			out.Warnings = append(out.Warnings, fmt.Sprintf("%s: %s", target.Runtime, warning))

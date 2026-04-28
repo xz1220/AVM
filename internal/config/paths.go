@@ -57,6 +57,30 @@ func ActiveDir() string {
 	return filepath.Join(AvmDir(), "active")
 }
 
+func RuntimeHomesDir() string {
+	return filepath.Join(AvmDir(), "runtime-homes")
+}
+
+func RuntimeHomeDir(active ActiveRef, runtime string) string {
+	return filepath.Join(RuntimeHomesDir(), RuntimeHomeActiveName(active), RuntimeHomeRuntimeName(runtime))
+}
+
+func RuntimeHomeActiveName(active ActiveRef) string {
+	if active.Kind == "" || active.Name == "" {
+		return "none"
+	}
+	return active.Kind + "-" + active.Name
+}
+
+func RuntimeHomeRuntimeName(runtime string) string {
+	switch runtime {
+	case "claude-code":
+		return "claude"
+	default:
+		return runtime
+	}
+}
+
 func StateDir() string {
 	return filepath.Join(AvmDir(), "state")
 }

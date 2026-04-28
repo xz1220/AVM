@@ -30,6 +30,7 @@ type RuntimeState struct {
 	Status       RuntimeStatus      `json:"status"`
 	Active       config.ActiveRef   `json:"active"`
 	AgentName    string             `json:"agent_name"`
+	RuntimeHome  string             `json:"runtime_home,omitempty"`
 	ManagedPaths []ManagedPathState `json:"managed_paths,omitempty"`
 	Mappings     []MappingState     `json:"mappings,omitempty"`
 	Warnings     []string           `json:"warnings,omitempty"`

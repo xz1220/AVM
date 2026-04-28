@@ -46,9 +46,11 @@ func (s *Syncer) SyncActivation(ctx context.Context, resolved *config.ResolvedAc
 
 	opts = defaultOptions(opts)
 	now := s.now()
+	runtimeHomes := runtimeHomesForActivation(resolved.Active, resolved.Targets, opts.RuntimeHomes)
 	inputs, err := adapter.RenderInputsFromResolved(resolved, adapter.RenderInputOptions{
-		ProjectRoot: opts.ProjectRoot,
-		ActiveDir:   opts.ActiveDir,
+		ProjectRoot:  opts.ProjectRoot,
+		ActiveDir:    opts.ActiveDir,
+		RuntimeHomes: runtimeHomes,
 	})
 	if err != nil {
 		return nil, err
@@ -128,10 +130,11 @@ func (s *Syncer) SyncActivation(ctx context.Context, resolved *config.ResolvedAc
 
 func (s *Syncer) renderTarget(ctx context.Context, input adapter.RenderInput, active config.ActiveRef, prior state.RuntimeState, opts Options, now time.Time) TargetResult {
 	targetResult := TargetResult{
-		Runtime:   input.Runtime,
-		Status:    TargetStatusFailed,
-		Active:    active,
-		AgentName: input.Agent.Name,
+		Runtime:     input.Runtime,
+		Status:      TargetStatusFailed,
+		Active:      active,
+		AgentName:   input.Agent.Name,
+		RuntimeHome: input.RuntimeHome,
 	}
 
 	adp, ok := s.Registry.Get(input.Runtime)
@@ -141,12 +144,23 @@ func (s *Syncer) renderTarget(ctx context.Context, input adapter.RenderInput, ac
 		return targetResult
 	}
 
+	if input.RuntimeHome != "" && !opts.DryRun {
+		if err := os.MkdirAll(input.RuntimeHome, 0o700); err != nil {
+			targetResult.Error = err.Error()
+			return targetResult
+		}
+	}
+
 	detection := adp.Detect(ctx)
 	targetResult.Warnings = append(targetResult.Warnings, detection.Warnings...)
 	if !detection.Found {
-		targetResult.Status = TargetStatusSkipped
-		targetResult.Warnings = append(targetResult.Warnings, "runtime not found")
-		return targetResult
+		if input.RuntimeHome != "" {
+			targetResult.Warnings = append(targetResult.Warnings, "runtime binary not found; rendering isolated runtime home")
+		} else {
+			targetResult.Status = TargetStatusSkipped
+			targetResult.Warnings = append(targetResult.Warnings, "runtime not found")
+			return targetResult
+		}
 	}
 
 	plan, err := adp.Plan(ctx, input)
@@ -168,14 +182,16 @@ func (s *Syncer) renderTarget(ctx context.Context, input adapter.RenderInput, ac
 	}
 	targetResult.ManagedPaths = managedPaths
 
-	conflicts, err := DetectConflicts(input.Runtime, managedPaths, prior)
-	if err != nil {
-		targetResult.Error = err.Error()
-		return targetResult
-	}
-	if err := conflictError(conflicts); err != nil {
-		targetResult.Error = err.Error()
-		return targetResult
+	if input.RuntimeHome == "" {
+		conflicts, err := DetectConflicts(input.Runtime, managedPaths, prior)
+		if err != nil {
+			targetResult.Error = err.Error()
+			return targetResult
+		}
+		if err := conflictError(conflicts); err != nil {
+			targetResult.Error = err.Error()
+			return targetResult
+		}
 	}
 
 	if opts.DryRun {
@@ -183,9 +199,25 @@ func (s *Syncer) renderTarget(ctx context.Context, input adapter.RenderInput, ac
 		return targetResult
 	}
 
-	if _, err := backup.BackupManagedPaths(input.Runtime, managedPaths, opts.BackupDir, now); err != nil {
-		targetResult.Error = err.Error()
-		return targetResult
+	if input.RuntimeHome != "" {
+		sidecars, err := captureRuntimeHomeSidecars(input.Runtime, input.RuntimeHome)
+		if err != nil {
+			targetResult.Error = err.Error()
+			return targetResult
+		}
+		if err := resetRuntimeHome(input.RuntimeHome); err != nil {
+			targetResult.Error = err.Error()
+			return targetResult
+		}
+		if err := restoreRuntimeHomeSidecars(input.RuntimeHome, sidecars); err != nil {
+			targetResult.Error = err.Error()
+			return targetResult
+		}
+	} else {
+		if _, err := backup.BackupManagedPaths(input.Runtime, managedPaths, opts.BackupDir, now); err != nil {
+			targetResult.Error = err.Error()
+			return targetResult
+		}
 	}
 
 	renderResult, err := adp.Render(ctx, plan)
@@ -238,14 +270,15 @@ func uniqueNonEmptyStrings(values []string) []string {
 
 func runtimeStateFromTarget(target TargetResult, managedPaths []adapter.ManagedPath, prior state.RuntimeState, now time.Time) state.RuntimeState {
 	runtimeState := state.RuntimeState{
-		Runtime:   target.Runtime,
-		Status:    state.RuntimeStatus(target.Status),
-		Active:    target.Active,
-		AgentName: target.AgentName,
-		Mappings:  state.MappingStates(target.Mappings),
-		Warnings:  append([]string(nil), target.Warnings...),
-		Error:     target.Error,
-		UpdatedAt: now.UTC(),
+		Runtime:     target.Runtime,
+		Status:      state.RuntimeStatus(target.Status),
+		Active:      target.Active,
+		AgentName:   target.AgentName,
+		RuntimeHome: target.RuntimeHome,
+		Mappings:    state.MappingStates(target.Mappings),
+		Warnings:    append([]string(nil), target.Warnings...),
+		Error:       target.Error,
+		UpdatedAt:   now.UTC(),
 	}
 
 	if len(managedPaths) > 0 && target.Status == TargetStatusSynced && target.RenderResult != nil {
@@ -338,6 +371,9 @@ func cleanupStaleRuntimeSkills(prior, current map[string]state.RuntimeState, act
 
 	stale := make(map[string]struct{})
 	for _, runtimeState := range prior {
+		if runtimeState.RuntimeHome != "" {
+			continue
+		}
 		for _, managedPath := range runtimeState.ManagedPaths {
 			if managedPath.Path == "" {
 				continue
@@ -454,6 +490,158 @@ func defaultOptions(opts Options) Options {
 		opts.BackupDir = config.BackupDir()
 	}
 	return opts
+}
+
+func runtimeHomesForActivation(active config.ActiveRef, targets []string, overrides map[string]string) map[string]string {
+	homes := make(map[string]string)
+	for runtime, home := range overrides {
+		if home != "" {
+			homes[runtime] = home
+		}
+	}
+	for _, runtime := range targets {
+		if !runtimeUsesIsolatedHome(runtime) {
+			continue
+		}
+		if homes[runtime] == "" {
+			homes[runtime] = config.RuntimeHomeDir(active, runtime)
+		}
+	}
+	if len(homes) == 0 {
+		return nil
+	}
+	return homes
+}
+
+func runtimeUsesIsolatedHome(runtime string) bool {
+	switch runtime {
+	case "codex", "claude-code":
+		return true
+	default:
+		return false
+	}
+}
+
+func resetRuntimeHome(home string) error {
+	if home == "" {
+		return nil
+	}
+	clean := filepath.Clean(home)
+	parent := filepath.Dir(clean)
+	if err := os.MkdirAll(parent, 0o700); err != nil {
+		return err
+	}
+	if err := os.RemoveAll(clean); err != nil {
+		return err
+	}
+	return os.MkdirAll(clean, 0o700)
+}
+
+type runtimeHomeSidecar struct {
+	RelPath string
+	Content []byte
+	Mode    os.FileMode
+}
+
+func captureRuntimeHomeSidecars(runtime, runtimeHome string) ([]runtimeHomeSidecar, error) {
+	switch runtime {
+	case "codex":
+		return captureNamedSidecars([]string{"auth.json"}, codexSidecarSourceDirs(runtimeHome))
+	default:
+		return nil, nil
+	}
+}
+
+func codexSidecarSourceDirs(runtimeHome string) []string {
+	dirs := []string{runtimeHome}
+	if envHome := strings.TrimSpace(os.Getenv("CODEX_HOME")); envHome != "" {
+		dirs = append(dirs, envHome)
+	}
+	if userHome, err := os.UserHomeDir(); err == nil && userHome != "" {
+		dirs = append(dirs, filepath.Join(userHome, ".codex"))
+	}
+	return uniqueCleanPaths(dirs)
+}
+
+func captureNamedSidecars(relPaths []string, sourceDirs []string) ([]runtimeHomeSidecar, error) {
+	sidecars := make([]runtimeHomeSidecar, 0, len(relPaths))
+	for _, relPath := range relPaths {
+		relPath = filepath.Clean(filepath.FromSlash(relPath))
+		if relPath == "." || filepath.IsAbs(relPath) || strings.HasPrefix(relPath, ".."+string(os.PathSeparator)) {
+			return nil, fmt.Errorf("invalid runtime home sidecar path %q", relPath)
+		}
+		sidecar, ok, err := captureFirstExistingSidecar(relPath, sourceDirs)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			sidecars = append(sidecars, sidecar)
+		}
+	}
+	return sidecars, nil
+}
+
+func captureFirstExistingSidecar(relPath string, sourceDirs []string) (runtimeHomeSidecar, bool, error) {
+	for _, sourceDir := range sourceDirs {
+		if sourceDir == "" {
+			continue
+		}
+		path := filepath.Join(sourceDir, relPath)
+		info, err := os.Stat(path)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return runtimeHomeSidecar{}, false, err
+		}
+		if info.IsDir() {
+			continue
+		}
+		content, err := os.ReadFile(path)
+		if err != nil {
+			return runtimeHomeSidecar{}, false, err
+		}
+		return runtimeHomeSidecar{
+			RelPath: relPath,
+			Content: content,
+			Mode:    info.Mode().Perm(),
+		}, true, nil
+	}
+	return runtimeHomeSidecar{}, false, nil
+}
+
+func restoreRuntimeHomeSidecars(runtimeHome string, sidecars []runtimeHomeSidecar) error {
+	for _, sidecar := range sidecars {
+		mode := sidecar.Mode
+		if mode == 0 {
+			mode = 0o600
+		}
+		path := filepath.Join(runtimeHome, sidecar.RelPath)
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			return err
+		}
+		if err := os.WriteFile(path, sidecar.Content, mode); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func uniqueCleanPaths(paths []string) []string {
+	out := make([]string, 0, len(paths))
+	seen := make(map[string]struct{}, len(paths))
+	for _, path := range paths {
+		if strings.TrimSpace(path) == "" {
+			continue
+		}
+		clean := filepath.Clean(path)
+		if _, ok := seen[clean]; ok {
+			continue
+		}
+		seen[clean] = struct{}{}
+		out = append(out, clean)
+	}
+	return out
 }
 
 func (s *Syncer) now() time.Time {

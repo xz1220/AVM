@@ -107,11 +107,12 @@ func (a *Adapter) Plan(ctx adapter.Context, input adapter.RenderInput) (*adapter
 	roleName := shared.Slug(agentName)
 	activeName := shared.FirstNonEmpty(input.Active.Name, agentName, "default")
 	profileName := "avm-" + shared.Slug(activeName)
-	configPath := filepath.ToSlash(filepath.Join(a.codexHome(), configFileName))
-	rolePath := filepath.ToSlash(filepath.Join(a.codexHome(), agentsDirName, roleName+".toml"))
+	configDir := a.codexHomeForInput(input)
+	configPath := filepath.ToSlash(filepath.Join(configDir, configFileName))
+	rolePath := filepath.ToSlash(filepath.Join(configDir, agentsDirName, roleName+".toml"))
 	roleConfigPath := "./" + filepath.ToSlash(filepath.Join(agentsDirName, roleName+".toml"))
-	skillFiles, skillWarnings := codexSkillFiles(input, a.codexHome())
-	staleSkillFiles := staleCodexSkillFiles(a.codexHome(), skillFileNames(skillFiles))
+	skillFiles, skillWarnings := codexSkillFiles(input, configDir)
+	staleSkillFiles := staleCodexSkillFiles(configDir, skillFileNames(skillFiles))
 
 	render := renderContext{
 		input:          input,
@@ -130,10 +131,10 @@ func (a *Adapter) Plan(ctx adapter.Context, input adapter.RenderInput) (*adapter
 		ManagedPaths: []adapter.ManagedPath{
 			{
 				Path:        configPath,
-				Owner:       "shared-section",
-				Description: "Codex AVM-managed profile, MCP server, and role registration sections.",
+				Owner:       "avm",
+				Description: "Codex config rendered as an isolated AVM-owned runtime home.",
 				Required:    true,
-				MergeMode:   adapter.MergeModeStructuredSection,
+				MergeMode:   adapter.MergeModeWholeFile,
 			},
 			{
 				Path:        rolePath,
@@ -146,10 +147,10 @@ func (a *Adapter) Plan(ctx adapter.Context, input adapter.RenderInput) (*adapter
 		Operations: []adapter.RenderOperation{
 			{
 				ID:          configOperationID,
-				Action:      adapter.OperationStructuredSet,
+				Action:      adapter.OperationWriteFile,
 				Path:        configPath,
 				Content:     []byte(render.renderConfigSection()),
-				Description: "merge Codex AVM-managed config sections",
+				Description: "write Codex AVM-managed config file",
 				Required:    true,
 			},
 			{
@@ -213,7 +214,7 @@ func (a *Adapter) Render(ctx adapter.Context, plan *adapter.RenderPlan) (*adapte
 		return nil, fmt.Errorf("codex adapter cannot render runtime %q", normalized.Runtime)
 	}
 
-	managed, err := managedPathIndex(normalized.ManagedPaths, a.codexHome())
+	managed, err := managedPathIndex(normalized.ManagedPaths, codexHomeFromPlan(normalized, a.codexHome()))
 	if err != nil {
 		return nil, err
 	}
@@ -283,6 +284,26 @@ func (a *Adapter) codexHome() string {
 		return filepath.Join(home, ".codex")
 	}
 	return ".codex"
+}
+
+func (a *Adapter) codexHomeForInput(input adapter.RenderInput) string {
+	if input.RuntimeHome != "" {
+		return input.RuntimeHome
+	}
+	return a.codexHome()
+}
+
+func codexHomeFromPlan(plan *adapter.RenderPlan, fallback string) string {
+	if plan == nil {
+		return fallback
+	}
+	for _, managedPath := range plan.ManagedPaths {
+		path := filepath.Clean(filepath.FromSlash(managedPath.Path))
+		if filepath.Base(path) == configFileName {
+			return filepath.Dir(path)
+		}
+	}
+	return fallback
 }
 
 func codexVersion(ctx context.Context, path string) string {

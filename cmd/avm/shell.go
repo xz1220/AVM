@@ -79,6 +79,17 @@ case ";${PROMPT_COMMAND:-};" in
   *";__avm_prompt_command;"*) ;;
   *) PROMPT_COMMAND="__avm_prompt_command${PROMPT_COMMAND:+;$PROMPT_COMMAND}" ;;
 esac
+
+claude() {
+  if [ -n "${AVM_CLAUDE_MCP_CONFIG:-}" ] && [ -r "$AVM_CLAUDE_MCP_CONFIG" ]; then
+    case " $* " in
+      *" --mcp-config "*) command claude "$@" ;;
+      *) command claude --strict-mcp-config --mcp-config "$AVM_CLAUDE_MCP_CONFIG" "$@" ;;
+    esac
+  else
+    command claude "$@"
+  fi
+}
 `
 
 const zshShellInitSnippet = `# avm shell integration
@@ -111,6 +122,17 @@ __avm_precmd() {
 autoload -Uz add-zsh-hook
 add-zsh-hook -d precmd __avm_precmd 2>/dev/null || true
 add-zsh-hook precmd __avm_precmd
+
+claude() {
+  if [ -n "${AVM_CLAUDE_MCP_CONFIG:-}" ] && [ -r "$AVM_CLAUDE_MCP_CONFIG" ]; then
+    case " $* " in
+      *" --mcp-config "*) command claude "$@" ;;
+      *) command claude --strict-mcp-config --mcp-config "$AVM_CLAUDE_MCP_CONFIG" "$@" ;;
+    esac
+  else
+    command claude "$@"
+  fi
+}
 `
 
 const fishShellInitSnippet = `# avm shell integration
@@ -144,5 +166,17 @@ end
 function fish_prompt
     __avm_current_active
     __avm_original_fish_prompt
+end
+
+function claude
+    if set -q AVM_CLAUDE_MCP_CONFIG; and test -r "$AVM_CLAUDE_MCP_CONFIG"
+        if contains -- --mcp-config $argv
+            command claude $argv
+        else
+            command claude --strict-mcp-config --mcp-config "$AVM_CLAUDE_MCP_CONFIG" $argv
+        end
+    else
+        command claude $argv
+    end
 end
 `

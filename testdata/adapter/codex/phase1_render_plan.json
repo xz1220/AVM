@@ -16,10 +16,10 @@
     },
     {
       "path": "<CODEX_HOME>/config.toml",
-      "owner": "shared-section",
-      "description": "Codex AVM-managed profile, MCP server, and role registration sections.",
+      "owner": "avm",
+      "description": "Codex config rendered as an isolated AVM-owned runtime home.",
       "required": true,
-      "merge_mode": "structured-section"
+      "merge_mode": "whole-file"
     }
   ],
   "operations": [
@@ -32,9 +32,9 @@
     },
     {
       "id": "codex-config",
-      "action": "structured_set",
+      "action": "write_file",
       "path": "<CODEX_HOME>/config.toml",
-      "description": "merge Codex AVM-managed config sections",
+      "description": "write Codex AVM-managed config file",
       "required": true
     }
   ],

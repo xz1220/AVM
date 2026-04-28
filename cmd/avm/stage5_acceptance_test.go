@@ -51,9 +51,10 @@ func TestStage5AcceptanceSmokeFlow(t *testing.T) {
 	assertPathMissing(t, filepath.Join(project, ".avm"))
 	assertNoRegularFiles(t, claudeConfigDir)
 	assertManagedRuntimePathsMissing(t, acceptanceRuntimePaths{
-		codexHome: codexHome,
-		clineHome: clineDataHome,
-		project:   project,
+		codexHome:  config.RuntimeHomeDir(config.ActiveRef{Kind: config.ActiveKindEnv, Name: "all-runtimes"}, "codex"),
+		claudeHome: config.RuntimeHomeDir(config.ActiveRef{Kind: config.ActiveKindEnv, Name: "all-runtimes"}, "claude-code"),
+		clineHome:  clineDataHome,
+		project:    project,
 	})
 
 	createAcceptanceAgent(t, "codex-agent", "codex", "--model", "gpt-5.4", "--reasoning", "medium", "--skills", "test", "--mcps", "github", "--memory", "acceptance-standards:project:/memory/acceptance-standards.md:read")
@@ -103,9 +104,10 @@ func TestStage5AcceptanceSmokeFlow(t *testing.T) {
 		t.Fatalf("memory import dry-run wrote formal memory files:\nbefore: %#v\nafter: %#v", memoryBefore, memoryAfter)
 	}
 	assertManagedRuntimePathsMissing(t, acceptanceRuntimePaths{
-		codexHome: codexHome,
-		clineHome: clineDataHome,
-		project:   project,
+		codexHome:  config.RuntimeHomeDir(config.ActiveRef{Kind: config.ActiveKindEnv, Name: "all-runtimes"}, "codex"),
+		claudeHome: config.RuntimeHomeDir(config.ActiveRef{Kind: config.ActiveKindEnv, Name: "all-runtimes"}, "claude-code"),
+		clineHome:  clineDataHome,
+		project:    project,
 	})
 	assertNoRegularFiles(t, claudeConfigDir)
 
@@ -123,10 +125,12 @@ func TestStage5AcceptanceSmokeFlow(t *testing.T) {
 		assertContains(t, useOut, want)
 	}
 
+	active := config.ActiveRef{Kind: config.ActiveKindEnv, Name: "all-runtimes"}
 	paths := acceptanceRuntimePaths{
-		codexHome: codexHome,
-		clineHome: clineDataHome,
-		project:   project,
+		codexHome:  config.RuntimeHomeDir(active, "codex"),
+		claudeHome: config.RuntimeHomeDir(active, "claude-code"),
+		clineHome:  clineDataHome,
+		project:    project,
 	}
 	for _, path := range []string{
 		paths.codexConfig(),
@@ -259,9 +263,10 @@ func TestStage5AcceptanceHardenedCLIFlow(t *testing.T) {
 }
 
 type acceptanceRuntimePaths struct {
-	codexHome string
-	clineHome string
-	project   string
+	codexHome  string
+	claudeHome string
+	clineHome  string
+	project    string
 }
 
 func (p acceptanceRuntimePaths) codexConfig() string {
@@ -273,7 +278,7 @@ func (p acceptanceRuntimePaths) codexAgent(name string) string {
 }
 
 func (p acceptanceRuntimePaths) claudeAgent(name string) string {
-	return filepath.Join(p.project, ".claude", "agents", name+".md")
+	return filepath.Join(p.claudeHome, "agents", name+".md")
 }
 
 func (p acceptanceRuntimePaths) clineRules(name string) string {

@@ -26,7 +26,7 @@ func TestRegisteredCommandHelp(t *testing.T) {
 		{
 			name: "root",
 			args: []string{"--help"},
-			want: []string{"agent", "deactivate", "env", "export", "import", "init", "memory", "shell", "status", "sync", "use"},
+			want: []string{"activate", "agent", "deactivate", "env", "export", "import", "init", "memory", "shell", "status", "sync", "use"},
 		},
 		{
 			name: "agent",
@@ -57,6 +57,11 @@ func TestRegisteredCommandHelp(t *testing.T) {
 			name: "import",
 			args: []string{"import", "--help"},
 			want: []string{"import <file.avm.zip>"},
+		},
+		{
+			name: "activate",
+			args: []string{"activate", "--help"},
+			want: []string{"activate <profile-or-env>"},
 		},
 		{
 			name: "use",

@@ -16,7 +16,7 @@ func TestAgentShowRuntimeMappingPreviewCodex(t *testing.T) {
 	home := t.TempDir()
 	project := t.TempDir()
 	t.Setenv("HOME", home)
-	codexHome := setupCodexHome(t, home)
+	setupCodexHome(t, home)
 	chdir(t, project)
 
 	if _, err := executeCommand(
@@ -47,6 +47,7 @@ func TestAgentShowRuntimeMappingPreviewCodex(t *testing.T) {
 	if err != nil {
 		t.Fatalf("agent show --runtime codex returned error: %v", err)
 	}
+	codexHome := config.RuntimeHomeDir(config.ActiveRef{Kind: config.ActiveKindProfile, Name: "backend-coder"}, "codex")
 	rolePath := filepath.ToSlash(filepath.Join(codexHome, "agents", "backend-coder.toml"))
 	configPath := filepath.ToSlash(filepath.Join(codexHome, "config.toml"))
 	for _, want := range []string{

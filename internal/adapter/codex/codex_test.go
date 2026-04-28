@@ -174,7 +174,7 @@ func TestPlanMappingsCoverRenderedIgnoredAndUnsupportedFields(t *testing.T) {
 	}
 }
 
-func TestRenderWritesManagedPathsAndPreservesUserConfig(t *testing.T) {
+func TestRenderWritesManagedPathsAsIsolatedConfig(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
 	a := codex.New(codex.WithConfigDir(dir))
@@ -209,8 +209,6 @@ func TestRenderWritesManagedPathsAndPreservesUserConfig(t *testing.T) {
 	configContent := readFile(t, configPath)
 	for _, expected := range []string{
 		"profile = \"avm-coding\"",
-		"secret = \"${DO_NOT_EXPAND}\"",
-		"# >>> avm:codex:codex-config",
 		"[profiles.avm-coding]",
 		"env = { GITHUB_TOKEN = \"${GITHUB_TOKEN}\" }",
 	} {
@@ -218,14 +216,10 @@ func TestRenderWritesManagedPathsAndPreservesUserConfig(t *testing.T) {
 			t.Fatalf("rendered config missing %q:\n%s", expected, configContent)
 		}
 	}
-	if strings.Contains(configContent, "profile = \"user\"") {
-		t.Fatalf("old top-level profile selector was not replaced:\n%s", configContent)
-	}
-	if strings.Index(configContent, "# >>> avm:codex:codex-config") > strings.Index(configContent, "[user]") {
-		t.Fatalf("AVM config block must stay before user tables so profile remains top-level:\n%s", configContent)
-	}
-	if strings.Contains(configContent, "old = true") {
-		t.Fatalf("old AVM block was not replaced:\n%s", configContent)
+	for _, old := range []string{"profile = \"user\"", "secret = \"${DO_NOT_EXPAND}\"", "# >>> avm:codex:codex-config", "old = true"} {
+		if strings.Contains(configContent, old) {
+			t.Fatalf("isolated config kept old content %q:\n%s", old, configContent)
+		}
 	}
 
 	rolePath := filepath.Join(dir, "agents", "backend-coder.toml")
@@ -248,7 +242,7 @@ func TestRenderWritesManagedPathsAndPreservesUserConfig(t *testing.T) {
 	}
 }
 
-func TestRenderStructuredConfigReplaceAndAppend(t *testing.T) {
+func TestRenderWholeFileConfigReplacesExistingContent(t *testing.T) {
 	ctx := context.Background()
 	cases := []struct {
 		name     string
@@ -288,33 +282,23 @@ func TestRenderStructuredConfigReplaceAndAppend(t *testing.T) {
 			content := readFile(t, configPath)
 			for _, expected := range []string{
 				"profile = \"avm-coding\"",
-				"secret = \"${DO_NOT_EXPAND}\"",
-				"# >>> avm:codex:codex-config",
 				"[profiles.avm-coding]",
 				"env = { GITHUB_TOKEN = \"${GITHUB_TOKEN}\" }",
-				"# <<< avm:codex:codex-config",
 			} {
 				if !strings.Contains(content, expected) {
 					t.Fatalf("rendered config missing %q:\n%s", expected, content)
 				}
 			}
-			if strings.Contains(content, "profile = \"user\"") {
-				t.Fatalf("old top-level profile selector was not replaced:\n%s", content)
-			}
-			if strings.Contains(content, "old = true") {
-				t.Fatalf("old AVM block was not replaced:\n%s", content)
-			}
-			if count := strings.Count(content, "# >>> avm:codex:codex-config"); count != 1 {
-				t.Fatalf("begin marker count = %d, want 1:\n%s", count, content)
-			}
-			if count := strings.Count(content, "# <<< avm:codex:codex-config"); count != 1 {
-				t.Fatalf("end marker count = %d, want 1:\n%s", count, content)
+			for _, old := range []string{"profile = \"user\"", "secret = \"${DO_NOT_EXPAND}\"", "# >>> avm:codex:codex-config", "# <<< avm:codex:codex-config", "old = true"} {
+				if strings.Contains(content, old) {
+					t.Fatalf("isolated config kept old content %q:\n%s", old, content)
+				}
 			}
 		})
 	}
 }
 
-func TestRenderRejectsMalformedExistingConfigBlock(t *testing.T) {
+func TestRenderWholeFileConfigIgnoresMalformedLegacyBlocks(t *testing.T) {
 	ctx := context.Background()
 	cases := []struct {
 		name     string
@@ -348,18 +332,15 @@ func TestRenderRejectsMalformedExistingConfigBlock(t *testing.T) {
 			}
 
 			_, err = a.Render(ctx, plan)
-			if err == nil {
-				t.Fatalf("render unexpectedly accepted malformed config block")
+			if err != nil {
+				t.Fatalf("render should replace malformed legacy blocks in isolated config: %v", err)
 			}
-			if !strings.Contains(err.Error(), "malformed Codex AVM block") {
-				t.Fatalf("error = %v, want malformed block error", err)
-			}
-			if got := readFile(t, configPath); got != tc.existing {
-				t.Fatalf("malformed config changed:\n%s", got)
+			if got := readFile(t, configPath); strings.Contains(got, "old = true") || strings.Contains(got, "profile = \"user\"") {
+				t.Fatalf("isolated config kept malformed legacy content:\n%s", got)
 			}
 			rolePath := filepath.Join(dir, "agents", "backend-coder.toml")
-			if _, err := os.Stat(rolePath); !os.IsNotExist(err) {
-				t.Fatalf("role file should not be written before malformed config is rejected, stat err: %v", err)
+			if _, err := os.Stat(rolePath); err != nil {
+				t.Fatalf("role file should be written for isolated config render, stat err: %v", err)
 			}
 		})
 	}

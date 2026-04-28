@@ -148,7 +148,28 @@ type Adapter interface {
 
 当前 marked block 合并方案在 Phase 1 是可行的，但长期来看，**完整 Codex home 隔离方案是更干净、更可维护的架构选择**。它能消除合并逻辑的复杂性、避免文件系统副作用、实现原子切换，并且与 Codex CLI 的原生能力（`CODEX_HOME`）天然契合。
 
+## 七、实现状态
+
+2026-04-27 的 runtime home isolation 重构已把 Codex 从默认写用户真实 `~/.codex` 调整为写 AVM-owned runtime home：
+
+```text
+~/.avm/runtime-homes/<active>/codex/
+├── config.toml
+├── agents/<agent>.toml
+└── skills/<skill>/SKILL.md
+```
+
+`config.toml` 在隔离 home 内按整文件快照输出，不再使用 marked block 合并。当前 shell 通过 `avm activate <profile-or-env>` 输出 `CODEX_HOME=<runtime-home>` 来让 Codex 读取这份配置。
+
+真实 CLI 验证发现 Codex 的登录态也受 `CODEX_HOME` 影响。为避免隔离 home 变成未登录状态，sync 在重建 Codex runtime home 时会保留或复制 `auth.json`：
+
+- 优先保留当前隔离 home 内已有的 `auth.json`，支持用户在隔离 home 内重新登录。
+- 其次从进入 AVM 前的 `CODEX_HOME` 复制。
+- 最后从默认 `~/.codex/auth.json` 复制。
+
+这只读取用户原始 Codex home 的认证侧车文件，并写入 AVM-owned runtime home；不会修改原始 `~/.codex`，也不使用软链接。
+
 下一步建议：
-1. 验证其他 runtime（Claude Code、Cline、Cursor）是否支持类似的环境变量机制
-2. 如果支持面足够广，在 implementation plan 中加入该重构
-3. 如果不支持，考虑为不同 runtime 采用不同策略（Codex 用隔离，Claude 用 marked block）
+1. 继续验证 Claude Code runtime home 在真实 CLI 下的行为，尤其是 MCP 配置加载。
+2. 评估 Cline/Cursor 这类 IDE/GUI runtime 是否保留项目级持久渲染。
+3. 若 shell-local 模型稳定，再决定是否让 `avm use` 在 shell integration 下自动走 `avm activate`。

@@ -9,8 +9,9 @@ import (
 )
 
 type RenderInputOptions struct {
-	ProjectRoot string
-	ActiveDir   string
+	ProjectRoot  string
+	ActiveDir    string
+	RuntimeHomes map[string]string
 }
 
 func RenderInputFromResolved(resolved *config.ResolvedActivation, runtime string, opts RenderInputOptions) (RenderInput, error) {
@@ -37,6 +38,7 @@ func RenderInputFromResolved(resolved *config.ResolvedActivation, runtime string
 		Memory:       portableMemoryFromConfig(resolved.Memory[runtime]),
 		ProjectRoot:  opts.ProjectRoot,
 		ActiveDir:    opts.ActiveDir,
+		RuntimeHome:  opts.RuntimeHomes[runtime],
 	}, nil
 }
 

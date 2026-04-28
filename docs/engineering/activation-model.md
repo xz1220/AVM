@@ -248,14 +248,21 @@ runtime_homes:
 
 短期不要破坏已有命令语义。
 
+当前 runtime home isolation 重构已经落地第一步：
+
+- Codex 和 Claude Code 的 `avm use` / `avm sync` 默认渲染到 `~/.avm/runtime-homes/<active>/...`，不再写用户真实 `~/.codex`、`~/.claude` 或项目 `.claude/agents`。
+- `avm activate <profile-or-env>` 输出 eval-safe shell assignments，包括 `CODEX_HOME`、`CLAUDE_CONFIG_DIR` 和 `AVM_CLAUDE_MCP_CONFIG`。
+- `avm shell init` 仍负责 prompt 展示，并在有 `AVM_CLAUDE_MCP_CONFIG` 时包装 `claude` 命令，自动传入 `--strict-mcp-config --mcp-config`。
+- Codex runtime home 重建时会保留或复制 `auth.json` 认证侧车文件，避免 `CODEX_HOME` 指到隔离目录后真实 `codex exec` 变成未登录状态；原始 `~/.codex` 仍只读、不回写。
+
 推荐路线：
 
-1. 保留当前 `avm use` 的持久渲染行为。
-2. 新增 `avm activate`，专门输出 shell-local env。
+1. 保留非 CLI runtime 的持久/项目渲染行为。
+2. 继续让 `avm activate` 专门输出 shell-local env。
 3. 让 `avm shell init` 可选地把 `avm use` 包装为 shell-local activation。
 4. 文档中明确区分：
    - `avm activate`: 当前 shell 生效，适合 Codex 等 CLI。
-   - `avm use --persist`: 写 runtime/project 配置，适合 IDE/GUI 和跨 shell 默认配置。
+   - `avm use`: 重建 active 和 AVM-owned runtime homes；不修改用户真实 Codex/Claude Code home。
 5. 等 shell-local 模型稳定后，再评估是否把 `avm use` 默认语义切换到 shell-local。
 
 ---
@@ -277,4 +284,3 @@ AVM source of truth
 
 - 像 GVM/NVM 一样，在不同 shell 中快速切换不同 agent profile。
 - 像配置管理器一样，把 profile 安全投影到 Cursor、Cline、Claude Code 等需要文件配置的 runtime。
-

@@ -57,11 +57,11 @@ func TestSyncCommandUsesCurrentConfigActive(t *testing.T) {
 	assertCurrentActive(t, "profile:backend-coder")
 }
 
-func TestSyncCommandConflictReturnsErrorAndKeepsStatusVisible(t *testing.T) {
+func TestSyncCommandReplacesExternalChangeInsideIsolatedRuntimeHome(t *testing.T) {
 	home := t.TempDir()
 	project := t.TempDir()
 	t.Setenv("HOME", home)
-	codexHome := setupCodexHome(t, home)
+	setupCodexHome(t, home)
 	chdir(t, project)
 
 	if _, err := executeCommand("init"); err != nil {
@@ -74,36 +74,31 @@ func TestSyncCommandConflictReturnsErrorAndKeepsStatusVisible(t *testing.T) {
 		t.Fatalf("use returned error: %v", err)
 	}
 
+	codexHome := config.RuntimeHomeDir(config.ActiveRef{Kind: config.ActiveKindProfile, Name: "backend-coder"}, "codex")
 	rolePath := filepath.Join(codexHome, "agents", "backend-coder.toml")
 	if err := os.WriteFile(rolePath, []byte("external change\n"), 0o600); err != nil {
 		t.Fatalf("modify codex role: %v", err)
 	}
 
 	out, err := executeCommand("sync", "--target", "codex")
-	if err == nil {
-		t.Fatal("expected sync conflict error")
+	if err != nil {
+		t.Fatalf("sync returned error: %v\n%s", err, out)
 	}
-	if !strings.Contains(err.Error(), "sync activation failed for codex: conflict detected") {
-		t.Fatalf("unexpected conflict error: %q", err.Error())
+	if !strings.Contains(out, "sync: completed\n") || !strings.Contains(out, "  codex: synced\n") {
+		t.Fatalf("sync output did not expose synced status:\n%s", out)
 	}
-	if !strings.Contains(out, "sync: failed\n") || !strings.Contains(out, "  codex: failed\n") {
-		t.Fatalf("sync conflict output did not expose failed status:\n%s", out)
-	}
-	if !strings.Contains(out, "managed path was modified outside AVM") {
-		t.Fatalf("sync conflict output did not expose conflict reason:\n%s", out)
-	}
-	assertFileContains(t, rolePath, "external change")
+	assertFileContains(t, rolePath, "developer_instructions")
 
 	syncState, err := state.LoadSyncState(syncStatePath())
 	if err != nil {
 		t.Fatalf("load sync state: %v", err)
 	}
 	runtimeState := syncState.Runtimes["codex"]
-	if runtimeState.Status != state.RuntimeStatusFailed {
-		t.Fatalf("codex status = %q, want failed", runtimeState.Status)
+	if runtimeState.Status != state.RuntimeStatusSynced {
+		t.Fatalf("codex status = %q, want synced", runtimeState.Status)
 	}
-	if !strings.Contains(runtimeState.Error, "conflict detected") {
-		t.Fatalf("codex error did not preserve conflict: %q", runtimeState.Error)
+	if runtimeState.Error != "" {
+		t.Fatalf("codex error = %q, want empty", runtimeState.Error)
 	}
 
 	cfg, err := config.ReadGlobalConfig()

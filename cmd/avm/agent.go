@@ -255,6 +255,9 @@ func buildAgentMappingPreview(ctx context.Context, agent *config.AgentProfile, r
 	input, err := adapter.RenderInputFromResolved(resolved, runtime, adapter.RenderInputOptions{
 		ProjectRoot: cwd,
 		ActiveDir:   config.ActiveDir(),
+		RuntimeHomes: map[string]string{
+			runtime: config.RuntimeHomeDir(resolved.Active, runtime),
+		},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("runtime %q mapping input failed: %w", runtime, err)

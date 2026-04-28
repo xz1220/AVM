@@ -157,14 +157,15 @@ func TestPlanRendersUnsupportedMemoryRefsAsInstructions(t *testing.T) {
 	}
 }
 
-func TestRenderWritesManagedPathsPreservesUserMCPAndIsIdempotent(t *testing.T) {
+func TestRenderWritesManagedPathsAsIsolatedHomeAndIsIdempotent(t *testing.T) {
 	ctx := context.Background()
-	dir := t.TempDir()
-	a := claude.New()
-	input := richInput(dir)
+	project := t.TempDir()
+	configDir := t.TempDir()
+	a := claude.New(claude.WithConfigDir(configDir))
+	input := richInput(project)
 
-	mcpPath := filepath.Join(dir, ".mcp.json")
-	unmanagedPath := filepath.Join(dir, "CLAUDE.md")
+	mcpPath := filepath.Join(configDir, "mcp.json")
+	unmanagedPath := filepath.Join(project, "CLAUDE.md")
 	existingMCP := `{
   "mcpServers": {
     "stale": {
@@ -209,7 +210,7 @@ func TestRenderWritesManagedPathsPreservesUserMCPAndIsIdempotent(t *testing.T) {
 		t.Fatalf("claude-mcp should report changed")
 	}
 
-	agentPath := filepath.Join(dir, ".claude", "agents", "backend-coder.md")
+	agentPath := filepath.Join(configDir, "agents", "backend-coder.md")
 	agentContent := readFile(t, agentPath)
 	for _, expected := range []string{
 		"---\nname: \"backend-coder\"",
@@ -224,18 +225,17 @@ func TestRenderWritesManagedPathsPreservesUserMCPAndIsIdempotent(t *testing.T) {
 
 	mcpContent := readFile(t, mcpPath)
 	for _, expected := range []string{
-		"\"user\"",
-		"\"USER_TOKEN\": \"${DO_NOT_EXPAND}\"",
 		"\"github\"",
 		"\"GITHUB_TOKEN\": \"${GITHUB_TOKEN}\"",
-		"\"managedMCPServers\"",
 	} {
 		if !strings.Contains(mcpContent, expected) {
 			t.Fatalf("rendered mcp missing %q:\n%s", expected, mcpContent)
 		}
 	}
-	if strings.Contains(mcpContent, "\"stale\"") {
-		t.Fatalf("stale AVM-managed MCP entry was not removed:\n%s", mcpContent)
+	for _, old := range []string{"\"stale\"", "\"user\"", "\"USER_TOKEN\"", "\"managedMCPServers\""} {
+		if strings.Contains(mcpContent, old) {
+			t.Fatalf("isolated mcp config kept old content %q:\n%s", old, mcpContent)
+		}
 	}
 	if got := readFile(t, unmanagedPath); got != "user-owned\n" {
 		t.Fatalf("unmanaged file changed: %q", got)
@@ -245,7 +245,7 @@ func TestRenderWritesManagedPathsPreservesUserMCPAndIsIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second render failed: %v", err)
 	}
-	for _, id := range []string{"claude-agent", "claude-mcp"} {
+	for _, id := range []string{"claude-agent", "claude-settings", "claude-mcp"} {
 		if operationChanged(second, id) {
 			t.Fatalf("%s should be unchanged on second render", id)
 		}
@@ -281,11 +281,12 @@ func TestRenderRejectsOperationsOutsideManagedPaths(t *testing.T) {
 	}
 }
 
-func TestRenderRejectsUserOwnedMCPServerCollision(t *testing.T) {
-	dir := t.TempDir()
-	a := claude.New()
-	input := richInput(dir)
-	mcpPath := filepath.Join(dir, ".mcp.json")
+func TestRenderIsolatedMCPReplacesExistingConfig(t *testing.T) {
+	project := t.TempDir()
+	configDir := t.TempDir()
+	a := claude.New(claude.WithConfigDir(configDir))
+	input := richInput(project)
+	mcpPath := filepath.Join(configDir, "mcp.json")
 	existing := `{
   "mcpServers": {
     "github": {
@@ -303,11 +304,15 @@ func TestRenderRejectsUserOwnedMCPServerCollision(t *testing.T) {
 		t.Fatalf("plan failed: %v", err)
 	}
 	_, err = a.Render(context.Background(), plan)
-	if err == nil {
-		t.Fatalf("render unexpectedly overwrote user-owned MCP server")
+	if err != nil {
+		t.Fatalf("render should replace existing isolated MCP config: %v", err)
 	}
-	if got := readFile(t, mcpPath); got != existing {
-		t.Fatalf("mcp file changed despite collision error:\n%s", got)
+	got := readFile(t, mcpPath)
+	if strings.Contains(got, "user-owned") {
+		t.Fatalf("isolated mcp config kept old content:\n%s", got)
+	}
+	if !strings.Contains(got, `"github"`) || !strings.Contains(got, `"command": "npx"`) {
+		t.Fatalf("isolated mcp config missing rendered server:\n%s", got)
 	}
 }
 

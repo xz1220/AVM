@@ -59,6 +59,7 @@ type RenderInput struct {
 	Memory       []PortableMemory `json:"memory,omitempty"`
 	ProjectRoot  string           `json:"project_root,omitempty"`
 	ActiveDir    string           `json:"active_dir,omitempty"`
+	RuntimeHome  string           `json:"runtime_home,omitempty"`
 }
 
 // ActiveRef identifies the active AVM object that produced a render input.
