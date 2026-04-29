@@ -3,7 +3,6 @@ package config
 import (
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 )
 
@@ -56,66 +55,6 @@ func ReadMCPRegistryEntry(name string) (*MCPRegistryEntry, string, error) {
 		return nil, path, fieldError(path, "kind", "expected %q, got %q", "mcp", entry.Kind)
 	}
 	return &entry, path, nil
-}
-
-func WriteMCPRegistryEntry(entry *MCPRegistryEntry) error {
-	if entry == nil {
-		return fieldError("", "", "mcp registry entry is nil")
-	}
-	if !validName(entry.Name) {
-		return fieldError("", "name", "invalid name %q", entry.Name)
-	}
-	if entry.Kind == "" {
-		entry.Kind = "mcp"
-	}
-	if entry.Kind != "mcp" {
-		return fieldError("", "kind", "expected %q, got %q", "mcp", entry.Kind)
-	}
-	return writeYAML(MCPRegistryPath(entry.Name), entry)
-}
-
-func DeleteMCPRegistryEntry(name string) error {
-	if !validName(name) {
-		return fieldError("", "name", "invalid name %q", name)
-	}
-	return os.Remove(MCPRegistryPath(name))
-}
-
-func ListMCPRegistryEntries() ([]MCPRegistrySummary, error) {
-	paths, err := listYAMLFiles(RegistryKindDir("mcps"))
-	if err != nil {
-		return nil, err
-	}
-
-	summaries := make([]MCPRegistrySummary, 0, len(paths))
-	for _, path := range paths {
-		name := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
-		var entry MCPRegistryEntry
-		if err := readYAML(path, &entry); err != nil {
-			return nil, err
-		}
-		if strings.TrimSpace(entry.Name) == "" {
-			entry.Name = name
-		}
-		if entry.Name != name {
-			return nil, fieldError(path, "name", "expected %q, got %q", name, entry.Name)
-		}
-		if entry.Kind != "" && entry.Kind != "mcp" {
-			return nil, fieldError(path, "kind", "expected %q, got %q", "mcp", entry.Kind)
-		}
-		summaries = append(summaries, MCPRegistrySummary{
-			Name:        entry.Name,
-			Description: entry.Description,
-			Type:        entry.Server.Type,
-			Command:     entry.Server.Command,
-			URL:         entry.Server.URL,
-			Path:        path,
-		})
-	}
-	sort.Slice(summaries, func(i, j int) bool {
-		return summaries[i].Name < summaries[j].Name
-	})
-	return summaries, nil
 }
 
 func resolvedMCPServer(name string) (ResolvedMCPServer, string, error) {

@@ -130,18 +130,6 @@ func TestRegisteredCommandHelp(t *testing.T) {
 	}
 }
 
-func TestRootNoArgsNonTTYShowsHelp(t *testing.T) {
-	out, err := executeCommand()
-	if err != nil {
-		t.Fatalf("root command returned error: %v", err)
-	}
-	for _, want := range []string{"manages portable AI agent profiles", "Available Commands", "tui"} {
-		if !strings.Contains(out, want) {
-			t.Fatalf("root help missing %q:\n%s", want, out)
-		}
-	}
-}
-
 func TestSkeletonCommandsReturnNotImplemented(t *testing.T) {
 	tests := []struct {
 		name string

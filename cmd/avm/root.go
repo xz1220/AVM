@@ -2,7 +2,6 @@ package main
 
 import (
 	"github.com/spf13/cobra"
-	"github.com/xz1220/agent-vm/internal/tui"
 	"github.com/xz1220/agent-vm/internal/version"
 )
 
@@ -18,25 +17,8 @@ func newRootCommand() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		Version:       version.String(),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if !isTerminalFile(cmd.InOrStdin()) || !isTerminalFile(cmd.OutOrStdout()) {
-				return cmd.Help()
-			}
-			return runTUI(cmd, args)
-		},
 	}
 	cmd.SetVersionTemplate("avm {{.Version}}\n")
 	addCommands(cmd)
 	return cmd
-}
-
-func runTUI(cmd *cobra.Command, args []string) error {
-	if err := ensureInitialized(); err != nil {
-		return err
-	}
-	opts, err := tuiOptions(cmd)
-	if err != nil {
-		return err
-	}
-	return tui.Run(opts)
 }
