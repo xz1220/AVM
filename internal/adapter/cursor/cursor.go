@@ -52,6 +52,7 @@ func (a *Adapter) Name() string {
 }
 
 func (a *Adapter) Detect(ctx adapter.Context) adapter.Detection {
+	_ = ctx
 	configDir := a.cursorDir("")
 	mcpPath := filepath.Join(configDir, mcpFileName)
 	rulesDir := filepath.Join(configDir, rulesDirName)
@@ -65,9 +66,8 @@ func (a *Adapter) Detect(ctx adapter.Context) adapter.Detection {
 	}
 
 	version := ""
-	if path, err := exec.LookPath(runtimeName); err == nil {
+	if _, err := exec.LookPath(runtimeName); err == nil {
 		found = true
-		version = cursorVersion(ctx, path)
 	}
 
 	return adapter.Detection{

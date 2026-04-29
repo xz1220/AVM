@@ -41,4 +41,4 @@ body:
     id: environment
     attributes:
       label: Environment
-      placeholder: macOS 15, zsh, Go 1.22
+      placeholder: macOS 15, zsh, Go 1.23

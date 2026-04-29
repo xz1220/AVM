@@ -170,14 +170,18 @@ Cursor Phase 1 成功写入时状态保持 `synced`；partial support 通过 war
 ## 快速开始
 
 安装已发布的 preview release。默认会把 `avm` 安装到 `$HOME/.local/bin`，
-并自动初始化 `~/.avm`；如果只想安装二进制，可以设置 `AVM_SKIP_INIT=1`。
+把 shell integration 写入当前 shell 的 rc 文件，并自动初始化 `~/.avm`；
+如果只想安装二进制，可以设置 `AVM_SKIP_INIT=1`。
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/xz1220/Agent-VM/main/scripts/install.sh | sh
 ```
 
-创建第一个 agent。无参数执行 `avm create` 时会进入交互式流程，你可以从
-内置 package、已有 AVM profile，或者 runtime 扫描出来的候选项开始。
+安装后重启 shell，或者 source 安装脚本提示的 rc 文件。
+
+创建第一个 agent。无参数执行 `avm create` 时会进入交互式终端向导，你可以用
+方向键和空格，从内置 package、已有 AVM profile，或者 runtime 扫描出来的候选项开始，
+并选择 runtimes、skills 和 MCP servers。
 
 ```bash
 avm create
@@ -194,16 +198,24 @@ avm create --from-import claude-code/reviewer --name reviewer-copy
 在当前 shell 中激活 profile，然后启动 runtime：
 
 ```bash
-eval "$(avm activate backend-coder)"
+avm use backend-coder
 codex
 ```
 
-如果想用其他 runtime，可以在交互式流程里选择，也可以直接传 flag：
+如果想用其他 runtime，或者把同一个 profile 渲染到多个 runtime，可以在交互式流程里选择，
+也可以直接传 flag：
 
 ```bash
 avm create backend-coder --runtime opencode
-eval "$(avm activate backend-coder)"
+avm create backend-coder --runtimes codex,opencode
+avm use backend-coder
 opencode
+```
+
+如果还没有加载 shell integration，可以用 eval-safe 的 fallback：
+
+```bash
+eval "$(avm activate backend-coder)"
 ```
 
 创建前可以先看 AVM 在本地能发现什么：
@@ -215,8 +227,10 @@ avm runtime scan
 avm runtime list
 ```
 
-`avm skill list` 会展示已安装 skills 和简介；`avm runtime scan` 会刷新
-只读 runtime import report；`avm runtime list` 会给出可直接复制的
+`avm skill list` 在未激活时展示已安装 skills 和简介；在已激活 shell 中默认只展示
+当前 profile 选中的 skills，想看全局 registry 可以用 `avm skill list --all`。
+`avm runtime scan` 会刷新只读 runtime import report，并把原生 runtime 中发现的
+skills/MCP servers 导入 AVM 的全局 registry；`avm runtime list` 会给出可直接复制的
 `avm create --from-import ...` 创建命令。
 
 如果想从源码试一遍真实首次使用路径，并且不碰真实 `~/.avm`：
@@ -227,17 +241,19 @@ cd Agent-VM
 scripts/dev/avm-runtime-home-test-env.sh start
 ```
 
-这个测试 shell 会从当前分支 build `avm`，创建临时 `HOME/project`，并把
-runtime 配置/auth 快照复制到临时 HOME。它默认不会执行 `avm init`、不会创建
-agent/env，也不会自动 activate，所以你可以自己走真实首次路径：
+这个测试 shell 会创建一个干净的临时 `HOME/project`，默认不安装也不初始化 AVM。
+进入后会打印一个 helper；它会运行本地源码安装脚本，并在当前测试 shell 里加载
+shell integration：
 
 ```bash
-avm init
-avm runtime scan
-avm runtime list
-avm skill list
+avm-install-local
 avm create
+avm use <agent-name>
 ```
+
+如果想让干净 HOME 带上当前机器的 Codex、Claude Code、OpenCode 配置快照，
+可以在 `start` 前设置 `AVM_TEST_COPY_RUNTIME_CONFIG=1`。测试 shell 也会从当前
+shell 或真实 shell 中复制 allowlist 内的 Claude/Anthropic 登录相关环境变量。
 
 如果需要旧的预置 demo 环境，可以显式执行：
 
@@ -297,7 +313,8 @@ avm sync
 avm deactivate
 ```
 
-Shell prompt 集成会输出可被 eval 的 snippet：
+Shell integration 会输出可被 eval 的 snippet，并用 shell function 包装
+`avm use`，让当前 shell 立即拿到 `CODEX_HOME`、`CLAUDE_CONFIG_DIR` 等 runtime env：
 
 ```bash
 eval "$(avm shell init zsh)"

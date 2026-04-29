@@ -129,7 +129,7 @@ avm use backend-dev
 (avm:backend-dev) $ cline   # backend-assistant
 ```
 
-shell prompt 由 `avm shell init <shell>` 提供，只展示当前 active profile/env，不单独决定 runtime 配置。Phase 1 不实现完全 shell-local 的 runtime 隔离；如果未来需要 shell-local env，可在支持 `CLAUDE_CONFIG_DIR`、`CLINE_DIR` 等运行时上扩展。
+shell integration 由 `avm shell init <shell>` 提供：它展示当前 active profile/env，并用 shell function 包装 `avm use`，让 `CODEX_HOME`、`CLAUDE_CONFIG_DIR`、`OPENCODE_CONFIG` 等 runtime env 在当前 shell 立即生效。
 
 ### 6. 管理边界：只写 AVM 管理区或结构化字段
 
@@ -148,7 +148,7 @@ skills 这类目录资源仍可通过 active symlink 快速切换：
 ```
 ~/.avm/registry/skills/
 ~/.avm/active/skills/            # 当前环境子集
-~/.claude/skills -> ~/.avm/active/skills
+~/.avm/runtime-homes/<active>/<runtime>/skills/
 ```
 
 但 Agent Profile、memory refs、runtime profile、MCP 和 permissions 都需要 adapter 结构化渲染，不能只靠 symlink。
@@ -197,7 +197,7 @@ skills 这类目录资源仍可通过 active symlink 快速切换：
 
 | 组件 | 技术选型 | 理由 |
 |------|---------|------|
-| 语言 | Go 1.22+ | 单二进制、跨平台、并发 sync |
+| 语言 | Go 1.23+ | 单二进制、跨平台、并发 sync |
 | CLI 框架 | spf13/cobra | 命令层成熟稳定 |
 | YAML/TOML/JSON | go-yaml/yaml、BurntSushi/toml 或 pelletier/go-toml、encoding/json | 运行时配置格式不同，避免字符串拼接 |
 | 路径处理 | `os.UserHomeDir` + `filepath` | 避免平台路径差异 |

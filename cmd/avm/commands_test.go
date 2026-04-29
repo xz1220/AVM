@@ -31,7 +31,7 @@ func TestRegisteredCommandHelp(t *testing.T) {
 		{
 			name: "create",
 			args: []string{"create", "--help"},
-			want: []string{"create [package]", "--name", "--from", "--from-import", "--runtime", "--yes", "--no-input"},
+			want: []string{"create [package]", "--name", "--from", "--from-import", "--runtime", "--runtimes", "--yes", "--no-input"},
 		},
 		{
 			name: "package",

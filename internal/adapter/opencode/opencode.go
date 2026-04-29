@@ -64,6 +64,7 @@ func (a *Adapter) Name() string {
 }
 
 func (a *Adapter) Detect(ctx adapter.Context) adapter.Detection {
+	_ = ctx
 	configDir := a.opencodeDir()
 	configPath := a.opencodeConfigPath(configDir)
 
@@ -81,9 +82,8 @@ func (a *Adapter) Detect(ctx adapter.Context) adapter.Detection {
 	}
 
 	version := ""
-	if path, err := exec.LookPath(binaryName); err == nil {
+	if _, err := exec.LookPath(binaryName); err == nil {
 		found = true
-		version = opencodeVersion(ctx, path)
 	}
 
 	return adapter.Detection{

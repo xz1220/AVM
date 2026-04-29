@@ -548,7 +548,7 @@ func captureRuntimeHomeSidecars(runtime, runtimeHome string) ([]runtimeHomeSidec
 	case "codex":
 		return captureNamedSidecars([]string{"auth.json"}, codexSidecarSourceDirs(runtimeHome))
 	case "claude-code":
-		return captureNamedSidecars([]string{".credentials.json"}, claudeSidecarSourceDirs(runtimeHome))
+		return captureNamedSidecars([]string{".credentials.json", "config.json"}, claudeSidecarSourceDirs(runtimeHome))
 	default:
 		return nil, nil
 	}
@@ -617,7 +617,7 @@ func captureFirstExistingSidecar(relPath string, sourceDirs []string) (runtimeHo
 		return runtimeHomeSidecar{
 			RelPath: relPath,
 			Content: content,
-			Mode:    info.Mode().Perm(),
+			Mode:    0o600,
 		}, true, nil
 	}
 	return runtimeHomeSidecar{}, false, nil

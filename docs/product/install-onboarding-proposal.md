@@ -37,7 +37,7 @@ avm use backend-coder
 codex
 ```
 
-但这需要 shell function 包装 `avm use`，否则二进制进程无法修改父 shell 环境。短期 README 应该把 `eval "$(avm activate ...)"` 写成最可靠的主路径。
+当前实现已经通过 `avm shell init` 安装 shell function 包装 `avm use`。二进制 `avm use` 仍只负责 sync/persist；加载 shell integration 后，用户输入的 `avm use <profile>` 会在当前 shell 中执行 `avm activate <profile>` 并导出 runtime env。
 
 ## 3. 安装分发设计
 
@@ -49,7 +49,7 @@ codex
 2. 从 GitHub Releases 下载对应 `avm` binary。
 3. 校验 checksum。
 4. 安装到用户目录，默认 `~/.local/bin/avm`。
-5. 提示用户把目标目录加入 `PATH`。
+5. 写入 shell integration，包含 `PATH` 和 gvm-style `avm use` wrapper。
 6. 默认执行一次 `avm init --yes`，如果已经初始化则 no-op。
 
 建议环境变量：
@@ -57,6 +57,7 @@ codex
 ```bash
 AVM_VERSION=0.1.0
 AVM_INSTALL_DIR="$HOME/.local/bin"
+AVM_INSTALL_SHELL_INTEGRATION=0
 AVM_SKIP_INIT=1
 ```
 

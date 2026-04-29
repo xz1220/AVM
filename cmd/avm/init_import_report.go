@@ -50,9 +50,29 @@ var (
 func refreshInitImportReport() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
+	restoreCacheEnv := useAVMRuntimeDetectCache()
+	defer restoreCacheEnv()
 
 	report := buildInitImportReport(ctx, newInitAdapterRegistry(), initImportNow().UTC())
-	return saveInitImportReport(initImportReportPath(), report)
+	if err := saveInitImportReport(initImportReportPath(), report); err != nil {
+		return err
+	}
+	_, err := bootstrapRuntimeRegistry(report)
+	return err
+}
+
+func useAVMRuntimeDetectCache() func() {
+	previous, hadPrevious := os.LookupEnv("XDG_CACHE_HOME")
+	cachePath := filepath.Join(cacheDir(), "runtime-detect")
+	_ = os.MkdirAll(cachePath, 0o700)
+	_ = os.Setenv("XDG_CACHE_HOME", cachePath)
+	return func() {
+		if hadPrevious {
+			_ = os.Setenv("XDG_CACHE_HOME", previous)
+			return
+		}
+		_ = os.Unsetenv("XDG_CACHE_HOME")
+	}
 }
 
 func buildInitImportReport(ctx context.Context, registry initAdapterRegistry, now time.Time) initImportReport {

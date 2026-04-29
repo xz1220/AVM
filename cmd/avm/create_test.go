@@ -46,6 +46,41 @@ func TestCreateFromBuiltinPackageWithYesLazyInitializes(t *testing.T) {
 	}
 }
 
+func TestCreateWithMultipleRuntimesActivatesAll(t *testing.T) {
+	home := t.TempDir()
+	project := t.TempDir()
+	t.Setenv("HOME", home)
+	chdir(t, project)
+
+	out, err := executeCommand("create", "backend-coder", "--name", "multi-coder", "--runtimes", "codex,opencode", "--yes")
+	if err != nil {
+		t.Fatalf("create returned error: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "codex") || !strings.Contains(out, "opencode") {
+		t.Fatalf("create output should mention selected runtimes:\n%s", out)
+	}
+	agent, err := config.ReadAgent("multi-coder", config.ScopeGlobal, project)
+	if err != nil {
+		t.Fatalf("read created agent: %v", err)
+	}
+	if agent.Runtime.Preferred != "codex" {
+		t.Fatalf("preferred runtime = %q, want codex", agent.Runtime.Preferred)
+	}
+	if strings.Join(agent.Runtime.Fallback, ",") != "opencode" {
+		t.Fatalf("fallback runtimes = %#v, want opencode", agent.Runtime.Fallback)
+	}
+
+	activateOut, err := executeCommand("activate", "multi-coder")
+	if err != nil {
+		t.Fatalf("activate returned error: %v\n%s", err, activateOut)
+	}
+	for _, want := range []string{"CODEX_HOME", "OPENCODE_CONFIG", "OPENCODE_CONFIG_DIR"} {
+		if !strings.Contains(activateOut, want) {
+			t.Fatalf("activate output missing %q:\n%s", want, activateOut)
+		}
+	}
+}
+
 func TestCreateInteractiveDefaults(t *testing.T) {
 	home := t.TempDir()
 	project := t.TempDir()

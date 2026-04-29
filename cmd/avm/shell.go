@@ -80,6 +80,22 @@ case ";${PROMPT_COMMAND:-};" in
   *) PROMPT_COMMAND="__avm_prompt_command${PROMPT_COMMAND:+;$PROMPT_COMMAND}" ;;
 esac
 
+avm() {
+  if [ "$#" -gt 0 ] && [ "$1" = "use" ]; then
+    shift
+    local __avm_output __avm_status
+    if __avm_output="$(command avm activate "$@")"; then
+      eval "$__avm_output"
+      printf 'active: %s\n' "$AVM_ACTIVE"
+      return 0
+    fi
+    __avm_status=$?
+    [ -z "$__avm_output" ] || printf '%s\n' "$__avm_output" >&2
+    return "$__avm_status"
+  fi
+  command avm "$@"
+}
+
 claude() {
   if [ -n "${AVM_CLAUDE_MCP_CONFIG:-}" ] && [ -r "$AVM_CLAUDE_MCP_CONFIG" ]; then
     case " $* " in
@@ -122,6 +138,22 @@ __avm_precmd() {
 autoload -Uz add-zsh-hook
 add-zsh-hook -d precmd __avm_precmd 2>/dev/null || true
 add-zsh-hook precmd __avm_precmd
+
+avm() {
+  if [ "$#" -gt 0 ] && [ "$1" = "use" ]; then
+    shift
+    local __avm_output __avm_status
+    if __avm_output="$(command avm activate "$@")"; then
+      eval "$__avm_output"
+      printf 'active: %s\n' "$AVM_ACTIVE"
+      return 0
+    fi
+    __avm_status=$?
+    [ -z "$__avm_output" ] || printf '%s\n' "$__avm_output" >&2
+    return "$__avm_status"
+  fi
+  command avm "$@"
+}
 
 claude() {
   if [ -n "${AVM_CLAUDE_MCP_CONFIG:-}" ] && [ -r "$AVM_CLAUDE_MCP_CONFIG" ]; then
@@ -166,6 +198,22 @@ end
 function fish_prompt
     __avm_current_active
     __avm_original_fish_prompt
+end
+
+function avm
+    if test (count $argv) -gt 0; and test "$argv[1]" = use
+        set -e argv[1]
+        set -l __avm_output (command avm activate $argv | string collect)
+        set -l __avm_status $pipestatus[1]
+        if test "$__avm_status" -eq 0
+            eval "$__avm_output"
+            printf 'active: %s\n' "$AVM_ACTIVE"
+            return 0
+        end
+        test -z "$__avm_output"; or printf '%s\n' "$__avm_output" >&2
+        return "$__avm_status"
+    end
+    command avm $argv
 end
 
 function claude

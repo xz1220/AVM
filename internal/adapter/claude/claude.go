@@ -70,6 +70,7 @@ func (a *Adapter) Name() string {
 }
 
 func (a *Adapter) Detect(ctx adapter.Context) adapter.Detection {
+	_ = ctx
 	configDir := a.claudeHome()
 
 	found := false
@@ -84,9 +85,8 @@ func (a *Adapter) Detect(ctx adapter.Context) adapter.Detection {
 	}
 
 	version := ""
-	if path, err := exec.LookPath(claudeBinaryName); err == nil {
+	if _, err := exec.LookPath(claudeBinaryName); err == nil {
 		found = true
-		version = claudeVersion(ctx, path)
 	}
 
 	return adapter.Detection{

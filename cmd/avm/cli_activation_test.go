@@ -218,6 +218,7 @@ func TestActivatePrintsShellExportsForIsolatedRuntimeHomes(t *testing.T) {
 	writeFileForTest(t, filepath.Join(sourceCodexHome, "auth.json"), "{\"auth_mode\":\"source\"}\n")
 	sourceClaudeHome := filepath.Join(home, ".claude")
 	writeFileForTest(t, filepath.Join(sourceClaudeHome, ".credentials.json"), "{\"type\":\"oauth\"}\n")
+	writeFileForTest(t, filepath.Join(sourceClaudeHome, "config.json"), "{\"primaryApiKey\":\"source\"}\n")
 	chdir(t, project)
 
 	if _, err := executeCommand("init"); err != nil {
@@ -269,11 +270,15 @@ func TestActivatePrintsShellExportsForIsolatedRuntimeHomes(t *testing.T) {
 	if got := readFileForTest(t, filepath.Join(claudeHome, ".credentials.json")); got != "{\"type\":\"oauth\"}\n" {
 		t.Fatalf("claude credentials sidecar was not copied into runtime home: %q", got)
 	}
+	if got := readFileForTest(t, filepath.Join(claudeHome, "config.json")); got != "{\"primaryApiKey\":\"source\"}\n" {
+		t.Fatalf("claude config auth sidecar was not copied into runtime home: %q", got)
+	}
 	assertPathExistsForTest(t, filepath.Join(opencodeHome, "opencode.json"))
 	assertPathExistsForTest(t, filepath.Join(opencodeHome, "agents", "opencode-agent.md"))
 
 	writeFileForTest(t, filepath.Join(codexHome, "auth.json"), "{\"auth_mode\":\"isolated-login\"}\n")
 	writeFileForTest(t, filepath.Join(claudeHome, ".credentials.json"), "{\"type\":\"isolated-oauth\"}\n")
+	writeFileForTest(t, filepath.Join(claudeHome, "config.json"), "{\"primaryApiKey\":\"isolated\"}\n")
 	out, err = executeCommand("activate", "--kind", "env", "dual-runtime")
 	if err != nil {
 		t.Fatalf("second activate returned error: %v\n%s", err, out)
@@ -283,6 +288,9 @@ func TestActivatePrintsShellExportsForIsolatedRuntimeHomes(t *testing.T) {
 	}
 	if got := readFileForTest(t, filepath.Join(claudeHome, ".credentials.json")); got != "{\"type\":\"isolated-oauth\"}\n" {
 		t.Fatalf("claude credentials sidecar was not preserved across runtime home reset: %q", got)
+	}
+	if got := readFileForTest(t, filepath.Join(claudeHome, "config.json")); got != "{\"primaryApiKey\":\"isolated\"}\n" {
+		t.Fatalf("claude config auth sidecar was not preserved across runtime home reset: %q", got)
 	}
 }
 

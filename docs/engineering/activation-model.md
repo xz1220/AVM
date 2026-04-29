@@ -207,7 +207,7 @@ avm deactivate --shell
 
 ### 6.3 shell init 从“prompt hook”升级为“activation hook”
 
-`avm shell init zsh` 应该安装 shell function，让用户执行：
+`avm shell init zsh` 安装 shell function，让用户执行：
 
 ```bash
 avm use backend-coder

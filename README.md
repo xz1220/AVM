@@ -183,16 +183,19 @@ Still post-MVP or policy follow-up:
 ## Quickstart
 
 Install a tagged preview release. The installer puts `avm` in
-`$HOME/.local/bin` by default and initializes `~/.avm` unless
-`AVM_SKIP_INIT=1` is set.
+`$HOME/.local/bin` by default, installs shell integration into your shell rc
+file, and initializes `~/.avm` unless `AVM_SKIP_INIT=1` is set.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/xz1220/Agent-VM/main/scripts/install.sh | sh
 ```
 
+Restart your shell, or source the rc file printed by the installer.
+
 Create your first agent. With no arguments, `avm create` opens an interactive
-flow where you can start from a built-in package, an existing AVM profile, or a
-runtime import candidate.
+terminal wizard where you can use arrow keys and Space to start from a built-in
+package, an existing AVM profile, or a runtime import candidate and select
+runtimes, skills, and MCP servers.
 
 ```bash
 avm create
@@ -209,16 +212,24 @@ avm create --from-import claude-code/reviewer --name reviewer-copy
 Activate the profile in the current shell, then start the runtime:
 
 ```bash
-eval "$(avm activate backend-coder)"
+avm use backend-coder
 codex
 ```
 
-Use another runtime by selecting it in the wizard or passing a flag:
+Use another runtime, or render the same profile to multiple runtimes, by
+selecting them in the wizard or passing a flag:
 
 ```bash
 avm create backend-coder --runtime opencode
-eval "$(avm activate backend-coder)"
+avm create backend-coder --runtimes codex,opencode
+avm use backend-coder
 opencode
+```
+
+If shell integration is not loaded, use the eval-safe fallback:
+
+```bash
+eval "$(avm activate backend-coder)"
 ```
 
 Before creating, inspect what AVM can see locally:
@@ -230,9 +241,12 @@ avm runtime scan
 avm runtime list
 ```
 
-`avm skill list` shows installed skills and summaries. `avm runtime scan`
-refreshes the read-only runtime import report, and `avm runtime list` shows the
-exact `avm create --from-import ...` commands for import candidates.
+`avm skill list` shows installed skills and summaries before activation. Inside
+an activated shell it shows only the active profile's selected skills; use
+`avm skill list --all` for the global registry. `avm runtime scan` refreshes the
+read-only runtime import report and bootstraps discovered native runtime
+skills/MCP servers into AVM's global registry. `avm runtime list` shows the exact
+`avm create --from-import ...` commands for import candidates.
 
 Try the first-user path from source without touching your real `~/.avm`:
 
@@ -242,18 +256,20 @@ cd Agent-VM
 scripts/dev/avm-runtime-home-test-env.sh start
 ```
 
-The test shell builds `avm` from the current branch, creates a temporary
-`HOME/project`, and copies runtime config/auth snapshots into that temporary
-home. It does not run `avm init`, create agents, or activate anything by
-default, so you can run the real first-user path yourself:
+The test shell starts with a clean temporary `HOME/project` and does not install
+or initialize AVM. It prints a helper that runs the local-source installer and
+loads the shell integration in the current test shell:
 
 ```bash
-avm init
-avm runtime scan
-avm runtime list
-avm skill list
+avm-install-local
 avm create
+avm use <agent-name>
 ```
+
+Set `AVM_TEST_COPY_RUNTIME_CONFIG=1` before `start` if you want the clean HOME
+to include snapshots of your current Codex, Claude Code, and OpenCode config for
+runtime discovery testing. The test shell also copies allowlisted
+Claude/Anthropic auth environment variables from your current or real shell.
 
 For a seeded demo environment instead, run:
 
@@ -313,7 +329,9 @@ avm sync
 avm deactivate
 ```
 
-Shell prompt integration prints eval-safe snippets:
+Shell integration prints eval-safe snippets. It also wraps `avm use` as a shell
+function so the current shell receives `CODEX_HOME`, `CLAUDE_CONFIG_DIR`, and
+other runtime env vars immediately:
 
 ```bash
 eval "$(avm shell init zsh)"

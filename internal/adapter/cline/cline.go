@@ -60,14 +60,14 @@ func (a *Adapter) Name() string {
 }
 
 func (a *Adapter) Detect(ctx adapter.Context) adapter.Detection {
+	_ = ctx
 	dataDir := a.clineDataHome()
 	settingsPath := filepath.Join(dataDir, settingsDirName, mcpSettingsFileName)
 
 	found := pathExists(dataDir) || pathExists(settingsPath)
 	version := ""
-	if path, err := exec.LookPath(runtimeName); err == nil {
+	if _, err := exec.LookPath(runtimeName); err == nil {
 		found = true
-		version = clineVersion(ctx, path)
 	}
 
 	return adapter.Detection{

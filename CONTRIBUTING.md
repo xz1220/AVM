@@ -10,7 +10,7 @@ maintainer discussion has already narrowed the scope.
 
 Prerequisites:
 
-- Go 1.22+
+- Go 1.23+
 
 ```bash
 git clone https://github.com/xz1220/Agent-VM.git

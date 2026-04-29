@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 	"github.com/xz1220/agent-vm/internal/adapter"
 	"github.com/xz1220/agent-vm/internal/config"
@@ -35,6 +37,7 @@ type createOptions struct {
 	FromImport string
 	Name       string
 	Runtime    string
+	Runtimes   []string
 	Model      string
 	Reasoning  string
 	Skills     []string
@@ -68,6 +71,7 @@ func newCreateCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.From, "from", "", "copy an existing AVM agent profile")
 	cmd.Flags().StringVar(&opts.FromImport, "from-import", "", "create from runtime import candidate, e.g. claude-code/reviewer")
 	cmd.Flags().StringVar(&opts.Runtime, "runtime", "", "preferred runtime for the created profile")
+	cmd.Flags().StringSliceVar(&opts.Runtimes, "runtimes", nil, "runtimes to support, first one is preferred")
 	cmd.Flags().StringVar(&opts.Model, "model", "", "model override")
 	cmd.Flags().StringVar(&opts.Reasoning, "reasoning", "", "reasoning effort override")
 	cmd.Flags().StringSliceVar(&opts.Skills, "skills", nil, "skills to attach")
@@ -90,12 +94,13 @@ func runCreate(cmd *cobra.Command, opts createOptions) error {
 	reader := bufio.NewReader(cmd.InOrStdin())
 	out := cmd.OutOrStdout()
 	pkgName := strings.TrimSpace(opts.Package)
-	source, err := resolveCreateSource(reader, out, cwd, pkgName, opts)
+	useTUI := createUseTUI(cmd) && !opts.Yes && !opts.NoInput
+	source, err := resolveCreateSource(cmd, reader, out, cwd, pkgName, opts, useTUI)
 	if err != nil {
 		return err
 	}
 
-	values, err := resolveCreateValues(cmd, reader, out, cwd, source, opts)
+	values, err := resolveCreateValues(cmd, reader, out, cwd, source, opts, useTUI)
 	if err != nil {
 		return err
 	}
@@ -112,12 +117,18 @@ func runCreate(cmd *cobra.Command, opts createOptions) error {
 
 	fmt.Fprintf(out, "created agent %s from %s\n", agent.Name, source.Summary())
 	fmt.Fprintln(out)
-	fmt.Fprintln(out, "To use it in this shell:")
+	fmt.Fprintln(out, "To use it in this shell with shell integration:")
+	fmt.Fprintf(out, "  avm use %s\n", agent.Name)
+	fmt.Fprintln(out)
+	fmt.Fprintln(out, "Without shell integration:")
 	fmt.Fprintf(out, "  eval \"$(avm activate %s)\"\n", agent.Name)
-	if runtimeCommand := runtimeStartCommand(agent.Runtime.Preferred); runtimeCommand != "" {
+	runtimeCommands := runtimeStartCommands(runtimePreferenceList(agent.Runtime))
+	if len(runtimeCommands) > 0 {
 		fmt.Fprintln(out)
-		fmt.Fprintln(out, "Then start your runtime:")
-		fmt.Fprintf(out, "  %s\n", runtimeCommand)
+		fmt.Fprintln(out, "Then start a runtime:")
+		for _, runtimeCommand := range runtimeCommands {
+			fmt.Fprintf(out, "  %s\n", runtimeCommand)
+		}
 	}
 	return nil
 }
@@ -168,6 +179,7 @@ func (s createSource) PromptLabel() string {
 type resolvedCreateValues struct {
 	Name      string
 	Runtime   string
+	Runtimes  []string
 	Model     string
 	Reasoning string
 	Skills    []string
@@ -175,7 +187,7 @@ type resolvedCreateValues struct {
 	Scope     config.Scope
 }
 
-func resolveCreateSource(reader *bufio.Reader, out io.Writer, cwd, pkgName string, opts createOptions) (createSource, error) {
+func resolveCreateSource(cmd *cobra.Command, reader *bufio.Reader, out io.Writer, cwd, pkgName string, opts createOptions, useTUI bool) (createSource, error) {
 	if opts.From != "" && opts.FromImport != "" {
 		return createSource{}, fmt.Errorf("--from and --from-import cannot be used together")
 	}
@@ -196,6 +208,9 @@ func resolveCreateSource(reader *bufio.Reader, out io.Writer, cwd, pkgName strin
 	}
 	if opts.NoInput {
 		return createSource{}, fmt.Errorf("create requires a package, --from, --from-import, --yes, or interactive input")
+	}
+	if useTUI {
+		return promptCreateSourceTUI(cmd, cwd)
 	}
 	return promptCreateSource(reader, out, cwd)
 }
@@ -289,6 +304,35 @@ func promptCreateSource(reader *bufio.Reader, out io.Writer, cwd string) (create
 		return createSource{}, err
 	}
 	return sources[index-1], nil
+}
+
+func promptCreateSourceTUI(cmd *cobra.Command, cwd string) (createSource, error) {
+	sources, err := listCreateSources(cwd)
+	if err != nil {
+		return createSource{}, err
+	}
+	if len(sources) == 0 {
+		return createSource{}, fmt.Errorf("no create sources found")
+	}
+
+	selected := 0
+	options := make([]huh.Option[int], 0, len(sources))
+	for i, source := range sources {
+		options = append(options, huh.NewOption(source.PromptLabel(), i))
+	}
+	form := huh.NewForm(huh.NewGroup(
+		huh.NewSelect[int]().
+			Title("Create from").
+			Options(options...).
+			Value(&selected),
+	))
+	if err := runCreateTUIForm(cmd, form); err != nil {
+		return createSource{}, err
+	}
+	if selected < 0 || selected >= len(sources) {
+		return createSource{}, fmt.Errorf("invalid source selection")
+	}
+	return sources[selected], nil
 }
 
 func listCreateSources(cwd string) ([]createSource, error) {
@@ -390,7 +434,7 @@ func readCreateImportReport() (*initImportReport, error) {
 	return &report, nil
 }
 
-func resolveCreateValues(cmd *cobra.Command, reader *bufio.Reader, out io.Writer, cwd string, source createSource, opts createOptions) (resolvedCreateValues, error) {
+func resolveCreateValues(cmd *cobra.Command, reader *bufio.Reader, out io.Writer, cwd string, source createSource, opts createOptions, useTUI bool) (resolvedCreateValues, error) {
 	values := defaultCreateValues(source, opts, cwd)
 	if cmd.Flags().Changed("skills") {
 		values.Skills = normalizeStringList(opts.Skills)
@@ -398,22 +442,31 @@ func resolveCreateValues(cmd *cobra.Command, reader *bufio.Reader, out io.Writer
 	if cmd.Flags().Changed("mcps") {
 		values.MCPs = normalizeStringList(opts.MCPs)
 	}
+	if cmd.Flags().Changed("runtimes") {
+		values.Runtimes = normalizeCreateRuntimeList(opts.Runtimes)
+	} else if cmd.Flags().Changed("runtime") {
+		values.Runtimes = normalizeCreateRuntimeList([]string{opts.Runtime})
+	}
 
 	if !opts.Yes {
 		if opts.NoInput {
 			return values, fmt.Errorf("create requires --yes or interactive input")
+		}
+		if useTUI {
+			return promptCreateValuesTUI(cmd, out, source, values)
 		}
 		var err error
 		values.Name, err = promptString(reader, out, "Agent name", values.Name)
 		if err != nil {
 			return values, err
 		}
-		values.Runtime, err = promptString(reader, out, "Runtime (codex, claude-code, opencode, cline, cursor)", values.Runtime)
+		runtimesValue, err := promptString(reader, out, "Runtimes (comma separated: codex, claude-code, opencode, cline, cursor)", strings.Join(values.Runtimes, ","))
 		if err != nil {
 			return values, err
 		}
-		if !isKnownRuntime(values.Runtime) {
-			return values, fmt.Errorf("invalid runtime %q", values.Runtime)
+		values.Runtimes = splitSelectionValues(runtimesValue)
+		if err := finalizeCreateRuntimes(&values); err != nil {
+			return values, err
 		}
 		values.Skills, err = promptCapabilitySelection(reader, out, "Skills", "skills", listInstalledSkillOptions, values.Skills)
 		if err != nil {
@@ -424,7 +477,7 @@ func resolveCreateValues(cmd *cobra.Command, reader *bufio.Reader, out io.Writer
 			return values, err
 		}
 		printCreatePreview(out, source, values)
-		confirmed, err := promptConfirm(reader, out, fmt.Sprintf("Create agent %q for %s", values.Name, values.Runtime), true)
+		confirmed, err := promptConfirm(reader, out, fmt.Sprintf("Create agent %q for %s", values.Name, strings.Join(values.Runtimes, ",")), true)
 		if err != nil {
 			return values, err
 		}
@@ -433,8 +486,71 @@ func resolveCreateValues(cmd *cobra.Command, reader *bufio.Reader, out io.Writer
 		}
 	}
 
-	if !isKnownRuntime(values.Runtime) {
-		return values, fmt.Errorf("invalid runtime %q", values.Runtime)
+	if err := finalizeCreateRuntimes(&values); err != nil {
+		return values, err
+	}
+	return values, nil
+}
+
+func promptCreateValuesTUI(cmd *cobra.Command, out io.Writer, source createSource, values resolvedCreateValues) (resolvedCreateValues, error) {
+	skillOptions, err := listInstalledSkillOptions()
+	if err != nil {
+		return values, err
+	}
+	mcpOptions, err := listInstalledMCPOptions()
+	if err != nil {
+		return values, err
+	}
+
+	fields := []huh.Field{
+		huh.NewInput().
+			Title("Agent name").
+			Value(&values.Name).
+			Validate(huh.ValidateNotEmpty()),
+		huh.NewMultiSelect[string]().
+			Title("Runtimes").
+			Description("Use Space to select one or more runtimes. The first selected runtime in this list becomes preferred.").
+			Options(runtimeTUIOptions(values.Runtimes)...).
+			Value(&values.Runtimes),
+	}
+	if options := capabilityTUIOptions(skillOptions, values.Skills); len(options) > 0 {
+		fields = append(fields, huh.NewMultiSelect[string]().
+			Title("Skills").
+			Description("Use Space to select installed skills for this agent.").
+			Options(options...).
+			Value(&values.Skills))
+	}
+	if options := capabilityTUIOptions(mcpOptions, values.MCPs); len(options) > 0 {
+		fields = append(fields, huh.NewMultiSelect[string]().
+			Title("MCP servers").
+			Description("Use Space to select MCP servers for this agent.").
+			Options(options...).
+			Value(&values.MCPs))
+	}
+
+	if err := runCreateTUIForm(cmd, huh.NewForm(huh.NewGroup(fields...))); err != nil {
+		return values, err
+	}
+	values.Skills = uniqueSortedCreateStrings(values.Skills)
+	values.MCPs = uniqueSortedCreateStrings(values.MCPs)
+	if err := finalizeCreateRuntimes(&values); err != nil {
+		return values, err
+	}
+
+	printCreatePreview(out, source, values)
+	confirmed := true
+	form := huh.NewForm(huh.NewGroup(
+		huh.NewConfirm().
+			Title(fmt.Sprintf("Create agent %q for %s?", values.Name, strings.Join(values.Runtimes, ","))).
+			Affirmative("Create").
+			Negative("Cancel").
+			Value(&confirmed),
+	))
+	if err := runCreateTUIForm(cmd, form); err != nil {
+		return values, err
+	}
+	if !confirmed {
+		return values, fmt.Errorf("create cancelled")
 	}
 	return values, nil
 }
@@ -446,6 +562,7 @@ func defaultCreateValues(source createSource, opts createOptions, cwd string) re
 		agent := source.Agent
 		values.Name = firstNonEmptyString(opts.Name, suggestCopiedAgentName(agent.Name, values.Scope, cwd))
 		values.Runtime = firstNonEmptyString(opts.Runtime, agent.Runtime.Preferred, "codex")
+		values.Runtimes = runtimePreferenceList(agent.Runtime)
 		values.Model = firstNonEmptyString(opts.Model, agent.ModelRun.Model)
 		values.Reasoning = firstNonEmptyString(opts.Reasoning, agent.ModelRun.ReasoningEffort, "medium")
 		values.Skills = append([]string(nil), agent.Capabilities.Skills...)
@@ -453,6 +570,7 @@ func defaultCreateValues(source createSource, opts createOptions, cwd string) re
 	case createSourceImport:
 		values.Name = firstNonEmptyString(opts.Name, suggestAvailableAgentName(source.Name, values.Scope, cwd))
 		values.Runtime = firstNonEmptyString(opts.Runtime, source.Runtime, "codex")
+		values.Runtimes = normalizeCreateRuntimeList([]string{values.Runtime})
 		values.Model = opts.Model
 		values.Reasoning = firstNonEmptyString(opts.Reasoning, "medium")
 	case createSourcePackage:
@@ -461,10 +579,14 @@ func defaultCreateValues(source createSource, opts createOptions, cwd string) re
 		pkg := source.Package
 		values.Name = firstNonEmptyString(opts.Name, pkg.DefaultName, pkg.Name)
 		values.Runtime = firstNonEmptyString(opts.Runtime, pkg.DefaultRuntime, "codex")
+		values.Runtimes = normalizeCreateRuntimeList([]string{values.Runtime})
 		values.Model = firstNonEmptyString(opts.Model, pkg.DefaultModel)
 		values.Reasoning = firstNonEmptyString(opts.Reasoning, pkg.DefaultReasoning, "medium")
 		values.Skills = append([]string(nil), pkg.Skills...)
 		values.MCPs = append([]string(nil), pkg.MCPs...)
+	}
+	if len(values.Runtimes) == 0 {
+		values.Runtimes = normalizeCreateRuntimeList([]string{values.Runtime})
 	}
 	return values
 }
@@ -487,9 +609,7 @@ func agentFromBuiltinPackage(pkg builtinPackage, values resolvedCreateValues) *c
 		Name:        values.Name,
 		Description: pkg.Description,
 		SourceScope: string(values.Scope),
-		Runtime: config.RuntimePreferences{
-			Preferred: values.Runtime,
-		},
+		Runtime:     runtimePreferencesFromValues(values),
 		Identity: config.AgentIdentity{
 			DisplayName: values.Name,
 			Role:        pkg.Name,
@@ -516,6 +636,7 @@ func agentFromExistingProfile(source *config.AgentProfile, values resolvedCreate
 		agent.Identity.DisplayName = values.Name
 	}
 	agent.Runtime.Preferred = values.Runtime
+	agent.Runtime.Fallback = runtimeFallbackFromValues(values)
 	agent.ModelRun.Model = values.Model
 	agent.ModelRun.ReasoningEffort = values.Reasoning
 	agent.Capabilities.Skills = append([]string(nil), values.Skills...)
@@ -528,9 +649,7 @@ func agentFromImportedCandidate(source createSource, values resolvedCreateValues
 		Name:        values.Name,
 		Description: source.Imported.Description,
 		SourceScope: string(values.Scope),
-		Runtime: config.RuntimePreferences{
-			Preferred: values.Runtime,
-		},
+		Runtime:     runtimePreferencesFromValues(values),
 		Identity: config.AgentIdentity{
 			DisplayName: values.Name,
 			Role:        source.Runtime + "-import",
@@ -775,7 +894,7 @@ func printCreatePreview(out io.Writer, source createSource, values resolvedCreat
 	fmt.Fprintf(out, "  source: %s\n", source.Summary())
 	fmt.Fprintf(out, "  name: %s\n", values.Name)
 	fmt.Fprintf(out, "  scope: %s\n", values.Scope)
-	fmt.Fprintf(out, "  runtime: %s\n", values.Runtime)
+	fmt.Fprintf(out, "  runtimes: %s\n", previewList(values.Runtimes))
 	if values.Model != "" {
 		fmt.Fprintf(out, "  model: %s\n", values.Model)
 	}
@@ -794,6 +913,136 @@ func previewList(values []string) string {
 	return strings.Join(values, ",")
 }
 
+func createUseTUI(cmd *cobra.Command) bool {
+	return isTerminalFile(cmd.InOrStdin()) && isTerminalFile(cmd.OutOrStdout())
+}
+
+func isTerminalFile(value any) bool {
+	file, ok := value.(*os.File)
+	if !ok || file == nil {
+		return false
+	}
+	info, err := file.Stat()
+	if err != nil {
+		return false
+	}
+	return info.Mode()&os.ModeCharDevice != 0
+}
+
+func runCreateTUIForm(cmd *cobra.Command, form *huh.Form) error {
+	err := form.
+		WithInput(cmd.InOrStdin()).
+		WithOutput(cmd.OutOrStdout()).
+		WithTheme(huh.ThemeCharm()).
+		Run()
+	if errors.Is(err, huh.ErrUserAborted) {
+		return fmt.Errorf("create cancelled")
+	}
+	return err
+}
+
+func runtimeTUIOptions(selected []string) []huh.Option[string] {
+	selected = normalizeCreateRuntimeList(selected)
+	runtimes := append([]string(nil), selected...)
+	for _, runtime := range []string{"codex", "claude-code", "opencode", "cline", "cursor"} {
+		if runtime != "" && !containsCreateString(runtimes, runtime) {
+			runtimes = append(runtimes, runtime)
+		}
+	}
+	selectedSet := stringSet(selected)
+	options := make([]huh.Option[string], 0, len(runtimes))
+	for _, runtime := range runtimes {
+		_, isSelected := selectedSet[runtime]
+		options = append(options, huh.NewOption(runtime, runtime).Selected(isSelected))
+	}
+	return options
+}
+
+func containsCreateString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
+}
+
+func capabilityTUIOptions(installed []capabilityOption, defaults []string) []huh.Option[string] {
+	names := mergeSelectionOptions(installedNames(installed), defaults)
+	if len(names) == 0 {
+		return nil
+	}
+	installedByName := capabilityOptionsByName(installed)
+	selected := stringSet(defaults)
+	options := make([]huh.Option[string], 0, len(names))
+	for _, name := range names {
+		label := formatCapabilityOption(name, installedByName[name])
+		if _, ok := installedByName[name]; !ok {
+			label += " (referenced, not installed)"
+		}
+		_, isSelected := selected[name]
+		options = append(options, huh.NewOption(label, name).Selected(isSelected))
+	}
+	return options
+}
+
+func finalizeCreateRuntimes(values *resolvedCreateValues) error {
+	if values == nil {
+		return fmt.Errorf("create values are nil")
+	}
+	values.Runtimes = normalizeCreateRuntimeList(values.Runtimes)
+	if len(values.Runtimes) == 0 && values.Runtime != "" {
+		values.Runtimes = normalizeCreateRuntimeList([]string{values.Runtime})
+	}
+	if len(values.Runtimes) == 0 {
+		return fmt.Errorf("at least one runtime is required")
+	}
+	for _, runtime := range values.Runtimes {
+		if !isKnownRuntime(runtime) {
+			return fmt.Errorf("invalid runtime %q", runtime)
+		}
+	}
+	values.Runtime = values.Runtimes[0]
+	return nil
+}
+
+func normalizeCreateRuntimeList(values []string) []string {
+	var out []string
+	seen := map[string]struct{}{}
+	for _, value := range values {
+		for _, runtime := range splitSelectionValues(value) {
+			runtime = strings.TrimSpace(runtime)
+			if runtime == "" {
+				continue
+			}
+			if _, ok := seen[runtime]; ok {
+				continue
+			}
+			seen[runtime] = struct{}{}
+			out = append(out, runtime)
+		}
+	}
+	return out
+}
+
+func runtimePreferenceList(runtime config.RuntimePreferences) []string {
+	return normalizeCreateRuntimeList(append([]string{runtime.Preferred}, runtime.Fallback...))
+}
+
+func runtimePreferencesFromValues(values resolvedCreateValues) config.RuntimePreferences {
+	return config.RuntimePreferences{
+		Preferred: values.Runtime,
+		Fallback:  runtimeFallbackFromValues(values),
+	}
+}
+
+func runtimeFallbackFromValues(values resolvedCreateValues) []string {
+	if len(values.Runtimes) <= 1 {
+		return nil
+	}
+	return append([]string(nil), values.Runtimes[1:]...)
+}
+
 func runtimeStartCommand(runtime string) string {
 	switch runtime {
 	case "codex":
@@ -809,6 +1058,21 @@ func runtimeStartCommand(runtime string) string {
 	default:
 		return ""
 	}
+}
+
+func runtimeStartCommands(runtimes []string) []string {
+	var out []string
+	seen := map[string]struct{}{}
+	for _, runtime := range runtimes {
+		if _, ok := seen[runtime]; ok {
+			continue
+		}
+		seen[runtime] = struct{}{}
+		if command := runtimeStartCommand(runtime); command != "" {
+			out = append(out, command)
+		}
+	}
+	return out
 }
 
 func listInstalledSkills() ([]string, error) {
