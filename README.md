@@ -34,20 +34,21 @@ compatibility adapters; Cursor support is a conservative Phase 1 rules/MCP PoC.
 ## The Move
 
 ```bash
-avm create backend-coder
-eval "$(avm activate backend-coder)"
+avm create
+eval "$(avm activate <agent-name>)"
 ```
 
-Create an agent from a package, activate it in the current shell, then start the
-runtime. Instead of rebuilding the same role across prompt files, MCP config,
-rules directories, and memory notes, AVM makes the agent profile the source of
-truth. `avm use` remains available for explicit profile/env activation and sync.
+Create an agent from a package, an existing profile, or a runtime import
+candidate; activate it in the current shell; then start the runtime. Instead of
+rebuilding the same role across prompt files, MCP config, rules directories, and
+memory notes, AVM makes the agent profile the source of truth. `avm use`
+remains available for explicit profile/env activation and sync.
 
 ```text
-backend-coder package
-  -> avm create backend-coder
-    -> backend-coder.yaml
-      -> eval "$(avm activate backend-coder)"
+package / profile / runtime import candidate
+  -> avm create
+    -> <agent-name>.yaml
+      -> eval "$(avm activate <agent-name>)"
         -> Codex profile
         -> Claude Code agent
         -> OpenCode config/agent/skills
@@ -181,26 +182,38 @@ Still post-MVP or policy follow-up:
 
 ## Quickstart
 
-Install a tagged preview release:
+Install a tagged preview release. The installer puts `avm` in
+`$HOME/.local/bin` by default and initializes `~/.avm` unless
+`AVM_SKIP_INIT=1` is set.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/xz1220/Agent-VM/main/scripts/install.sh | sh
 ```
 
-Create your first agent from a package:
+Create your first agent. With no arguments, `avm create` opens an interactive
+flow where you can start from a built-in package, an existing AVM profile, or a
+runtime import candidate.
+
+```bash
+avm create
+```
+
+You can also use flags when you already know what you want:
 
 ```bash
 avm create backend-coder
+avm create --from default --name api-coder
+avm create --from-import claude-code/reviewer --name reviewer-copy
 ```
 
-Use it in the current shell, then start your runtime:
+Activate the profile in the current shell, then start the runtime:
 
 ```bash
 eval "$(avm activate backend-coder)"
 codex
 ```
 
-Use OpenCode instead by selecting it during creation or passing a flag:
+Use another runtime by selecting it in the wizard or passing a flag:
 
 ```bash
 avm create backend-coder --runtime opencode
@@ -208,49 +221,47 @@ eval "$(avm activate backend-coder)"
 opencode
 ```
 
-Inspect available packages:
+Before creating, inspect what AVM can see locally:
 
 ```bash
 avm package list
-avm package show reviewer
-```
-
-Inspect installed skills and their summaries before deciding what belongs in a profile:
-
-```bash
 avm skill list
-```
-
-Inspect existing runtime configuration that AVM can turn into profiles:
-
-```bash
-avm runtime list
 avm runtime scan
+avm runtime list
 ```
 
-Create from something you already have instead of starting from a package:
+`avm skill list` shows installed skills and summaries. `avm runtime scan`
+refreshes the read-only runtime import report, and `avm runtime list` shows the
+exact `avm create --from-import ...` commands for import candidates.
 
-```bash
-avm create --from default --name api-coder
-avm create --from-import claude-code/reviewer --name reviewer-copy
-```
-
-Run from source for development or local testing:
+Try the first-user path from source without touching your real `~/.avm`:
 
 ```bash
 git clone https://github.com/xz1220/Agent-VM.git
 cd Agent-VM
-go run ./cmd/avm create backend-coder --yes
+scripts/dev/avm-runtime-home-test-env.sh start
 ```
 
-For a local smoke run without installed runtime CLIs, create the runtime config
-directories before activation:
+The test shell builds `avm` from the current branch, creates a temporary
+`HOME/project`, and copies runtime config/auth snapshots into that temporary
+home. It does not run `avm init`, create agents, or activate anything by
+default, so you can run the real first-user path yourself:
 
 ```bash
-mkdir -p "$HOME/.codex" "$HOME/.claude" "$HOME/.config/opencode" "$HOME/.cline/data" .cursor
+avm init
+avm runtime scan
+avm runtime list
+avm skill list
+avm create
 ```
 
-Create and inspect profiles:
+For a seeded demo environment instead, run:
+
+```bash
+scripts/dev/avm-runtime-home-test-env.sh seed
+```
+
+More CLI examples:
 
 ```bash
 avm agent create backend-coder \
@@ -271,7 +282,7 @@ avm agent show backend-coder
 avm skill list
 ```
 
-Create environments:
+Create an environment that maps different runtimes to different profiles:
 
 ```bash
 avm env create all-runtimes \
@@ -284,7 +295,7 @@ avm env create all-runtimes \
 avm env create all-runtimes --local --codex backend-coder
 ```
 
-Preview a portable memory import:
+Preview a portable memory import before writing anything:
 
 ```bash
 avm memory import \
@@ -315,7 +326,7 @@ avm export backend-coder --kind agent --output backend-coder.avm.zip
 avm install backend-coder.avm.zip
 ```
 
-Build locally:
+Build locally without the test shell:
 
 ```bash
 make build
