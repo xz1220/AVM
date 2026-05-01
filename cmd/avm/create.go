@@ -793,13 +793,17 @@ func isTerminalFile(value any) bool {
 }
 
 func runCreateTUIForm(cmd *cobra.Command, form *huh.Form) error {
+	return runTUIForm(cmd, form, "create")
+}
+
+func runTUIForm(cmd *cobra.Command, form *huh.Form, action string) error {
 	err := form.
 		WithInput(cmd.InOrStdin()).
 		WithOutput(cmd.OutOrStdout()).
 		WithTheme(huh.ThemeCharm()).
 		Run()
 	if errors.Is(err, huh.ErrUserAborted) {
-		return fmt.Errorf("create cancelled")
+		return fmt.Errorf("%s cancelled", action)
 	}
 	return err
 }

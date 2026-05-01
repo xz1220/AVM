@@ -46,7 +46,7 @@ func TestRegisteredCommandHelp(t *testing.T) {
 		{
 			name: "agent",
 			args: []string{"agent", "--help"},
-			want: []string{"create", "list", "show"},
+			want: []string{"create", "clone", "edit", "list", "rename", "delete", "show"},
 		},
 		{
 			name: "agent create",

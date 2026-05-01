@@ -1,6 +1,10 @@
 package config
 
-import "sort"
+import (
+	"fmt"
+	"os"
+	"sort"
+)
 
 func ReadAgent(name string, scope Scope, cwd string) (*AgentProfile, error) {
 	if !validName(name) {
@@ -41,6 +45,52 @@ func WriteAgent(agent *AgentProfile, scope Scope, cwd string) error {
 		return err
 	}
 	return writeYAML(path, agent)
+}
+
+func AgentExists(name string, scope Scope, cwd string) (bool, error) {
+	if _, err := ReadAgent(name, scope, cwd); err == nil {
+		return true, nil
+	} else if os.IsNotExist(err) {
+		return false, nil
+	} else {
+		return false, err
+	}
+}
+
+func DeleteAgent(name string, scope Scope, cwd string) error {
+	if !validName(name) {
+		return fieldError("", "name", "invalid name %q", name)
+	}
+	path, err := agentPathForScope(name, scope, cwd)
+	if err != nil {
+		return err
+	}
+	return os.Remove(path)
+}
+
+func RenameAgent(oldName, newName string, scope Scope, cwd string) error {
+	if oldName == newName {
+		return fmt.Errorf("old and new agent names are the same")
+	}
+	agent, err := ReadAgent(oldName, scope, cwd)
+	if err != nil {
+		return err
+	}
+	if exists, err := AgentExists(newName, scope, cwd); err != nil {
+		return err
+	} else if exists {
+		return fmt.Errorf("agent %q already exists", newName)
+	}
+
+	renamed := *agent
+	renamed.Name = newName
+	if renamed.Identity.DisplayName == "" || renamed.Identity.DisplayName == oldName {
+		renamed.Identity.DisplayName = newName
+	}
+	if err := WriteAgent(&renamed, scope, cwd); err != nil {
+		return err
+	}
+	return DeleteAgent(oldName, scope, cwd)
 }
 
 func ListAgents(scope Scope, cwd string) ([]AgentSummary, error) {
