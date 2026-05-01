@@ -103,10 +103,16 @@ func DownloadPackage(opts DownloadOptions) (string, func(), error) {
 	tmpPath := tmp.Name()
 	cleanup := func() { os.Remove(tmpPath) }
 
-	if _, err := io.Copy(tmp, io.LimitReader(resp.Body, maxDownloadSize)); err != nil {
+	n, err := io.Copy(tmp, io.LimitReader(resp.Body, maxDownloadSize+1))
+	if err != nil {
 		tmp.Close()
 		cleanup()
 		return "", nil, fmt.Errorf("download %s: %w", opts.URL, err)
+	}
+	if n > maxDownloadSize {
+		tmp.Close()
+		cleanup()
+		return "", nil, fmt.Errorf("download %s: exceeds maximum size (%d MB)", opts.URL, maxDownloadSize>>20)
 	}
 	if err := tmp.Close(); err != nil {
 		cleanup()
@@ -153,6 +159,9 @@ func parseChecksum(s string) (algo, hash string, err error) {
 	parts := strings.SplitN(s, ":", 2)
 	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
 		return "", "", fmt.Errorf("invalid checksum format %q: expected algo:hex (e.g. sha256:abc123...)", s)
+	}
+	if _, err := hex.DecodeString(parts[1]); err != nil {
+		return "", "", fmt.Errorf("invalid checksum hex %q: %w", parts[1], err)
 	}
 	return parts[0], parts[1], nil
 }

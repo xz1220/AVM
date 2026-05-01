@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -157,7 +158,7 @@ func TestDownloadPackage(t *testing.T) {
 		if err == nil {
 			t.Fatal("expected checksum mismatch error")
 		}
-		if got := err.Error(); !contains(got, "checksum mismatch") {
+		if got := err.Error(); !strings.Contains(got, "checksum mismatch") {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		entries, _ := os.ReadDir(dir)
@@ -178,7 +179,7 @@ func TestDownloadPackage(t *testing.T) {
 		if err == nil {
 			t.Fatal("expected error for 404")
 		}
-		if got := err.Error(); !contains(got, "HTTP 404") {
+		if got := err.Error(); !strings.Contains(got, "HTTP 404") {
 			t.Fatalf("unexpected error: %v", err)
 		}
 	})
@@ -197,7 +198,7 @@ func TestDownloadPackage(t *testing.T) {
 		if err == nil {
 			t.Fatal("expected error for 500")
 		}
-		if got := err.Error(); !contains(got, "HTTP 500") {
+		if got := err.Error(); !strings.Contains(got, "HTTP 500") {
 			t.Fatalf("unexpected error: %v", err)
 		}
 	})
@@ -244,7 +245,7 @@ func TestVerifyChecksum(t *testing.T) {
 		if err == nil {
 			t.Fatal("expected error")
 		}
-		if !contains(err.Error(), "checksum mismatch") {
+		if !strings.Contains(err.Error(), "checksum mismatch") {
 			t.Fatalf("unexpected error: %v", err)
 		}
 	})
@@ -254,7 +255,7 @@ func TestVerifyChecksum(t *testing.T) {
 		if err == nil {
 			t.Fatal("expected error")
 		}
-		if !contains(err.Error(), "invalid checksum format") {
+		if !strings.Contains(err.Error(), "invalid checksum format") {
 			t.Fatalf("unexpected error: %v", err)
 		}
 	})
@@ -264,21 +265,17 @@ func TestVerifyChecksum(t *testing.T) {
 		if err == nil {
 			t.Fatal("expected error")
 		}
-		if !contains(err.Error(), "unsupported checksum algorithm") {
+		if !strings.Contains(err.Error(), "unsupported checksum algorithm") {
 			t.Fatalf("unexpected error: %v", err)
 		}
 	})
-}
-
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsStr(s, substr))
-}
-
-func containsStr(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
+	t.Run("invalid hex in checksum", func(t *testing.T) {
+		err := VerifyChecksum(path, "sha256:not-valid-hex")
+		if err == nil {
+			t.Fatal("expected error")
 		}
-	}
-	return false
+		if !strings.Contains(err.Error(), "invalid checksum hex") {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
 }
