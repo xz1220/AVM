@@ -234,7 +234,7 @@ surface is not finished.
 
 | Area | Available today | Gap |
 | --- | --- | --- |
-| Agent | `create`, `list`, `show` | missing edit/delete/rename/clone and safe create-only semantics |
+| Agent | `create`, `list`, `show`, `edit`, `delete`, `rename`, `clone` | richer first-run/package-backed create flow and interactive polish |
 | Environment | `create` | missing list/show/edit/delete/rename/clone |
 | Install lifecycle | installer, `init`, `shell init` | missing first-class doctor/uninstall commands |
 | Package | list/show/inspect/export/install | install/export naming still split across commands |
