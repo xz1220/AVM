@@ -2,12 +2,17 @@ package main
 
 import (
 	"archive/zip"
+	"crypto/sha256"
+	"encoding/hex"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/xz1220/agent-vm/internal/config"
+	"github.com/xz1220/agent-vm/internal/packageio"
 )
 
 func TestPackageAgentExportImportWithReferencedMetadata(t *testing.T) {
@@ -346,4 +351,119 @@ func zipEntryNames(t *testing.T, packagePath string) map[string]bool {
 		names[file.Name] = true
 	}
 	return names
+}
+
+func TestPackageInstallFromURL(t *testing.T) {
+	sourceHome := t.TempDir()
+	project := t.TempDir()
+	t.Setenv("HOME", sourceHome)
+	chdir(t, project)
+
+	writeTestAgent(t, project, "backend-coder", "codex")
+
+	packagePath := filepath.Join(t.TempDir(), "backend-coder.avm.zip")
+	if out, err := executeCommand("package", "export", "backend-coder", "--output", packagePath); err != nil {
+		t.Fatalf("export returned error: %v\n%s", err, out)
+	}
+
+	zipData, err := os.ReadFile(packagePath)
+	if err != nil {
+		t.Fatalf("read package: %v", err)
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write(zipData)
+	}))
+	defer srv.Close()
+
+	targetHome := t.TempDir()
+	t.Setenv("HOME", targetHome)
+	httpClient = srv.Client()
+	defer func() { httpClient = nil }()
+
+	out, err := executeCommand("package", "install", srv.URL+"/backend-coder.avm.zip")
+	if err != nil {
+		t.Fatalf("install from URL returned error: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "downloading") {
+		t.Fatalf("output missing download message:\n%s", out)
+	}
+	if !strings.Contains(out, "installed agent backend-coder: added") {
+		t.Fatalf("unexpected install output:\n%s", out)
+	}
+	if _, err := config.ReadAgent("backend-coder", config.ScopeGlobal, project); err != nil {
+		t.Fatalf("read installed agent: %v", err)
+	}
+}
+
+func TestPackageInstallFromURLWithChecksum(t *testing.T) {
+	sourceHome := t.TempDir()
+	project := t.TempDir()
+	t.Setenv("HOME", sourceHome)
+	chdir(t, project)
+
+	writeTestAgent(t, project, "backend-coder", "codex")
+
+	packagePath := filepath.Join(t.TempDir(), "backend-coder.avm.zip")
+	if out, err := executeCommand("package", "export", "backend-coder", "--output", packagePath); err != nil {
+		t.Fatalf("export returned error: %v\n%s", err, out)
+	}
+
+	zipData, err := os.ReadFile(packagePath)
+	if err != nil {
+		t.Fatalf("read package: %v", err)
+	}
+	h := sha256.Sum256(zipData)
+	correctChecksum := "sha256:" + hex.EncodeToString(h[:])
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write(zipData)
+	}))
+	defer srv.Close()
+
+	httpClient = srv.Client()
+	defer func() { httpClient = nil }()
+
+	targetHome := t.TempDir()
+	t.Setenv("HOME", targetHome)
+	out, err := executeCommand("package", "install", "--checksum", correctChecksum, srv.URL+"/pkg.avm.zip")
+	if err != nil {
+		t.Fatalf("install with correct checksum returned error: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "installed agent backend-coder") {
+		t.Fatalf("unexpected output:\n%s", out)
+	}
+
+	t.Setenv("HOME", t.TempDir())
+	_, err = executeCommand("package", "install", "--checksum", "sha256:0000000000000000000000000000000000000000000000000000000000000000", srv.URL+"/pkg.avm.zip")
+	if err == nil {
+		t.Fatal("expected checksum mismatch error")
+	}
+	if !strings.Contains(err.Error(), "checksum mismatch") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestPackageInstallFromURLNotFound(t *testing.T) {
+	srv := httptest.NewServer(http.NotFoundHandler())
+	defer srv.Close()
+
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	chdir(t, t.TempDir())
+
+	httpClient = srv.Client()
+	defer func() { httpClient = nil }()
+
+	_, err := executeCommand("package", "install", srv.URL+"/missing.avm.zip")
+	if err == nil {
+		t.Fatal("expected error for 404")
+	}
+	if !strings.Contains(err.Error(), "HTTP 404") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func setTestHTTPClient(c packageio.HTTPClient) func() {
+	httpClient = c
+	return func() { httpClient = nil }
 }
