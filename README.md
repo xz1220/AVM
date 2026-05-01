@@ -7,7 +7,7 @@
 <p align="center">
   <strong>nvm for AI coding agents.</strong>
   <br>
-  One portable profile for tools, permissions, model settings, and memory refs.
+  Manage Agent profiles and working environments, then apply them to Codex, Claude Code, OpenCode, Cline, or Cursor.
 </p>
 
 <p align="center">
@@ -21,398 +21,242 @@
   English | <a href="README.zh-CN.md">简体中文</a>
 </p>
 
-Agent VM, or `avm`, is a local control plane for AI coding agent profiles. It
-keeps an agent's role, tools, permissions, model preferences, and memory refs in
-one portable profile, then lets adapters render that profile into runtimes such
-as Codex, Claude Code, and OpenCode. Cline and Cursor remain available as
-compatibility adapters; Cursor support is a conservative Phase 1 rules/MCP PoC.
+Agent VM, or `avm`, is a local manager for AI coding agent configuration. It gives
+users a small set of durable objects:
 
-<p align="center">
-  <img src="assets/avm-before-after.svg" alt="Before AVM config is scattered; after AVM one profile activates an agent" width="100%">
-</p>
+- **Agent**: a reusable agent profile with instructions, skills, MCP servers,
+  permissions, model preferences, and runtime preferences.
+- **Environment**: a named working scenario that maps one or more runtimes to
+  agents.
+- **Package**: a distributable bundle that can install agents, environments, and
+  their referenced capabilities.
+- **Runtime**: the target tool where an agent becomes active, such as Codex,
+  Claude Code, OpenCode, Cline, or Cursor.
 
-## The Move
+Everything else is supporting machinery. Skills are part of an Agent profile.
+Runtime discovery is a source option inside Agent creation, not a standalone user
+workflow. Syncing to runtime files is an implementation detail behind `avm use`
+and the managed activation model.
 
-```bash
-avm create
-eval "$(avm activate <agent-name>)"
-```
-
-Create an agent from a package, an existing profile, or a runtime import
-candidate; activate it in the current shell; then start the runtime. Instead of
-rebuilding the same role across prompt files, MCP config, rules directories, and
-memory notes, AVM makes the agent profile the source of truth. `avm use`
-remains available for explicit profile/env activation and sync.
-
-```text
-package / profile / runtime import candidate
-  -> avm create
-    -> <agent-name>.yaml
-      -> eval "$(avm activate <agent-name>)"
-        -> Codex profile
-        -> Claude Code agent
-        -> OpenCode config/agent/skills
-        -> Cline rules/MCP settings
-        -> Cursor rules/MCP PoC
-```
-
-## Why This Is Different
-
-| Approach | What it manages | What it misses |
-| --- | --- | --- |
-| Dotfiles | Files and symlinks | No agent object, no mapping status |
-| MCP config managers | Tool server config | Usually no role, memory, model, or permission model |
-| Runtime-native profiles | One ecosystem | Hard to carry across tools |
-| Agent VM | Agent Profile + capabilities + memory refs + adapters | Early; Phase 1 adapters are conservative and report mapping status |
-
-AVM is not trying to flatten every runtime into the same interface. Each adapter
-must report how fields map: `native`, `rendered_as_instructions`, `ignored`, or
-`unsupported`.
-
-## What A Profile Carries
-
-| Layer | Example |
-| --- | --- |
-| Identity | `backend-coder`, `pr-reviewer`, `incident-runner` |
-| Runtime | `codex`, `claude-code`, `opencode`, `cline`, `cursor` |
-| Model run | model name, reasoning effort, verbosity |
-| Capabilities | skills, commands, hooks, MCP servers, toolsets |
-| Permissions | approval mode, sandbox intent, allow/deny policy |
-| Memory refs | project architecture, team conventions, user preferences |
-
-## Recipes
-
-<details open>
-<summary><strong>backend-coder</strong></summary>
-
-```yaml
-name: backend-coder
-runtime:
-  preferred: codex
-model_run:
-  model: gpt-5.4
-  reasoning_effort: high
-capabilities:
-  skills: [git, test, migration]
-  mcps: [github, postgres-readonly]
-permissions:
-  approval: on-risky-actions
-  sandbox: workspace-write
-memory_refs:
-  - id: backend-standards
-    scope: project
-    mode: read
-```
-
-</details>
-
-<details>
-<summary><strong>pr-reviewer</strong></summary>
-
-```yaml
-name: pr-reviewer
-runtime:
-  preferred: claude-code
-capabilities:
-  skills: [review, security, test-analysis]
-  mcps: [github]
-permissions:
-  approval: never
-  sandbox: read-only
-memory_refs:
-  - id: review-policy
-    scope: team
-    mode: read
-```
-
-</details>
-
-<details>
-<summary><strong>incident-runner</strong></summary>
-
-```yaml
-name: incident-runner
-runtime:
-  preferred: codex
-capabilities:
-  skills: [diagnose, summarize, runbook]
-  mcps: [logs-readonly, github]
-permissions:
-  approval: prompt
-  sandbox: read-only
-memory_refs:
-  - id: incident-runbooks
-    scope: team
-    mode: read
-```
-
-</details>
-
-## Status
-
-This repository is an early preview. The core model, Stage 5 CLI hardening, and
-managed activation path are in place.
-
-Working today:
-
-- `avm init`
-- `avm create <package>`, `avm create --from <profile>`, and `avm create --from-import <runtime>/<candidate>` for first-run profile creation
-- `avm package list/show` for built-in create packages, plus `avm package inspect <file.avm.zip>` for portable agent packages
-- `avm skill list` for installed skill inventory
-- `avm runtime list/scan` for runtime detection and import candidates
-- `avm agent create/list/show`, including `avm agent show --runtime <runtime>`
-- `avm env create`, including `avm env create --local`
-- `avm memory import --from <file> --dry-run`
-- `avm use`, `avm status`, and `avm deactivate`
-- `avm sync`
-- `avm shell init bash|zsh|fish`
-- `avm export <agent>`, `avm import`, and `avm install <file.avm.zip>`
-- `avm init` runtime import/report scan with `state/import-report.json`
-- managed Codex, Claude Code, OpenCode, Cline, and Cursor render outputs
-- config validation and resolution tests
-- adapter contract, fake adapter, and Phase 1 fixtures
-
-Cursor Phase 1 writes successfully as `synced`; partial support is exposed
-through warnings and mapping status, not a separate Cursor-only sync state.
-
-Still post-MVP or policy follow-up:
-
-- broader package policy for config/defaults/active state, project overrides,
-  runtime outputs, and interactive overwrite/rename
-
-## Quickstart
-
-Install a tagged preview release. The installer puts `avm` in
-`$HOME/.local/bin` by default, installs shell integration into your shell rc
-file, and initializes `~/.avm` unless `AVM_SKIP_INIT=1` is set.
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/xz1220/Agent-VM/main/scripts/install.sh | sh
-```
-
-Restart your shell, or source the rc file printed by the installer.
-
-Create your first agent. With no arguments, `avm create` opens an interactive
-terminal wizard where you can use arrow keys and Space to start from a built-in
-package, an existing AVM profile, or a runtime import candidate and select
-runtimes, skills, and MCP servers.
+## Daily Path
 
 ```bash
 avm create
-```
-
-You can also use flags when you already know what you want:
-
-```bash
-avm create backend-coder
-avm create --from default --name api-coder
-avm create --from-import claude-code/reviewer --name reviewer-copy
-```
-
-Activate the profile in the current shell, then start the runtime:
-
-```bash
 avm use backend-coder
 codex
 ```
 
-Use another runtime, or render the same profile to multiple runtimes, by
-selecting them in the wizard or passing a flag:
+The intended path is simple:
 
-```bash
-avm create backend-coder --runtime opencode
-avm create backend-coder --runtimes codex,opencode
-avm use backend-coder
-opencode
+1. Install and initialize AVM.
+2. Create an Agent profile with the current preview wizard.
+3. Optionally group agents into an Environment.
+4. Use an Agent or Environment in the current shell.
+5. Start your runtime.
+
+```text
+Package / existing Agent / local runtime config
+  -> create Agent
+    -> use Agent or Environment
+      -> runtime-specific managed config
+        -> Codex / Claude Code / OpenCode / Cline / Cursor
 ```
 
-If shell integration is not loaded, use the eval-safe fallback:
+## User Modules
+
+### 1. Install, Initialize, And Uninstall
+
+This module owns AVM's lifecycle on the machine.
+
+Current preview:
 
 ```bash
-eval "$(avm activate backend-coder)"
+curl -fsSL https://raw.githubusercontent.com/xz1220/Agent-VM/main/scripts/install.sh | sh
+avm init
+avm shell init zsh
 ```
 
-Before creating, inspect what AVM can see locally:
+The installer puts `avm` in `$HOME/.local/bin` by default, installs shell
+integration into your shell rc file, and initializes `~/.avm` unless
+`AVM_SKIP_INIT=1` is set.
+
+Product target:
 
 ```bash
-avm package list
-avm skill list
-avm runtime scan
-avm runtime list
+avm init
+avm doctor
+avm uninstall
+avm shell install
+avm shell uninstall
 ```
 
-`avm skill list` shows installed skills and summaries before activation. Inside
-an activated shell it shows only the active profile's selected skills; use
-`avm skill list --all` for the global registry. `avm runtime scan` refreshes the
-read-only runtime import report and bootstraps discovered native runtime
-skills/MCP servers into AVM's global registry. `avm runtime list` shows the exact
-`avm create --from-import ...` commands for import candidates.
+### 2. Agent Configuration
 
-Try the first-user path from source without touching your real `~/.avm`:
+Agent configuration is the primary product surface. An Agent owns its skills,
+MCP servers, model preferences, permissions, instructions, and runtime
+preferences.
 
-```bash
-git clone https://github.com/xz1220/Agent-VM.git
-cd Agent-VM
-scripts/dev/avm-runtime-home-test-env.sh start
-```
-
-The test shell starts with a clean temporary `HOME/project` and does not install
-or initialize AVM. It prints a helper that runs the local-source installer and
-loads the shell integration in the current test shell:
+Current preview:
 
 ```bash
-avm-install-local
 avm create
-avm use <agent-name>
-```
+avm create backend-coder
+avm create --from default --name api-coder
+avm create --from-import claude-code/reviewer --name reviewer-copy
 
-Set `AVM_TEST_COPY_RUNTIME_CONFIG=1` before `start` if you want the clean HOME
-to include snapshots of your current Codex, Claude Code, and OpenCode config for
-runtime discovery testing. The test shell also copies allowlisted
-Claude/Anthropic auth environment variables from your current or real shell.
-
-For a seeded demo environment instead, run:
-
-```bash
-scripts/dev/avm-runtime-home-test-env.sh seed
-```
-
-More CLI examples:
-
-```bash
-avm agent create backend-coder \
-  --runtime codex \
-  --model gpt-5.4 \
-  --reasoning high \
-  --skills git,test \
-  --mcps github \
-  --memory backend-standards:project
-
-avm agent create reviewer --runtime claude-code --skills review
-avm agent create opencode-coder --runtime opencode --skills git,test
-avm agent create cline-helper --runtime cline --skills test
-avm agent create cursor-helper --runtime cursor --skills rules
-
+avm agent create backend-coder --runtime codex --skills git,test
 avm agent list
 avm agent show backend-coder
-avm skill list
+avm agent show backend-coder --runtime codex
 ```
 
-Create an environment that maps different runtimes to different profiles:
+Product target:
 
 ```bash
-avm env create all-runtimes \
+avm agent create
+avm agent list
+avm agent show <name>
+avm agent edit <name>
+avm agent delete <name>
+avm agent clone <name> --name <new-name>
+avm agent rename <old-name> <new-name>
+```
+
+`avm create` remains the first-run wizard and shortcut entry. It should create an
+Agent from one of these sources:
+
+- a blank/default Agent
+- a built-in or installed Package
+- an existing Agent
+- local runtime configuration discovered from tools already installed on the
+  machine
+
+The last item replaces the old mental model of a standalone "runtime discovery"
+module.
+
+### 3. Environment Configuration
+
+An Environment is a working scenario. It maps runtimes to Agent profiles and is
+useful only when a user wants one named setup to cover multiple tools.
+
+Current preview:
+
+```bash
+avm env create work \
   --codex backend-coder \
   --claude-code reviewer \
-  --opencode opencode-coder \
-  --cline cline-helper \
-  --cursor cursor-helper
-
-avm env create all-runtimes --local --codex backend-coder
+  --opencode opencode-coder
 ```
 
-Preview a portable memory import before writing anything:
+Product target:
 
 ```bash
-avm memory import \
-  --from testdata/memory/backend-standards.md \
-  --dry-run \
-  --format json
+avm env create
+avm env list
+avm env show <name>
+avm env edit <name>
+avm env delete <name>
+avm env clone <name> --name <new-name>
+avm env rename <old-name> <new-name>
 ```
 
-Activate, inspect, resync, and deactivate:
+Use an Agent when there is one active role. Use an Environment when a scenario
+needs different agents for different runtimes.
+
+### 4. Use And Activation
+
+This is the daily switching surface.
 
 ```bash
-avm use --kind env all-runtimes
+avm use backend-coder
+avm use --kind env work
 avm status
-avm sync
 avm deactivate
 ```
 
-Shell integration prints eval-safe snippets. It also wraps `avm use` as a shell
-function so the current shell receives `CODEX_HOME`, `CLAUDE_CONFIG_DIR`, and
-other runtime env vars immediately:
+With shell integration installed, `avm use` updates the current shell so runtime
+environment variables such as `CODEX_HOME`, `CLAUDE_CONFIG_DIR`, and
+`OPENCODE_CONFIG_DIR` point to AVM-managed runtime homes.
+
+`avm sync` exists in the preview, but it should be treated as an advanced repair
+or debugging command rather than a primary user module.
+
+### 5. Packages
+
+Packages are for distribution and reuse. Users install packages to get Agents,
+Environments, and referenced capabilities; they do not usually "use" a package
+directly.
+
+Current preview:
 
 ```bash
-eval "$(avm shell init zsh)"
-```
-
-Export and install packages:
-
-```bash
-avm export backend-coder --output backend-coder.avm.zip
+avm package list
+avm package show reviewer
 avm package inspect backend-coder.avm.zip
-avm install --dry-run backend-coder.avm.zip
+avm export backend-coder --output backend-coder.avm.zip
 avm install backend-coder.avm.zip
 ```
 
-Build locally without the test shell:
+Product target:
 
 ```bash
-make build
-./bin/avm --help
+avm package list
+avm package show <package>
+avm package install <package-or-file>
+avm package uninstall <package>
+avm package export <agent-or-env>
+avm package inspect <file.avm.zip>
 ```
 
-## Current Status Shape
+### 6. Memory
 
-The current activation loop is:
+Memory is intentionally not part of the main path yet. The preview has
+`avm memory import --dry-run`, but the product model should not force users to
+understand memory before Agent and Environment CRUD is complete.
 
-```bash
-avm create backend-coder
-eval "$(avm activate backend-coder)"
-avm status
-```
+## Runtime Support
 
-Expected status shape:
+AVM renders Agent or Environment activation into runtime-specific managed files.
 
-```text
-active: profile:backend-coder
-runtime status:
-  codex: synced (agent backend-coder)
-managed paths:
-  codex:
-    - ~/.avm/runtime-homes/profile-backend-coder/codex/config.toml owner=avm merge=whole-file
-    - ~/.avm/runtime-homes/profile-backend-coder/codex/agents/backend-coder.toml owner=avm merge=whole-file
-mapping status:
-  codex:
-    - capabilities.skills -> .../agents/backend-coder.toml#developer_instructions: rendered_as_instructions
-warnings:
-  none
-```
+| Runtime | Status | Notes |
+| --- | --- | --- |
+| Codex | Supported | Native profile/model/reasoning mapping where available |
+| Claude Code | Supported | Agent frontmatter and MCP/skills mapping |
+| OpenCode | Supported | Config, agent, skills, and MCP mapping |
+| Cline | Compatibility | Mostly rendered as rules/MCP settings |
+| Cursor | Compatibility | Conservative rules/MCP proof of concept |
+
+Adapters must report each field as `native`, `rendered_as_instructions`,
+`ignored`, or `unsupported`. AVM should not pretend every runtime supports the
+same feature set.
+
+## Current Preview Gaps
+
+The current CLI already proves the local activation model, but the product
+surface is not finished.
+
+| Area | Available today | Gap |
+| --- | --- | --- |
+| Agent | `create`, `list`, `show` | missing edit/delete/rename/clone and safe create-only semantics |
+| Environment | `create` | missing list/show/edit/delete/rename/clone |
+| Install lifecycle | installer, `init`, `shell init` | missing first-class doctor/uninstall commands |
+| Package | list/show/inspect/export/install | install/export naming still split across commands |
+| Runtime discovery | `runtime scan/list`, `--from-import` | should be folded into Agent creation UX |
+| Skills | `skill list` | should be surfaced primarily inside Agent create/edit |
+| Sync | `sync` | should mostly disappear behind `use`/activation |
+| Memory | import dry-run | intentionally deferred from the main path |
 
 ## Safety Model
 
-AVM is designed to be conservative by default:
+AVM is conservative by default:
 
-- installer initialization and `avm init` only write under `~/.avm`.
-- Runtime-native memory is imported only through explicit commands.
-- Memory import supports dry-run reporting before writes.
-- Adapters own explicit managed paths.
-- Runtime fields that cannot be represented must be reported, not dropped.
+- installer initialization and `avm init` write under `~/.avm`.
+- Agent and Environment config should become explicit CRUD resources, not
+  implicit overwrites.
+- Runtime-native files are written only through adapter-declared managed paths.
+- Unsupported runtime fields are reported, not silently dropped.
 - Secrets should be referenced through environment variables, not exported as
   plaintext profile data.
-
-## Roadmap
-
-| Phase | Theme | Headline |
-| --- | --- | --- |
-| 1 | Local profile activation | `avm use <profile>` |
-| 2 | Runtime coverage | Codex, Claude Code, OpenCode, plus Cline/Cursor compatibility adapters |
-| 3 | Portable memory | explicit import/export/diff/push/pull |
-| 4 | Team registry | shareable agent profiles with policy and audit |
-
-See [ROADMAP.md](ROADMAP.md).
-
-## Project Docs
-
-- [Design system](DESIGN.md)
-- [Product requirements](docs/product/prd.md)
-- [Technical design](docs/design/tech-design.md)
-- [Architecture](docs/engineering/architecture.md)
-- [Data model](docs/engineering/data-model.md)
-- [Implementation plan](docs/engineering/implementation-plan.md)
-- [Acceptance criteria](docs/engineering/acceptance.md)
-- [GitHub launch checklist](docs/marketing/github-launch-checklist.md)
 
 ## Development
 
@@ -426,18 +270,14 @@ make build
 The main package is `cmd/avm`. Core packages live under `internal/config`,
 `internal/adapter`, `internal/memory`, `internal/sync`, and `internal/state`.
 
-## Contributing
+Useful project docs:
 
-AVM is early. The most useful contributions right now are narrow and concrete:
-
-- runtime mapping research for Codex, Claude Code, OpenCode, Cline, Cursor, and
-  GitHub Copilot custom agents
-- adapter fixtures
-- CLI behavior tests
-- docs that explain real workflows
-- bug reports from people managing multiple AI coding tools
-
-See [CONTRIBUTING.md](CONTRIBUTING.md).
+- [Product requirements](docs/product/prd.md)
+- [Technical design](docs/design/tech-design.md)
+- [Architecture](docs/engineering/architecture.md)
+- [Data model](docs/engineering/data-model.md)
+- [Implementation plan](docs/engineering/implementation-plan.md)
+- [Acceptance criteria](docs/engineering/acceptance.md)
 
 ## License
 
