@@ -58,7 +58,11 @@ func newAgentCommand() *cobra.Command {
 	}
 	cmd.AddCommand(
 		newAgentCreateCommand(),
+		newAgentCloneCommand(),
+		newAgentEditCommand(),
 		newAgentListCommand(),
+		newAgentRenameCommand(),
+		newAgentDeleteCommand(),
 		newAgentShowCommand(),
 	)
 	return cmd
@@ -151,6 +155,11 @@ func runAgentCreate(cmd *cobra.Command, args []string) error {
 	memoryRefs, err := parseMemoryRefs(memoryValues)
 	if err != nil {
 		return err
+	}
+	if exists, err := config.AgentExists(args[0], scope, cwd); err != nil {
+		return err
+	} else if exists {
+		return fmt.Errorf("agent %q already exists", args[0])
 	}
 
 	agent := &config.AgentProfile{

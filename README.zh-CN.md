@@ -92,12 +92,16 @@ avm create backend-coder
 avm create --from default --name api-coder
 
 avm agent create backend-coder --runtime codex --skills git,test
+avm agent clone backend-coder --name backend-reviewer
+avm agent edit backend-reviewer
+avm agent rename backend-reviewer reviewer --update-refs
+avm agent delete reviewer --force
 avm agent list
 avm agent show backend-coder
 avm agent show backend-coder --runtime codex
 ```
 
-产品目标是完整 CRUD：
+Agent CRUD 能力：
 
 ```bash
 avm agent create
