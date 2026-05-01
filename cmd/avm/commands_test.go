@@ -41,7 +41,7 @@ func TestRegisteredCommandHelp(t *testing.T) {
 		{
 			name: "package install",
 			args: []string{"package", "install", "--help"},
-			want: []string{"install <file.avm.zip>", "--dry-run"},
+			want: []string{"install <source>", "--dry-run", "--checksum"},
 		},
 		{
 			name: "package export",
