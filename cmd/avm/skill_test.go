@@ -36,7 +36,7 @@ func TestSkillListShowsActiveSkillsInActivatedShell(t *testing.T) {
 	writeCreateTestSkill(t, "docs")
 	writeCreateTestSkill(t, "security")
 
-	if out, err := executeCommand("create", "backend-coder", "--name", "docs-agent", "--skills", "docs", "--runtime", "codex", "--yes"); err != nil {
+	if out, err := executeCommand("create", "--from", "default", "--name", "docs-agent", "--skills", "docs", "--runtime", "codex", "--yes"); err != nil {
 		t.Fatalf("create returned error: %v\n%s", err, out)
 	}
 	if out, err := executeCommand("activate", "docs-agent"); err != nil {

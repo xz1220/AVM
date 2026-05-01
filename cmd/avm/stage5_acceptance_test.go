@@ -242,7 +242,7 @@ func TestStage5AcceptanceHardenedCLIFlow(t *testing.T) {
 	assertCurrentActive(t, "profile:default")
 
 	packagePath := filepath.Join(t.TempDir(), "default.avm.zip")
-	exportOut, err := executeCommand("export", "default", "--output", packagePath)
+	exportOut, err := executeCommand("package", "export", "default", "--output", packagePath)
 	if err != nil {
 		t.Fatalf("export returned error: %v\noutput:\n%s", err, exportOut)
 	}
@@ -251,11 +251,11 @@ func TestStage5AcceptanceHardenedCLIFlow(t *testing.T) {
 
 	targetHome := t.TempDir()
 	t.Setenv("HOME", targetHome)
-	importOut, err := executeCommand("import", packagePath)
+	installOut, err := executeCommand("package", "install", packagePath)
 	if err != nil {
-		t.Fatalf("import returned error: %v\noutput:\n%s", err, importOut)
+		t.Fatalf("install returned error: %v\noutput:\n%s", err, installOut)
 	}
-	assertContains(t, importOut, "imported agent default: added")
+	assertContains(t, installOut, "installed agent default: added")
 	assertPathExists(t, config.AgentPath("default"))
 	cfg, err := config.ReadGlobalConfig()
 	if err != nil {

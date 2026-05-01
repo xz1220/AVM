@@ -9,18 +9,18 @@ import (
 	"github.com/xz1220/agent-vm/internal/config"
 )
 
-func TestCreateFromBuiltinPackageWithYesLazyInitializes(t *testing.T) {
+func TestCreateFromProfileWithYesLazyInitializes(t *testing.T) {
 	home := t.TempDir()
 	project := t.TempDir()
 	t.Setenv("HOME", home)
 	chdir(t, project)
 
-	out, err := executeCommand("create", "backend-coder", "--name", "api-coder", "--runtime", "codex", "--yes")
+	out, err := executeCommand("create", "--from", "default", "--name", "api-coder", "--runtime", "codex", "--yes")
 	if err != nil {
 		t.Fatalf("create returned error: %v\n%s", err, out)
 	}
 	for _, want := range []string{
-		"created agent api-coder from package backend-coder",
+		"created agent api-coder from global profile default",
 		`eval "$(avm activate api-coder)"`,
 		"codex",
 	} {
@@ -39,9 +39,6 @@ func TestCreateFromBuiltinPackageWithYesLazyInitializes(t *testing.T) {
 	if agent.Runtime.Preferred != "codex" {
 		t.Fatalf("runtime = %q, want codex", agent.Runtime.Preferred)
 	}
-	if !containsCreateTestString(agent.Capabilities.Skills, "git") || !containsCreateTestString(agent.Capabilities.Skills, "test") {
-		t.Fatalf("unexpected skills: %#v", agent.Capabilities.Skills)
-	}
 }
 
 func TestCreateWithMultipleRuntimesActivatesAll(t *testing.T) {
@@ -50,7 +47,7 @@ func TestCreateWithMultipleRuntimesActivatesAll(t *testing.T) {
 	t.Setenv("HOME", home)
 	chdir(t, project)
 
-	out, err := executeCommand("create", "backend-coder", "--name", "multi-coder", "--runtimes", "codex,opencode", "--yes")
+	out, err := executeCommand("create", "--from", "default", "--name", "multi-coder", "--runtimes", "codex,opencode", "--yes")
 	if err != nil {
 		t.Fatalf("create returned error: %v\n%s", err, out)
 	}
@@ -90,14 +87,14 @@ func TestCreateInteractiveDefaults(t *testing.T) {
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
 	cmd.SetIn(strings.NewReader("\n\n\n\n"))
-	cmd.SetArgs([]string{"create", "backend-coder"})
+	cmd.SetArgs([]string{"create", "--from", "default"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("interactive create returned error: %v\n%s", err, out.String())
 	}
-	if !strings.Contains(out.String(), "Agent name [backend-coder]") {
+	if !strings.Contains(out.String(), "Agent name [default") {
 		t.Fatalf("interactive output missing name prompt:\n%s", out.String())
 	}
-	if _, err := config.ReadAgent("backend-coder", config.ScopeGlobal, project); err != nil {
+	if _, err := config.ReadAgent("default", config.ScopeGlobal, project); err != nil {
 		t.Fatalf("read interactive agent: %v", err)
 	}
 }
@@ -142,7 +139,7 @@ func TestCreateInteractiveSelectsInstalledSkills(t *testing.T) {
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
 	cmd.SetIn(strings.NewReader("\n\n1,3\n\n"))
-	cmd.SetArgs([]string{"create", "backend-coder", "--name", "skill-picker"})
+	cmd.SetArgs([]string{"create", "--from", "default", "--name", "skill-picker"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("interactive create returned error: %v\n%s", err, out.String())
 	}
@@ -174,7 +171,7 @@ func TestCreateInteractiveCanStartFromExistingProfile(t *testing.T) {
 	var out strings.Builder
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
-	cmd.SetIn(strings.NewReader("4\nscenario-api\n\n\n"))
+	cmd.SetIn(strings.NewReader("1\nscenario-api\n\n\n"))
 	cmd.SetArgs([]string{"create"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("interactive create from profile returned error: %v\n%s", err, out.String())
@@ -191,26 +188,6 @@ func TestCreateInteractiveCanStartFromExistingProfile(t *testing.T) {
 	}
 	if agent.Runtime.Preferred != "codex" {
 		t.Fatalf("runtime = %q, want codex", agent.Runtime.Preferred)
-	}
-}
-
-func TestPackageListShow(t *testing.T) {
-	listOut, err := executeCommand("package", "list")
-	if err != nil {
-		t.Fatalf("package list returned error: %v", err)
-	}
-	if !strings.Contains(listOut, "backend-coder") || !strings.Contains(listOut, "reviewer") {
-		t.Fatalf("package list missing builtins:\n%s", listOut)
-	}
-
-	showOut, err := executeCommand("package", "show", "backend-coder")
-	if err != nil {
-		t.Fatalf("package show returned error: %v", err)
-	}
-	for _, want := range []string{"name: backend-coder", "modes:", "default_runtime: codex"} {
-		if !strings.Contains(showOut, want) {
-			t.Fatalf("package show missing %q:\n%s", want, showOut)
-		}
 	}
 }
 

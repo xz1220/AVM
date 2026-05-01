@@ -8,7 +8,7 @@ import (
 	"github.com/xz1220/agent-vm/internal/packageio"
 )
 
-func newExportCommand() *cobra.Command {
+func newPackageExportCommand() *cobra.Command {
 	var output string
 	var kind string
 
@@ -17,7 +17,7 @@ func newExportCommand() *cobra.Command {
 		Short: "Export an AVM agent package",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runExport(cmd, args[0], output, kind)
+			return runPackageExport(cmd, args[0], output, kind)
 		},
 	}
 	cmd.Flags().StringVar(&output, "output", "", "output .avm.zip file")
@@ -25,7 +25,7 @@ func newExportCommand() *cobra.Command {
 	return cmd
 }
 
-func runExport(cmd *cobra.Command, name, output, kind string) error {
+func runPackageExport(cmd *cobra.Command, name, output, kind string) error {
 	if output == "" {
 		return fmt.Errorf("%s: --output is required", cmd.CommandPath())
 	}

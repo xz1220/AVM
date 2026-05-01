@@ -3,27 +3,28 @@ package main
 import (
 	"fmt"
 	"io"
+	"os"
 
 	"github.com/spf13/cobra"
 	"github.com/xz1220/agent-vm/internal/packageio"
 )
 
-func newInstallCommand() *cobra.Command {
+func newPackageInstallCommand() *cobra.Command {
 	var dryRun bool
 	cmd := &cobra.Command{
 		Use:   "install <file.avm.zip>",
 		Short: "Install an AVM package",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runInstall(cmd, args, dryRun)
+			return runPackageInstall(cmd, args[0], dryRun)
 		},
 	}
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "preview package install without writing files")
 	return cmd
 }
 
-func runInstall(cmd *cobra.Command, args []string, dryRun bool) error {
-	result, err := installPackageFromPath(args[0], dryRun)
+func runPackageInstall(cmd *cobra.Command, packagePath string, dryRun bool) error {
+	result, err := installPackageFromPath(packagePath, dryRun)
 	if err != nil {
 		return err
 	}
@@ -33,6 +34,23 @@ func runInstall(cmd *cobra.Command, args []string, dryRun bool) error {
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "installed %s %s: added %d, skipped %d\n", result.Manifest.Kind, result.Manifest.Name, len(result.Added), len(result.Skipped))
 	return nil
+}
+
+func installPackageFromPath(packagePath string, dryRun bool) (*packageio.ImportResult, error) {
+	if !dryRun {
+		if err := ensureInitialized(); err != nil {
+			return nil, err
+		}
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return nil, err
+	}
+	return packageio.ImportPackage(packageio.ImportOptions{
+		PackagePath: packagePath,
+		CWD:         cwd,
+		DryRun:      dryRun,
+	})
 }
 
 func printInstallDryRun(cmd *cobra.Command, result *packageio.ImportResult) {

@@ -16,21 +16,7 @@ import (
 	"github.com/xz1220/agent-vm/internal/config"
 )
 
-type builtinPackage struct {
-	Name             string   `yaml:"name"`
-	Description      string   `yaml:"description"`
-	Modes            []string `yaml:"modes"`
-	DefaultName      string   `yaml:"default_name"`
-	DefaultRuntime   string   `yaml:"default_runtime"`
-	DefaultModel     string   `yaml:"default_model,omitempty"`
-	DefaultReasoning string   `yaml:"default_reasoning"`
-	Skills           []string `yaml:"skills,omitempty"`
-	MCPs             []string `yaml:"mcps,omitempty"`
-	Instructions     string   `yaml:"instructions,omitempty"`
-}
-
 type createOptions struct {
-	Package   string
 	From      string
 	Name      string
 	Runtime   string
@@ -49,13 +35,10 @@ func newCreateCommand() *cobra.Command {
 	var scope string
 
 	cmd := &cobra.Command{
-		Use:   "create [package]",
+		Use:   "create",
 		Short: "Create an AVM agent profile",
-		Args:  cobra.MaximumNArgs(1),
+		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if len(args) > 0 {
-				opts.Package = args[0]
-			}
 			parsedScope, err := parseCreateScope(scope)
 			if err != nil {
 				return err
@@ -89,9 +72,8 @@ func runCreate(cmd *cobra.Command, opts createOptions) error {
 
 	reader := bufio.NewReader(cmd.InOrStdin())
 	out := cmd.OutOrStdout()
-	pkgName := strings.TrimSpace(opts.Package)
 	useTUI := createUseTUI(cmd) && !opts.Yes && !opts.NoInput
-	source, err := resolveCreateSource(cmd, reader, out, cwd, pkgName, opts, useTUI)
+	source, err := resolveCreateSource(cmd, reader, out, cwd, opts, useTUI)
 	if err != nil {
 		return err
 	}
@@ -132,7 +114,6 @@ func runCreate(cmd *cobra.Command, opts createOptions) error {
 type createSourceKind string
 
 const (
-	createSourcePackage createSourceKind = "package"
 	createSourceProfile createSourceKind = "profile"
 )
 
@@ -142,22 +123,14 @@ type createSource struct {
 	Description string
 	Scope       config.Scope
 	Runtime     string
-	Package     builtinPackage
 	Agent       *config.AgentProfile
 }
 
 func (s createSource) Summary() string {
-	switch s.Kind {
-	case createSourcePackage:
-		return "package " + s.Name
-	case createSourceProfile:
-		if s.Scope != "" {
-			return fmt.Sprintf("%s profile %s", s.Scope, s.Name)
-		}
-		return "profile " + s.Name
-	default:
-		return s.Name
+	if s.Scope != "" {
+		return fmt.Sprintf("%s profile %s", s.Scope, s.Name)
 	}
+	return "profile " + s.Name
 }
 
 func (s createSource) PromptLabel() string {
@@ -179,43 +152,20 @@ type resolvedCreateValues struct {
 	Scope     config.Scope
 }
 
-func resolveCreateSource(cmd *cobra.Command, reader *bufio.Reader, out io.Writer, cwd, pkgName string, opts createOptions, useTUI bool) (createSource, error) {
-	if pkgName != "" && opts.From != "" {
-		return createSource{}, fmt.Errorf("create package arg cannot be combined with --from")
-	}
+func resolveCreateSource(cmd *cobra.Command, reader *bufio.Reader, out io.Writer, cwd string, opts createOptions, useTUI bool) (createSource, error) {
 	if opts.From != "" {
 		return createSourceFromProfile(opts.From, cwd)
 	}
-	if pkgName != "" {
-		return createSourceFromPackage(pkgName)
-	}
 	if opts.Yes {
-		return createSourceFromPackage("backend-coder")
+		return createSourceFromProfile("default", cwd)
 	}
 	if opts.NoInput {
-		return createSource{}, fmt.Errorf("create requires a package, --from, --yes, or interactive input")
+		return createSource{}, fmt.Errorf("create requires --from, --yes, or interactive input")
 	}
 	if useTUI {
 		return promptCreateSourceTUI(cmd, cwd)
 	}
 	return promptCreateSource(reader, out, cwd)
-}
-
-func createSourceFromPackage(name string) (createSource, error) {
-	pkg, ok := lookupBuiltinPackage(name)
-	if !ok {
-		return createSource{}, fmt.Errorf("package %q not found; run avm package list", name)
-	}
-	if !packageSupportsMode(pkg, "create") {
-		return createSource{}, fmt.Errorf("package %q does not support create mode", pkg.Name)
-	}
-	return createSource{
-		Kind:        createSourcePackage,
-		Name:        pkg.Name,
-		Description: pkg.Description,
-		Runtime:     pkg.DefaultRuntime,
-		Package:     pkg,
-	}, nil
 }
 
 func createSourceFromProfile(name, cwd string) (createSource, error) {
@@ -288,22 +238,7 @@ func promptCreateSourceTUI(cmd *cobra.Command, cwd string) (createSource, error)
 }
 
 func listCreateSources(cwd string) ([]createSource, error) {
-	var sources []createSource
-	for _, pkg := range listBuiltinPackages() {
-		sources = append(sources, createSource{
-			Kind:        createSourcePackage,
-			Name:        pkg.Name,
-			Description: pkg.Description,
-			Runtime:     pkg.DefaultRuntime,
-			Package:     pkg,
-		})
-	}
-	profiles, err := listProfileSources(cwd)
-	if err != nil {
-		return nil, err
-	}
-	sources = append(sources, profiles...)
-	return sources, nil
+	return listProfileSources(cwd)
 }
 
 func listProfileSources(cwd string) ([]createSource, error) {
@@ -454,28 +389,14 @@ func promptCreateValuesTUI(cmd *cobra.Command, out io.Writer, source createSourc
 
 func defaultCreateValues(source createSource, opts createOptions, cwd string) resolvedCreateValues {
 	values := resolvedCreateValues{Scope: opts.Scope}
-	switch source.Kind {
-	case createSourceProfile:
-		agent := source.Agent
-		values.Name = firstNonEmptyString(opts.Name, suggestCopiedAgentName(agent.Name, values.Scope, cwd))
-		values.Runtime = firstNonEmptyString(opts.Runtime, agent.Runtime.Preferred, "codex")
-		values.Runtimes = runtimePreferenceList(agent.Runtime)
-		values.Model = firstNonEmptyString(opts.Model, agent.ModelRun.Model)
-		values.Reasoning = firstNonEmptyString(opts.Reasoning, agent.ModelRun.ReasoningEffort, "medium")
-		values.Skills = append([]string(nil), agent.Capabilities.Skills...)
-		values.MCPs = append([]string(nil), agent.Capabilities.MCPs...)
-	case createSourcePackage:
-		fallthrough
-	default:
-		pkg := source.Package
-		values.Name = firstNonEmptyString(opts.Name, pkg.DefaultName, pkg.Name)
-		values.Runtime = firstNonEmptyString(opts.Runtime, pkg.DefaultRuntime, "codex")
-		values.Runtimes = normalizeCreateRuntimeList([]string{values.Runtime})
-		values.Model = firstNonEmptyString(opts.Model, pkg.DefaultModel)
-		values.Reasoning = firstNonEmptyString(opts.Reasoning, pkg.DefaultReasoning, "medium")
-		values.Skills = append([]string(nil), pkg.Skills...)
-		values.MCPs = append([]string(nil), pkg.MCPs...)
-	}
+	agent := source.Agent
+	values.Name = firstNonEmptyString(opts.Name, suggestCopiedAgentName(agent.Name, values.Scope, cwd))
+	values.Runtime = firstNonEmptyString(opts.Runtime, agent.Runtime.Preferred, "codex")
+	values.Runtimes = runtimePreferenceList(agent.Runtime)
+	values.Model = firstNonEmptyString(opts.Model, agent.ModelRun.Model)
+	values.Reasoning = firstNonEmptyString(opts.Reasoning, agent.ModelRun.ReasoningEffort, "medium")
+	values.Skills = append([]string(nil), agent.Capabilities.Skills...)
+	values.MCPs = append([]string(nil), agent.Capabilities.MCPs...)
 	if len(values.Runtimes) == 0 {
 		values.Runtimes = normalizeCreateRuntimeList([]string{values.Runtime})
 	}
@@ -483,38 +404,7 @@ func defaultCreateValues(source createSource, opts createOptions, cwd string) re
 }
 
 func agentFromCreateSource(source createSource, values resolvedCreateValues) *config.AgentProfile {
-	switch source.Kind {
-	case createSourceProfile:
-		return agentFromExistingProfile(source.Agent, values)
-	case createSourcePackage:
-		fallthrough
-	default:
-		return agentFromBuiltinPackage(source.Package, values)
-	}
-}
-
-func agentFromBuiltinPackage(pkg builtinPackage, values resolvedCreateValues) *config.AgentProfile {
-	return &config.AgentProfile{
-		Name:        values.Name,
-		Description: pkg.Description,
-		SourceScope: string(values.Scope),
-		Runtime:     runtimePreferencesFromValues(values),
-		Identity: config.AgentIdentity{
-			DisplayName: values.Name,
-			Role:        pkg.Name,
-		},
-		Instructions: config.Instructions{
-			Developer: pkg.Instructions,
-		},
-		ModelRun: config.ModelRun{
-			Model:           values.Model,
-			ReasoningEffort: values.Reasoning,
-		},
-		Capabilities: config.CapabilityRefs{
-			Skills: values.Skills,
-			MCPs:   values.MCPs,
-		},
-	}
+	return agentFromExistingProfile(source.Agent, values)
 }
 
 func agentFromExistingProfile(source *config.AgentProfile, values resolvedCreateValues) *config.AgentProfile {
@@ -1157,64 +1047,4 @@ func safeCreateName(value string) string {
 		}
 	}
 	return strings.Trim(b.String(), "-")
-}
-
-func listBuiltinPackages() []builtinPackage {
-	packages := append([]builtinPackage(nil), builtinPackages...)
-	sort.Slice(packages, func(i, j int) bool {
-		return packages[i].Name < packages[j].Name
-	})
-	return packages
-}
-
-func lookupBuiltinPackage(name string) (builtinPackage, bool) {
-	name = strings.TrimSpace(name)
-	for _, pkg := range builtinPackages {
-		if pkg.Name == name {
-			return pkg, true
-		}
-	}
-	return builtinPackage{}, false
-}
-
-func packageSupportsMode(pkg builtinPackage, mode string) bool {
-	for _, candidate := range pkg.Modes {
-		if candidate == mode {
-			return true
-		}
-	}
-	return false
-}
-
-var builtinPackages = []builtinPackage{
-	{
-		Name:             "backend-coder",
-		Description:      "General backend coding agent with test-oriented defaults.",
-		Modes:            []string{"create"},
-		DefaultName:      "backend-coder",
-		DefaultRuntime:   "codex",
-		DefaultReasoning: "high",
-		Skills:           []string{"git", "test"},
-		Instructions:     "Focus on small backend changes, run targeted tests when practical, and keep implementation notes concise.",
-	},
-	{
-		Name:             "reviewer",
-		Description:      "Code review agent focused on risks, regressions, and missing tests.",
-		Modes:            []string{"create"},
-		DefaultName:      "reviewer",
-		DefaultRuntime:   "claude-code",
-		DefaultReasoning: "medium",
-		Skills:           []string{"review", "test"},
-		Instructions:     "Review changes for correctness, user-visible regressions, security issues, and missing tests before summarizing.",
-	},
-	{
-		Name:             "writer",
-		Description:      "Technical writing agent for docs, specs, and release notes.",
-		Modes:            []string{"create"},
-		DefaultName:      "writer",
-		DefaultRuntime:   "codex",
-		DefaultReasoning: "medium",
-		Skills:           []string{"docs"},
-		Instructions:     "Write clear technical prose, preserve factual nuance, and keep examples runnable where possible.",
-	},
 }

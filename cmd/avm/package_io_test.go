@@ -50,7 +50,7 @@ func TestPackageAgentExportImportWithReferencedMetadata(t *testing.T) {
 	}
 
 	packagePath := filepath.Join(t.TempDir(), "backend-coder.avm.zip")
-	if out, err := executeCommand("export", "backend-coder", "--output", packagePath); err != nil {
+	if out, err := executeCommand("package", "export", "backend-coder", "--output", packagePath); err != nil {
 		t.Fatalf("export returned error: %v\n%s", err, out)
 	}
 
@@ -91,7 +91,7 @@ func TestPackageAgentExportImportWithReferencedMetadata(t *testing.T) {
 
 	targetHome := t.TempDir()
 	t.Setenv("HOME", targetHome)
-	dryRunOut, err := executeCommand("install", "--dry-run", packagePath)
+	dryRunOut, err := executeCommand("package", "install", "--dry-run", packagePath)
 	if err != nil {
 		t.Fatalf("install dry-run returned error: %v\n%s", err, dryRunOut)
 	}
@@ -112,11 +112,11 @@ func TestPackageAgentExportImportWithReferencedMetadata(t *testing.T) {
 		t.Fatalf("dry-run should not lazy initialize global config, err = %v", err)
 	}
 
-	out, err := executeCommand("import", packagePath)
+	out, err := executeCommand("package", "install", packagePath)
 	if err != nil {
 		t.Fatalf("import returned error: %v\n%s", err, out)
 	}
-	if !strings.Contains(out, "imported agent backend-coder: added") {
+	if !strings.Contains(out, "installed agent backend-coder: added") {
 		t.Fatalf("unexpected import output: %q", out)
 	}
 	if _, err := config.ReadAgent("backend-coder", config.ScopeGlobal, project); err != nil {
@@ -142,12 +142,12 @@ func TestPackageAgentExportImportWithReferencedMetadata(t *testing.T) {
 		t.Fatalf("import should not activate package, active = %#v", cfg.Active)
 	}
 
-	out, err = executeCommand("import", packagePath)
+	out, err = executeCommand("package", "install", packagePath)
 	if err != nil {
-		t.Fatalf("second import returned error: %v\n%s", err, out)
+		t.Fatalf("second install returned error: %v\n%s", err, out)
 	}
 	if !strings.Contains(out, "added 0, skipped") {
-		t.Fatalf("same-content import did not skip: %q", out)
+		t.Fatalf("same-content install did not skip: %q", out)
 	}
 }
 
@@ -176,7 +176,7 @@ func TestPackageEnvExportImportIncludesReferencedAgents(t *testing.T) {
 	}
 
 	packagePath := filepath.Join(t.TempDir(), "coding.avm.zip")
-	if out, err := executeCommand("export", "coding", "--kind", "env", "--output", packagePath); err != nil {
+	if out, err := executeCommand("package", "export", "coding", "--kind", "env", "--output", packagePath); err != nil {
 		t.Fatalf("env export returned error: %v\n%s", err, out)
 	}
 	names := zipEntryNames(t, packagePath)
@@ -192,8 +192,8 @@ func TestPackageEnvExportImportIncludesReferencedAgents(t *testing.T) {
 
 	targetHome := t.TempDir()
 	t.Setenv("HOME", targetHome)
-	if out, err := executeCommand("import", packagePath); err != nil {
-		t.Fatalf("env import returned error: %v\n%s", err, out)
+	if out, err := executeCommand("package", "install", packagePath); err != nil {
+		t.Fatalf("env install returned error: %v\n%s", err, out)
 	}
 	if _, err := config.ReadEnvironment("coding"); err != nil {
 		t.Fatalf("read imported env: %v", err)
@@ -230,7 +230,7 @@ func TestPackageExportDefaultDoesNotExportEnv(t *testing.T) {
 	}
 
 	packagePath := filepath.Join(t.TempDir(), "coding.avm.zip")
-	out, err := executeCommand("export", "coding", "--output", packagePath)
+	out, err := executeCommand("package", "export", "coding", "--output", packagePath)
 	if err == nil {
 		t.Fatalf("expected default export to reject env, got nil error and output %q", out)
 	}
@@ -239,7 +239,7 @@ func TestPackageExportDefaultDoesNotExportEnv(t *testing.T) {
 	}
 }
 
-func TestInstallPackageAlias(t *testing.T) {
+func TestPackageInstall(t *testing.T) {
 	sourceHome := t.TempDir()
 	project := t.TempDir()
 	t.Setenv("HOME", sourceHome)
@@ -247,13 +247,13 @@ func TestInstallPackageAlias(t *testing.T) {
 	writeTestAgent(t, project, "backend-coder", "codex")
 
 	packagePath := filepath.Join(t.TempDir(), "backend-coder.avm.zip")
-	if out, err := executeCommand("export", "backend-coder", "--output", packagePath); err != nil {
+	if out, err := executeCommand("package", "export", "backend-coder", "--output", packagePath); err != nil {
 		t.Fatalf("export returned error: %v\n%s", err, out)
 	}
 
 	targetHome := t.TempDir()
 	t.Setenv("HOME", targetHome)
-	out, err := executeCommand("install", packagePath)
+	out, err := executeCommand("package", "install", packagePath)
 	if err != nil {
 		t.Fatalf("install returned error: %v\n%s", err, out)
 	}
@@ -273,7 +273,7 @@ func TestPackageImportDifferentContentConflict(t *testing.T) {
 	writeTestAgent(t, project, "backend-coder", "codex")
 
 	packagePath := filepath.Join(t.TempDir(), "backend-coder.avm.zip")
-	if out, err := executeCommand("export", "backend-coder", "--output", packagePath); err != nil {
+	if out, err := executeCommand("package", "export", "backend-coder", "--output", packagePath); err != nil {
 		t.Fatalf("export returned error: %v\n%s", err, out)
 	}
 
@@ -281,7 +281,7 @@ func TestPackageImportDifferentContentConflict(t *testing.T) {
 	t.Setenv("HOME", targetHome)
 	writeTestAgent(t, project, "backend-coder", "cline")
 
-	dryRunOut, err := executeCommand("install", "--dry-run", packagePath)
+	dryRunOut, err := executeCommand("package", "install", "--dry-run", packagePath)
 	if err != nil {
 		t.Fatalf("conflict dry-run returned error: %v\n%s", err, dryRunOut)
 	}
@@ -302,7 +302,7 @@ func TestPackageImportDifferentContentConflict(t *testing.T) {
 		t.Fatalf("dry-run should not overwrite target agent, runtime = %q", agent.Runtime.Preferred)
 	}
 
-	out, err := executeCommand("import", packagePath)
+	out, err := executeCommand("package", "install", packagePath)
 	if err == nil {
 		t.Fatalf("expected conflict, got nil error and output %q", out)
 	}

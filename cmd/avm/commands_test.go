@@ -26,17 +26,27 @@ func TestRegisteredCommandHelp(t *testing.T) {
 		{
 			name: "root",
 			args: []string{"--help"},
-			want: []string{"activate", "agent", "create", "deactivate", "env", "export", "import", "install", "init", "memory", "package", "skill", "shell", "status", "sync", "use"},
+			want: []string{"activate", "agent", "create", "deactivate", "env", "init", "memory", "package", "skill", "shell", "status", "sync", "use"},
 		},
 		{
 			name: "create",
 			args: []string{"create", "--help"},
-			want: []string{"create [package]", "--name", "--from", "--runtime", "--runtimes", "--yes", "--no-input"},
+			want: []string{"create", "--name", "--from", "--runtime", "--runtimes", "--yes", "--no-input"},
 		},
 		{
 			name: "package",
 			args: []string{"package", "--help"},
-			want: []string{"inspect", "list", "show"},
+			want: []string{"inspect", "install", "export"},
+		},
+		{
+			name: "package install",
+			args: []string{"package", "install", "--help"},
+			want: []string{"install <file.avm.zip>", "--dry-run"},
+		},
+		{
+			name: "package export",
+			args: []string{"package", "export", "--help"},
+			want: []string{"export <agent>", "--output", "--kind"},
 		},
 		{
 			name: "skill",
@@ -46,7 +56,7 @@ func TestRegisteredCommandHelp(t *testing.T) {
 		{
 			name: "agent",
 			args: []string{"agent", "--help"},
-			want: []string{"create", "clone", "edit", "list", "rename", "delete", "show"},
+			want: []string{"create", "list", "show"},
 		},
 		{
 			name: "agent create",
@@ -62,21 +72,6 @@ func TestRegisteredCommandHelp(t *testing.T) {
 			name: "memory import",
 			args: []string{"memory", "import", "--help"},
 			want: []string{"import", "--from", "--dry-run", "--format"},
-		},
-		{
-			name: "export",
-			args: []string{"export", "--help"},
-			want: []string{"export <agent>", "--output", "--kind"},
-		},
-		{
-			name: "import",
-			args: []string{"import", "--help"},
-			want: []string{"import <file.avm.zip>"},
-		},
-		{
-			name: "install",
-			args: []string{"install", "--help"},
-			want: []string{"install <file.avm.zip>", "--dry-run"},
 		},
 		{
 			name: "activate",
