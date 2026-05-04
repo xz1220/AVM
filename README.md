@@ -1,13 +1,13 @@
 <p align="center">
-  <img src="assets/avm-hero.svg" alt="Agent VM: one profile, every coding agent runtime" width="100%">
+  <img src="assets/avm-hero.svg" alt="Agent VM: one profile, every agent runtime" width="100%">
 </p>
 
 <h1 align="center">Agent VM</h1>
 
 <p align="center">
-  <strong>nvm for AI coding agents.</strong>
+  <strong>Manage AI agent profiles and environments across runtimes.</strong>
   <br>
-  Manage Agent profiles and working environments, then apply them to Codex, Claude Code, OpenCode, Cline, or Cursor.
+  Create reusable agent configurations and apply them to Codex, Claude Code, OpenCode, Cline, or Cursor.
 </p>
 
 <p align="center">

@@ -1,13 +1,13 @@
 <p align="center">
-  <img src="assets/avm-hero.svg" alt="Agent VM：一个 Profile，投射到所有 Coding Agent Runtime" width="100%">
+  <img src="assets/avm-hero.svg" alt="Agent VM：一个 Profile，投射到所有 Agent Runtime" width="100%">
 </p>
 
 <h1 align="center">Agent VM</h1>
 
 <p align="center">
-  <strong>AI Coding Agent 时代的 nvm。</strong>
+  <strong>跨运行时管理 AI Agent 配置与环境。</strong>
   <br>
-  管理 Agent 配置和工作环境，再把它们应用到 Codex、Claude Code、OpenCode、Cline 或 Cursor。
+  创建可复用的 Agent 配置，应用到 Codex、Claude Code、OpenCode、Cline 或 Cursor。
 </p>
 
 <p align="center">
