@@ -13,7 +13,6 @@ paths:
 sections:
   config: config/
   adapter_render_plan: adapter-render-plan/
-  memory_import_dry_run: memory-import-dry-run/
   runtimes: runtimes/
 runtimes:
   codex:

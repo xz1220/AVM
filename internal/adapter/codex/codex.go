@@ -276,6 +276,9 @@ func (a *Adapter) codexHome() string {
 }
 
 func (a *Adapter) codexHomeForInput(input adapter.RenderInput) string {
+	if input.Boundary.Root != "" {
+		return input.Boundary.Root
+	}
 	if input.RuntimeHome != "" {
 		return input.RuntimeHome
 	}
@@ -385,12 +388,6 @@ func (r renderContext) developerInstructions() string {
 	if len(r.input.Capabilities.Skills) > 0 {
 		sections = append(sections, bulletSection("Active AVM skills", skillLines(r.input.Capabilities.Skills)))
 	}
-	if len(r.input.Agent.MemoryRefs) > 0 {
-		sections = append(sections, bulletSection("AVM memory refs", shared.MemoryRefLines(r.input.Agent.MemoryRefs)))
-	}
-	if len(r.input.Memory) > 0 {
-		sections = append(sections, bulletSection("Portable memory", shared.PortableMemoryLines(r.input.Memory)))
-	}
 	if len(r.input.Agent.Permissions.Allow) > 0 {
 		sections = append(sections, bulletSection("Allowed command guidance", shared.SortedStrings(r.input.Agent.Permissions.Allow)))
 	}
@@ -470,12 +467,6 @@ func (r renderContext) mappings() []adapter.FieldMapping {
 			Reason:     "Codex has no native AVM skill registry mount in Phase 1.",
 		},
 		{
-			SourcePath: "agent.memory_refs",
-			TargetPath: targetInstructions,
-			Status:     adapter.MappingRenderedAsInstructions,
-			Reason:     "Codex has no native portable memory scope in Phase 1.",
-		},
-		{
 			SourcePath: "project.AGENTS.md",
 			Status:     adapter.MappingIgnored,
 			Reason:     "Codex project instructions are user-owned; the Codex adapter does not overwrite AGENTS.md.",
@@ -526,14 +517,6 @@ func (r renderContext) mappings() []adapter.FieldMapping {
 			SourcePath: "agent.permissions.additional_directories",
 			Status:     adapter.MappingUnsupported,
 			Reason:     "Codex adapter Phase 1 does not grant additional writable directories.",
-		})
-	}
-	if len(r.input.Memory) > 0 {
-		mappings = append(mappings, adapter.FieldMapping{
-			SourcePath: "memory",
-			TargetPath: targetInstructions,
-			Status:     adapter.MappingRenderedAsInstructions,
-			Reason:     "Portable memory content is referenced from Codex instructions in Phase 1.",
 		})
 	}
 	if len(r.input.Capabilities.Commands) > 0 {

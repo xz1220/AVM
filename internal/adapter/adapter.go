@@ -1,6 +1,10 @@
 package adapter
 
-import "context"
+import (
+	"context"
+
+	"github.com/xz1220/agent-vm/internal/boundary"
+)
 
 // Context keeps the adapter interface close to the design docs while using the
 // standard library context type.
@@ -16,12 +20,6 @@ type Adapter interface {
 	ManagedPaths(ctx Context, plan *RenderPlan) []ManagedPath
 }
 
-// MemoryImportCapable is implemented by adapters that can scan runtime-native
-// memory sources and produce a portable memory import plan.
-type MemoryImportCapable interface {
-	ImportMemory(ctx Context, opts MemoryImportOptions) (*MemoryImportPlan, error)
-}
-
 // Detection describes whether a runtime is available and where its config
 // files live.
 type Detection struct {
@@ -35,14 +33,14 @@ type Detection struct {
 // RenderInput is the runtime-independent input an adapter receives after the
 // config layer has resolved the active profile or environment.
 type RenderInput struct {
-	Active       ActiveRef        `json:"active"`
-	Runtime      string           `json:"runtime"`
-	Agent        Agent            `json:"agent"`
-	Capabilities CapabilitySet    `json:"capabilities"`
-	Memory       []PortableMemory `json:"memory,omitempty"`
-	ProjectRoot  string           `json:"project_root,omitempty"`
-	ActiveDir    string           `json:"active_dir,omitempty"`
-	RuntimeHome  string           `json:"runtime_home,omitempty"`
+	Active       ActiveRef                `json:"active"`
+	Runtime      string                   `json:"runtime"`
+	Agent        Agent                    `json:"agent"`
+	Capabilities CapabilitySet            `json:"capabilities"`
+	ProjectRoot  string                   `json:"project_root,omitempty"`
+	ActiveDir    string                   `json:"active_dir,omitempty"`
+	Boundary     boundary.RuntimeBoundary `json:"boundary,omitempty"`
+	RuntimeHome  string                   `json:"runtime_home,omitempty"`
 }
 
 // ActiveRef identifies the active AVM object that produced a render input.
@@ -54,13 +52,13 @@ type ActiveRef struct {
 // Agent is the minimal adapter-facing projection of a config AgentProfile.
 // It intentionally does not duplicate the full config schema.
 type Agent struct {
+	ID           string           `json:"id,omitempty"`
 	Name         string           `json:"name"`
 	Description  string           `json:"description,omitempty"`
 	SourceScope  string           `json:"source_scope,omitempty"`
 	Instructions Instructions     `json:"instructions,omitempty"`
 	Model        ModelConfig      `json:"model,omitempty"`
 	Permissions  PermissionConfig `json:"permissions,omitempty"`
-	MemoryRefs   []MemoryRef      `json:"memory_refs,omitempty"`
 }
 
 // Instructions contains the instruction fields adapters need to map natively
@@ -123,23 +121,6 @@ type EnvVar struct {
 type Toolset struct {
 	Name string `json:"name"`
 	Mode string `json:"mode"`
-}
-
-// MemoryRef points from an agent profile to portable memory.
-type MemoryRef struct {
-	ID    string `json:"id"`
-	Scope string `json:"scope,omitempty"`
-	Path  string `json:"path,omitempty"`
-	Mode  string `json:"mode,omitempty"`
-}
-
-// PortableMemory is the adapter-facing portable memory payload.
-type PortableMemory struct {
-	ID      string `json:"id"`
-	Scope   string `json:"scope,omitempty"`
-	Path    string `json:"path,omitempty"`
-	Mode    string `json:"mode,omitempty"`
-	Content string `json:"content,omitempty"`
 }
 
 // RenderPlan is a deterministic description of the runtime writes an adapter
@@ -234,37 +215,3 @@ type RenderOperationResult struct {
 	Path        string       `json:"path"`
 	Changed     bool         `json:"changed"`
 }
-
-// MemoryImportOptions configures a runtime-native memory scan.
-type MemoryImportOptions struct {
-	Runtime string `json:"runtime"`
-	Source  string `json:"source,omitempty"`
-	DryRun  bool   `json:"dry_run"`
-}
-
-// MemoryImportPlan is the read-only plan returned by memory import capable
-// adapters.
-type MemoryImportPlan struct {
-	Runtime    string           `json:"runtime"`
-	Source     string           `json:"source,omitempty"`
-	Candidates []PortableMemory `json:"candidates,omitempty"`
-	Diffs      []MemoryDiff     `json:"diffs,omitempty"`
-	Warnings   []string         `json:"warnings,omitempty"`
-}
-
-type MemoryDiff struct {
-	MemoryID   string           `json:"memory_id"`
-	Status     MemoryDiffStatus `json:"status"`
-	SourcePath string           `json:"source_path,omitempty"`
-	TargetPath string           `json:"target_path,omitempty"`
-	Preview    string           `json:"preview,omitempty"`
-}
-
-type MemoryDiffStatus string
-
-const (
-	MemoryDiffNew      MemoryDiffStatus = "new"
-	MemoryDiffChanged  MemoryDiffStatus = "changed"
-	MemoryDiffConflict MemoryDiffStatus = "conflict"
-	MemoryDiffSkipped  MemoryDiffStatus = "skipped"
-)

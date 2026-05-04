@@ -290,6 +290,9 @@ func (a *Adapter) claudeHome() string {
 }
 
 func (a *Adapter) claudeHomeForInput(input adapter.RenderInput) string {
+	if input.Boundary.Root != "" {
+		return input.Boundary.Root
+	}
 	if input.RuntimeHome != "" {
 		return input.RuntimeHome
 	}
@@ -338,9 +341,6 @@ func (r renderContext) renderAgentFile() string {
 	writeYAMLStringList(&b, "skills", capabilityNames(r.input.Capabilities.Skills))
 	writeYAMLStringList(&b, "mcpServers", mcpServerNames(r.renderableMCPServers()))
 	writeYAMLStringList(&b, "hooks", capabilityNames(r.input.Capabilities.Hooks))
-	if scope, ok := nativeMemoryScope(r.input.Agent.MemoryRefs); ok {
-		writeYAMLString(&b, "memory", scope)
-	}
 	b.WriteString("---\n\n")
 	b.WriteString(r.agentInstructions())
 	b.WriteByte('\n')
@@ -386,12 +386,6 @@ func (r renderContext) agentInstructions() string {
 	}
 	if len(r.input.Capabilities.Skills) > 0 {
 		sections = append(sections, bulletSection("Active AVM skills", skillLines(r.input.Capabilities.Skills)))
-	}
-	if len(r.input.Agent.MemoryRefs) > 0 {
-		sections = append(sections, bulletSection("AVM memory refs", shared.MemoryRefLines(r.input.Agent.MemoryRefs)))
-	}
-	if len(r.input.Memory) > 0 {
-		sections = append(sections, bulletSection("Portable memory", shared.PortableMemoryLines(r.input.Memory)))
 	}
 	if r.input.Agent.Permissions.Approval != "" {
 		sections = append(sections, section("Permission approval policy", r.input.Agent.Permissions.Approval))
@@ -448,22 +442,6 @@ func (r renderContext) mappings() []adapter.FieldMapping {
 		},
 	}
 
-	if len(r.input.Agent.MemoryRefs) > 0 {
-		status := adapter.MappingRenderedAsInstructions
-		targetPath := targetBody
-		reason := "Claude Code native memory content is not written during avm use; AVM memory refs are rendered as agent instructions."
-		if _, ok := nativeMemoryScope(r.input.Agent.MemoryRefs); ok {
-			status = adapter.MappingNative
-			targetPath = targetFrontmatter + ".memory"
-			reason = "Claude Code can express this AVM memory scope in agent frontmatter; memory content remains read-only during avm use."
-		}
-		mappings = append(mappings, adapter.FieldMapping{
-			SourcePath: "agent.memory_refs",
-			TargetPath: targetPath,
-			Status:     status,
-			Reason:     reason,
-		})
-	}
 	if len(r.input.Agent.Instructions.References) > 0 {
 		mappings = append(mappings, adapter.FieldMapping{
 			SourcePath: "agent.instructions.references",
@@ -492,14 +470,6 @@ func (r renderContext) mappings() []adapter.FieldMapping {
 			SourcePath: "agent.permissions.additional_directories",
 			Status:     adapter.MappingUnsupported,
 			Reason:     "Claude Code adapter Phase 1 does not modify settings additionalDirectories.",
-		})
-	}
-	if len(r.input.Memory) > 0 {
-		mappings = append(mappings, adapter.FieldMapping{
-			SourcePath: "memory",
-			TargetPath: targetBody,
-			Status:     adapter.MappingRenderedAsInstructions,
-			Reason:     "Portable memory content is referenced from Claude Code agent instructions in Phase 1.",
 		})
 	}
 	if len(r.input.Capabilities.Commands) > 0 {
@@ -549,11 +519,6 @@ func (r renderContext) warnings() []string {
 	for _, server := range shared.SortedMCPServers(r.input.Capabilities.MCPServers) {
 		if !shared.MCPServerRenderable(server) {
 			warnings = append(warnings, fmt.Sprintf("mcp server %q was not rendered because command or URL is missing", server.Name))
-		}
-	}
-	if len(r.input.Agent.MemoryRefs) > 0 {
-		if _, ok := nativeMemoryScope(r.input.Agent.MemoryRefs); !ok {
-			warnings = append(warnings, "memory refs were rendered as instructions because their scopes cannot be represented by one Claude Code memory scope")
 		}
 	}
 	return warnings
@@ -1009,29 +974,4 @@ func mcpServerNames(servers []adapter.MCPServer) []string {
 	}
 	sort.Strings(names)
 	return names
-}
-
-func nativeMemoryScope(refs []adapter.MemoryRef) (string, bool) {
-	if len(refs) == 0 {
-		return "", false
-	}
-	scope := ""
-	for _, ref := range refs {
-		if ref.Scope == "" {
-			return "", false
-		}
-		switch ref.Scope {
-		case "user", "project", "local":
-		default:
-			return "", false
-		}
-		if scope == "" {
-			scope = ref.Scope
-			continue
-		}
-		if scope != ref.Scope {
-			return "", false
-		}
-	}
-	return scope, true
 }

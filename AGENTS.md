@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-Agent VM is a Go CLI project. The executable entrypoint and Cobra commands live in `cmd/avm/`. Shared packages are under `internal/`, grouped by concern: `config`, `adapter`, `sync`, `memory`, `runtime`, `state`, and `packageio`. Long-form documentation lives in `docs/`, with engineering details in `docs/engineering/`. Use `fixtures/` for realistic sample AVM homes and runtime layouts, and `testdata/` for stable inputs and expected outputs. Visual README assets are in `assets/`; developer scripts are in `scripts/`.
+Agent VM is a Go CLI project. The executable entrypoint and Cobra commands live in `cmd/avm/`. Shared packages are under `internal/`, grouped by concern: `config`, `adapter`, `sync`, `runtime`, `state`, and `packageio`. Long-form documentation lives in `docs/`, with engineering details in `docs/engineering/`. Use `fixtures/` for realistic sample AVM homes and runtime layouts, and `testdata/` for stable inputs and expected outputs. Visual README assets are in `assets/`; developer scripts are in `scripts/`.
 
 ## Build, Test, and Development Commands
 
@@ -18,6 +18,14 @@ CI runs `go build ./...`, `go vet ./...`, `test -z "$(gofmt -l .)"`, and `go tes
 ## Coding Style & Naming Conventions
 
 Target Go 1.23. Keep Go code `gofmt`-formatted and organized around small packages with clear ownership. Use idiomatic Go names: exported identifiers use `PascalCase`, unexported identifiers use `camelCase`, and test helpers stay unexported unless needed across files. CLI behavior belongs in `cmd/avm/`; reusable logic belongs in `internal/`. Avoid serializing secrets or machine-local paths.
+
+## Engineering Approach
+
+Prefer the correct long-term abstraction over the smallest local patch. When a change touches product semantics, config/state models, adapter contracts, activation, isolation boundaries, package IO, or runtime behavior, design the durable architecture first and implement toward it.
+
+Do not use "minimum change", "short-term workaround", or "temporary compatibility path" as the primary solution for architectural work. A compatibility bridge is acceptable only when it preserves existing user data or staged migrations, and it must be explicitly documented as compatibility rather than the target design.
+
+Implementation plans should name the owning abstraction, the data boundary, and the long-term behavior before listing code edits. If the existing code shape makes the correct design harder, adjust the abstraction instead of spreading special cases across CLI, sync, adapter, and config layers.
 
 ## Testing Guidelines
 

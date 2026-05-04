@@ -25,7 +25,6 @@ func TestAgentShowRuntimeMappingPreviewCodex(t *testing.T) {
 		"--model", "gpt-5.4",
 		"--skills", "git,test",
 		"--mcps", "github",
-		"--memory", "backend-standards",
 	); err != nil {
 		t.Fatalf("agent create returned error: %v", err)
 	}
@@ -47,7 +46,7 @@ func TestAgentShowRuntimeMappingPreviewCodex(t *testing.T) {
 	if err != nil {
 		t.Fatalf("agent show --runtime codex returned error: %v", err)
 	}
-	codexHome := config.RuntimeHomeDir(config.ActiveRef{Kind: config.ActiveKindProfile, Name: "backend-coder"}, "codex")
+	codexHome := agentRuntimeHomeForTest(t, "backend-coder", "codex")
 	rolePath := filepath.ToSlash(filepath.Join(codexHome, "agents", "backend-coder.toml"))
 	configPath := filepath.ToSlash(filepath.Join(codexHome, "config.toml"))
 	for _, want := range []string{

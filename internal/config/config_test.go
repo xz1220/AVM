@@ -90,34 +90,6 @@ func TestYAMLRoundTripAndList(t *testing.T) {
 	if len(envs) != 1 || envs[0].Name != env.Name {
 		t.Fatalf("unexpected environment summaries: %#v", envs)
 	}
-
-	var memory PortableMemory
-	readFixture(t, "memory.yaml", &memory)
-	memory.ApplyDefaults()
-	if err := WritePortableMemory(&memory); err != nil {
-		t.Fatalf("WritePortableMemory returned error: %v", err)
-	}
-	assertStableWrite(t, MemoryPath(memory.ID, Scope(memory.Scope)), func() error {
-		got, err := ReadPortableMemory(memory.ID, Scope(memory.Scope))
-		if err != nil {
-			return err
-		}
-		return WritePortableMemory(got)
-	})
-	gotMemory, err := ReadPortableMemory(memory.ID, Scope(memory.Scope))
-	if err != nil {
-		t.Fatalf("ReadPortableMemory returned error: %v", err)
-	}
-	if !reflect.DeepEqual(&memory, gotMemory) {
-		t.Fatalf("memory round trip mismatch:\nwant %#v\ngot  %#v", memory, *gotMemory)
-	}
-	memories, err := ListPortableMemory(ScopeProject)
-	if err != nil {
-		t.Fatalf("ListPortableMemory returned error: %v", err)
-	}
-	if len(memories) != 1 || memories[0].ID != memory.ID {
-		t.Fatalf("unexpected memory summaries: %#v", memories)
-	}
 }
 
 func TestValidationRejectsInvalidValues(t *testing.T) {
@@ -133,13 +105,6 @@ func TestValidationRejectsInvalidValues(t *testing.T) {
 	env.Targets = []string{"openclaw"}
 	if err := ValidateEnvironment(&env); err == nil || !strings.Contains(err.Error(), "targets[0]") {
 		t.Fatalf("expected target validation error, got %v", err)
-	}
-
-	var memory PortableMemory
-	readFixture(t, "memory.yaml", &memory)
-	memory.ID = "Bad"
-	if err := ValidatePortableMemory(&memory); err == nil || !strings.Contains(err.Error(), "id") {
-		t.Fatalf("expected memory id validation error, got %v", err)
 	}
 }
 

@@ -75,6 +75,8 @@ func printMissingConfigStatus(out io.Writer) {
 	fmt.Fprintln(out, "  none")
 	fmt.Fprintln(out, "mapping status:")
 	fmt.Fprintln(out, "  none")
+	fmt.Fprintln(out, "memory isolation:")
+	fmt.Fprintln(out, "  none")
 	fmt.Fprintln(out, "warnings:")
 	fmt.Fprintln(out, "  - avm home not initialized; run avm create backend-coder or avm init")
 }
@@ -87,6 +89,8 @@ func printStatusWithoutSyncState(out io.Writer, active config.ActiveRef, targets
 	printTargetLines(out, targets, "none")
 	fmt.Fprintln(out, "mapping status:")
 	printTargetLines(out, targets, "none")
+	fmt.Fprintln(out, "memory isolation:")
+	printTargetLines(out, targets, "unknown")
 	printWarnings(out, warnings)
 }
 
@@ -141,6 +145,14 @@ func printStatusWithSyncState(out io.Writer, active config.ActiveRef, syncState 
 	} else {
 		for _, runtime := range runtimes {
 			printMappings(out, runtime, syncState.Runtimes[runtime].Mappings)
+		}
+	}
+	fmt.Fprintln(out, "memory isolation:")
+	if len(runtimes) == 0 {
+		fmt.Fprintln(out, "  none")
+	} else {
+		for _, runtime := range runtimes {
+			printRuntimeIsolation(out, runtime, syncState.Runtimes[runtime].Boundary)
 		}
 	}
 	printWarnings(out, warnings)
@@ -228,6 +240,18 @@ func printMappings(out io.Writer, runtime string, mappings []state.MappingState)
 		}
 		fmt.Fprintln(out)
 	}
+}
+
+func printRuntimeIsolation(out io.Writer, runtime string, boundary state.RuntimeBoundaryState) {
+	status := boundary.Isolation
+	if status == "" {
+		status = "unknown"
+	}
+	if boundary.Root == "" {
+		fmt.Fprintf(out, "  %s: %s\n", runtime, status)
+		return
+	}
+	fmt.Fprintf(out, "  %s: %s root=%s\n", runtime, status, boundary.Root)
 }
 
 func syncStateRuntimeOrder(syncState *state.SyncState) []string {

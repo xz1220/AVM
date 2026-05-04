@@ -10,7 +10,6 @@ type ResolvedActivation struct {
 	Env           *Environment                    `yaml:"env,omitempty" json:"env,omitempty"`
 	RuntimeAgents map[string]AgentProfile         `yaml:"runtime_agents" json:"runtime_agents"`
 	Capabilities  map[string]ResolvedCapabilities `yaml:"capabilities,omitempty" json:"capabilities,omitempty"`
-	Memory        map[string][]PortableMemory     `yaml:"memory,omitempty" json:"memory,omitempty"`
 	Targets       []string                        `yaml:"targets" json:"targets"`
 	SourceFiles   []string                        `yaml:"source_files,omitempty" json:"source_files,omitempty"`
 	Warnings      []string                        `yaml:"warnings,omitempty" json:"warnings,omitempty"`

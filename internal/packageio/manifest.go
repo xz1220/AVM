@@ -10,7 +10,6 @@ type Manifest struct {
 	Envs         []string           `yaml:"envs,omitempty"`
 	Agents       []string           `yaml:"agents,omitempty"`
 	Capabilities CapabilityManifest `yaml:"capabilities,omitempty"`
-	MemoryRefs   []MemoryRefEntry   `yaml:"memory_refs,omitempty"`
 	IncludeFiles []string           `yaml:"include_files,omitempty"`
 }
 
@@ -20,11 +19,6 @@ type CapabilityManifest struct {
 	Commands []string `yaml:"commands,omitempty"`
 	Hooks    []string `yaml:"hooks,omitempty"`
 	Toolsets []string `yaml:"toolsets,omitempty"`
-}
-
-type MemoryRefEntry struct {
-	ID    string `yaml:"id"`
-	Scope string `yaml:"scope"`
 }
 
 func (m CapabilityManifest) empty() bool {

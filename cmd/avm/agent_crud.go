@@ -39,7 +39,6 @@ type agentEditOptions struct {
 	Allow                 []string
 	Deny                  []string
 	AdditionalDirectories []string
-	Memory                []string
 	Yes                   bool
 	NoInput               bool
 }
@@ -96,7 +95,6 @@ func newAgentEditCommand() *cobra.Command {
 	cmd.Flags().StringSliceVar(&opts.Allow, "allow", nil, "allowed permission patterns")
 	cmd.Flags().StringSliceVar(&opts.Deny, "deny", nil, "denied permission patterns")
 	cmd.Flags().StringSliceVar(&opts.AdditionalDirectories, "additional-directories", nil, "additional writable directories")
-	cmd.Flags().StringSliceVar(&opts.Memory, "memory", nil, "portable memory refs")
 	cmd.Flags().BoolVar(&opts.Yes, "yes", false, "apply flag-provided changes and do not prompt")
 	cmd.Flags().BoolVar(&opts.NoInput, "no-input", false, "fail instead of prompting")
 	return cmd
@@ -156,6 +154,7 @@ func runAgentClone(cmd *cobra.Command, args []string, fromScopeValue string) err
 		return err
 	}
 	agent := cloneAgentProfile(source)
+	agent.ID = ""
 	agent.Name = name
 	agent.SourceScope = string(scope)
 	if agent.Identity.DisplayName == "" || agent.Identity.DisplayName == source.Name {
@@ -314,13 +313,6 @@ func applyAgentEditFlags(cmd *cobra.Command, agent *config.AgentProfile, opts ag
 	}
 	if cmd.Flags().Changed("additional-directories") {
 		agent.Permissions.AdditionalDirectories = normalizeStringList(opts.AdditionalDirectories)
-	}
-	if cmd.Flags().Changed("memory") {
-		memoryRefs, err := parseMemoryRefs(opts.Memory)
-		if err != nil {
-			return err
-		}
-		agent.MemoryRefs = memoryRefs
 	}
 	return nil
 }
@@ -487,13 +479,6 @@ func promptAgentEditGroup(reader *bufio.Reader, out io.Writer, agent *config.Age
 		}
 		agent.Permissions.AdditionalDirectories, err = promptStringList(reader, out, "Additional directories", agent.Permissions.AdditionalDirectories)
 		return err
-	case "memory":
-		values, err := promptStringList(reader, out, "Memory refs", formatMemoryRefs(agent.MemoryRefs))
-		if err != nil {
-			return err
-		}
-		agent.MemoryRefs, err = parseMemoryRefs(values)
-		return err
 	default:
 		return fmt.Errorf("invalid edit group %q", group)
 	}
@@ -599,20 +584,6 @@ func promptAgentEditGroupTUI(cmd *cobra.Command, agent *config.AgentProfile, gro
 		agent.Permissions.Allow = splitSelectionValues(allow)
 		agent.Permissions.Deny = splitSelectionValues(deny)
 		agent.Permissions.AdditionalDirectories = splitSelectionValues(dirs)
-		return nil
-	case "memory":
-		memory := strings.Join(formatMemoryRefs(agent.MemoryRefs), ",")
-		form := huh.NewForm(huh.NewGroup(
-			huh.NewInput().Title("Memory refs").Description("Comma separated, id[:scope[:path[:mode]]]").Value(&memory),
-		))
-		if err := runTUIForm(cmd, form, "agent edit"); err != nil {
-			return err
-		}
-		refs, err := parseMemoryRefs(splitSelectionValues(memory))
-		if err != nil {
-			return err
-		}
-		agent.MemoryRefs = refs
 		return nil
 	default:
 		return fmt.Errorf("invalid edit group %q", group)
@@ -746,7 +717,6 @@ var agentEditGroups = []agentEditGroup{
 	{Key: "capabilities", Label: "Capabilities"},
 	{Key: "instructions", Label: "Instructions"},
 	{Key: "permissions", Label: "Permissions"},
-	{Key: "memory", Label: "Memory"},
 }
 
 func promptAgentEditGroups(reader *bufio.Reader, out io.Writer) ([]string, error) {
@@ -805,7 +775,6 @@ func agentEditHasFlagChanges(cmd *cobra.Command) bool {
 		"skills", "mcps", "commands", "hooks",
 		"system", "developer", "references",
 		"approval", "sandbox", "allow", "deny", "additional-directories",
-		"memory",
 	} {
 		if cmd.Flags().Changed(name) {
 			return true
@@ -862,17 +831,6 @@ func formatAgentTemperature(value *float64) string {
 	return strconv.FormatFloat(*value, 'f', -1, 64)
 }
 
-func formatMemoryRefs(refs []config.MemoryRef) []string {
-	if len(refs) == 0 {
-		return nil
-	}
-	out := make([]string, 0, len(refs))
-	for _, ref := range refs {
-		out = append(out, ref.ID+":"+ref.Scope+":"+ref.Path+":"+ref.Mode)
-	}
-	return out
-}
-
 func printAgentEditPreview(out io.Writer, before, after *config.AgentProfile) {
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, "Changes:")
@@ -924,9 +882,6 @@ func agentChangeSummary(before, after *config.AgentProfile) []string {
 	addListDiff("permissions.allow", before.Permissions.Allow, after.Permissions.Allow)
 	addListDiff("permissions.deny", before.Permissions.Deny, after.Permissions.Deny)
 	addListDiff("permissions.additional_directories", before.Permissions.AdditionalDirectories, after.Permissions.AdditionalDirectories)
-	if !reflect.DeepEqual(before.MemoryRefs, after.MemoryRefs) {
-		diffs = append(diffs, fmt.Sprintf("memory_refs: %s -> %s", previewList(formatMemoryRefs(before.MemoryRefs)), previewList(formatMemoryRefs(after.MemoryRefs))))
-	}
 	return diffs
 }
 

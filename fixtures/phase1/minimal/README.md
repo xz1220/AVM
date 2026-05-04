@@ -1,7 +1,7 @@
 # Minimal Phase 1 Fixture
 
 This fixture models one AVM agent, one AVM environment, one MCP server, one
-skill, and one portable memory reference. It is deliberately small so tests can
+skill. It is deliberately small so tests can
 focus on deterministic config resolution and per-runtime render planning.
 
 The fixture is not a runtime config directory. Any path that would normally

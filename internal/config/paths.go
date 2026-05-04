@@ -41,18 +41,6 @@ func RegistryKindDir(kind string) string {
 	return filepath.Join(RegistryDir(), kind)
 }
 
-func MemoryDir() string {
-	return filepath.Join(AvmDir(), "memory")
-}
-
-func MemoryScopeDir(scope Scope) string {
-	return filepath.Join(MemoryDir(), string(scope))
-}
-
-func MemoryPath(id string, scope Scope) string {
-	return filepath.Join(MemoryScopeDir(scope), id+".yaml")
-}
-
 func ActiveDir() string {
 	return filepath.Join(AvmDir(), "active")
 }
@@ -61,15 +49,8 @@ func RuntimeHomesDir() string {
 	return filepath.Join(AvmDir(), "runtime-homes")
 }
 
-func RuntimeHomeDir(active ActiveRef, runtime string) string {
-	return filepath.Join(RuntimeHomesDir(), RuntimeHomeActiveName(active), RuntimeHomeRuntimeName(runtime))
-}
-
-func RuntimeHomeActiveName(active ActiveRef) string {
-	if active.Kind == "" || active.Name == "" {
-		return "none"
-	}
-	return active.Kind + "-" + active.Name
+func AgentRuntimeHomeDir(agentID, runtime string) string {
+	return filepath.Join(RuntimeHomesDir(), "agents", agentID, RuntimeHomeRuntimeName(runtime))
 }
 
 func RuntimeHomeRuntimeName(runtime string) string {

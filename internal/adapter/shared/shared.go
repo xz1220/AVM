@@ -153,61 +153,6 @@ func CapabilityLines(refs []adapter.CapabilityRef) []string {
 	return lines
 }
 
-func MemoryRefLines(refs []adapter.MemoryRef) []string {
-	lines := make([]string, 0, len(refs))
-	for _, ref := range refs {
-		if ref.ID == "" {
-			continue
-		}
-		var parts []string
-		if ref.Scope != "" {
-			parts = append(parts, "scope="+ref.Scope)
-		}
-		if ref.Mode != "" {
-			parts = append(parts, "mode="+ref.Mode)
-		}
-		if ref.Path != "" {
-			parts = append(parts, "path="+ref.Path)
-		}
-		line := ref.ID
-		if len(parts) > 0 {
-			line += " (" + strings.Join(parts, ", ") + ")"
-		}
-		lines = append(lines, line)
-	}
-	sort.Strings(lines)
-	return lines
-}
-
-func PortableMemoryLines(memory []adapter.PortableMemory) []string {
-	lines := make([]string, 0, len(memory))
-	for _, item := range memory {
-		if item.ID == "" {
-			continue
-		}
-		var parts []string
-		if item.Scope != "" {
-			parts = append(parts, "scope="+item.Scope)
-		}
-		if item.Mode != "" {
-			parts = append(parts, "mode="+item.Mode)
-		}
-		if item.Path != "" {
-			parts = append(parts, "path="+item.Path)
-		}
-		line := item.ID
-		if len(parts) > 0 {
-			line += " (" + strings.Join(parts, ", ") + ")"
-		}
-		if item.Content != "" {
-			line += ": " + strings.TrimSpace(item.Content)
-		}
-		lines = append(lines, line)
-	}
-	sort.Strings(lines)
-	return lines
-}
-
 func ToolsetLines(toolsets []adapter.Toolset) []string {
 	lines := make([]string, 0, len(toolsets))
 	for _, toolset := range toolsets {

@@ -30,5 +30,6 @@ Please include:
 - Prefer environment variable references for secrets.
 - Keep runtime writes limited to adapter-owned managed paths.
 - Preserve backups before overwriting runtime-managed files.
-- Make memory import/export explicit and auditable.
+- Do not add runtime-native memory import/export without an explicit design,
+  audit trail, and user confirmation model.
 - Report unsupported runtime mappings instead of silently dropping them.

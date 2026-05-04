@@ -62,7 +62,6 @@ func TestPlanIsDeterministic(t *testing.T) {
 	rulesContent := operationContent(t, first, "cline-agent-rules")
 	for _, expected := range []string{
 		"## Active AVM skills\n\n- git (/active/skills/git/SKILL.md)\n- test (/active/skills/test/SKILL.md)",
-		"## AVM memory refs\n\n- a-memory (scope=project, mode=read, path=/active/memory/a.md)\n- z-memory (scope=project, mode=read, path=/active/memory/z.md)",
 		"deny=Bash(rm -rf *)",
 	} {
 		if !strings.Contains(rulesContent, expected) {
@@ -104,7 +103,6 @@ func TestPlanMappingsCoverRenderedIgnoredAndUnsupportedFields(t *testing.T) {
 	assertMapping(t, plan, "agent.permissions.approval", adapter.MappingRenderedAsInstructions)
 	assertMapping(t, plan, "capabilities.skills", adapter.MappingRenderedAsInstructions)
 	assertMapping(t, plan, "capabilities.mcp_servers.github", adapter.MappingNative)
-	assertMapping(t, plan, "agent.memory_refs", adapter.MappingRenderedAsInstructions)
 	assertMapping(t, plan, "project.clinerules", adapter.MappingIgnored)
 	assertMapping(t, plan, "project.AGENTS.md", adapter.MappingIgnored)
 	assertMapping(t, plan, "agent.model.temperature", adapter.MappingUnsupported)
@@ -169,7 +167,6 @@ func TestRenderWritesManagedPathsAndPreservesUserConfig(t *testing.T) {
 		"# AVM Agent: backend-coder",
 		"You implement backend changes with tests.",
 		"Active AVM skills",
-		"Portable memory",
 	} {
 		if !strings.Contains(rulesContent, expected) {
 			t.Fatalf("rendered rules missing %q:\n%s", expected, rulesContent)
@@ -349,8 +346,8 @@ func richInput(projectRoot string) adapter.RenderInput {
 				System:    "You implement backend changes with tests.",
 				Developer: "Prefer small, reviewable changes.",
 				References: []string{
-					"/active/memory/z.md",
-					"/active/memory/a.md",
+					"/active/docs/z.md",
+					"/active/docs/a.md",
 				},
 			},
 			Model: adapter.ModelConfig{
@@ -368,10 +365,6 @@ func richInput(projectRoot string) adapter.RenderInput {
 				Deny: []string{
 					"Bash(rm -rf *)",
 				},
-			},
-			MemoryRefs: []adapter.MemoryRef{
-				{ID: "z-memory", Scope: "project", Path: "/active/memory/z.md", Mode: "read"},
-				{ID: "a-memory", Scope: "project", Path: "/active/memory/a.md", Mode: "read"},
 			},
 		},
 		Capabilities: adapter.CapabilitySet{
@@ -395,10 +388,6 @@ func richInput(projectRoot string) adapter.RenderInput {
 				{Name: "browser", Mode: "disabled"},
 				{Name: "shell", Mode: "limited"},
 			},
-		},
-		Memory: []adapter.PortableMemory{
-			{ID: "z-memory", Scope: "project", Path: "/active/memory/z.md", Mode: "read"},
-			{ID: "a-memory", Scope: "project", Path: "/active/memory/a.md", Mode: "read"},
 		},
 		ProjectRoot: projectRoot,
 	}

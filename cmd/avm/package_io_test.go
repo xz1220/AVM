@@ -24,16 +24,6 @@ func TestPackageAgentExportImportWithReferencedMetadata(t *testing.T) {
 	writePackageIOFile(t, filepath.Join(sourceHome, ".avm", "registry", "skills", "git", "SKILL.md"), "# Git\n")
 	writePackageIOFile(t, filepath.Join(sourceHome, ".avm", "registry", "skills", "git", "meta.yaml"), "name: git\nkind: skill\n")
 	writePackageIOFile(t, filepath.Join(sourceHome, ".avm", "registry", "mcps", "github.yaml"), "name: github\nkind: mcp\nserver:\n  env:\n    GITHUB_TOKEN: ${GITHUB_TOKEN}\n")
-	writePackageIOFile(t, filepath.Join(sourceHome, ".avm", "memory", "project", "backend-standards.md"), "Prefer small changes.\n")
-	if err := config.WritePortableMemory(&config.PortableMemory{
-		ID:     "backend-standards",
-		Scope:  string(config.ScopeProject),
-		Format: "markdown",
-		Path:   "~/.avm/memory/project/backend-standards.md",
-		Mode:   "read",
-	}); err != nil {
-		t.Fatalf("write memory metadata: %v", err)
-	}
 	if err := config.WriteAgent(&config.AgentProfile{
 		Name:        "backend-coder",
 		SourceScope: string(config.ScopeGlobal),
@@ -44,12 +34,6 @@ func TestPackageAgentExportImportWithReferencedMetadata(t *testing.T) {
 			Skills: []string{"git"},
 			MCPs:   []string{"github"},
 		},
-		MemoryRefs: []config.MemoryRef{{
-			ID:    "backend-standards",
-			Scope: string(config.ScopeProject),
-			Path:  "~/.avm/memory/project/backend-standards.md",
-			Mode:  "read",
-		}},
 	}, config.ScopeGlobal, project); err != nil {
 		t.Fatalf("write agent: %v", err)
 	}
@@ -83,8 +67,6 @@ func TestPackageAgentExportImportWithReferencedMetadata(t *testing.T) {
 	for _, want := range []string{
 		"manifest.yaml",
 		"agents/backend-coder.yaml",
-		"memory/project/backend-standards.yaml",
-		"memory/project/backend-standards.md",
 		"registry/mcps/github.yaml",
 		"registry/skills/git/SKILL.md",
 		"registry/skills/git/meta.yaml",
@@ -127,11 +109,7 @@ func TestPackageAgentExportImportWithReferencedMetadata(t *testing.T) {
 	if _, err := config.ReadAgent("backend-coder", config.ScopeGlobal, project); err != nil {
 		t.Fatalf("read imported agent: %v", err)
 	}
-	if _, err := config.ReadPortableMemory("backend-standards", config.ScopeProject); err != nil {
-		t.Fatalf("read imported memory metadata: %v", err)
-	}
 	for _, path := range []string{
-		filepath.Join(targetHome, ".avm", "memory", "project", "backend-standards.md"),
 		filepath.Join(targetHome, ".avm", "registry", "skills", "git", "SKILL.md"),
 		filepath.Join(targetHome, ".avm", "registry", "mcps", "github.yaml"),
 	} {
@@ -267,6 +245,51 @@ func TestPackageInstall(t *testing.T) {
 	}
 	if _, err := config.ReadAgent("backend-coder", config.ScopeGlobal, project); err != nil {
 		t.Fatalf("read installed agent: %v", err)
+	}
+}
+
+func TestPackageInstallRegeneratesConflictingAgentID(t *testing.T) {
+	sourceHome := t.TempDir()
+	project := t.TempDir()
+	t.Setenv("HOME", sourceHome)
+	chdir(t, project)
+	writeTestAgent(t, project, "backend-coder", "codex")
+	sourceAgent, err := config.ReadAgent("backend-coder", config.ScopeGlobal, project)
+	if err != nil {
+		t.Fatalf("read source agent: %v", err)
+	}
+
+	packagePath := filepath.Join(t.TempDir(), "backend-coder.avm.zip")
+	if out, err := executeCommand("package", "export", "backend-coder", "--output", packagePath); err != nil {
+		t.Fatalf("export returned error: %v\n%s", err, out)
+	}
+
+	targetHome := t.TempDir()
+	t.Setenv("HOME", targetHome)
+	if err := config.WriteAgent(&config.AgentProfile{
+		Name:        "existing-agent",
+		ID:          sourceAgent.ID,
+		SourceScope: string(config.ScopeGlobal),
+		Runtime: config.RuntimePreferences{
+			Preferred: "codex",
+		},
+	}, config.ScopeGlobal, project); err != nil {
+		t.Fatalf("write existing agent: %v", err)
+	}
+
+	out, err := executeCommand("package", "install", packagePath)
+	if err != nil {
+		t.Fatalf("install returned error: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "installed agent backend-coder: added") {
+		t.Fatalf("unexpected install output: %q", out)
+	}
+	installed, err := config.ReadAgent("backend-coder", config.ScopeGlobal, project)
+	if err != nil {
+		t.Fatalf("read installed agent: %v", err)
+	}
+	if installed.ID == sourceAgent.ID {
+		t.Fatalf("installed agent reused conflicting id %q", installed.ID)
 	}
 }
 

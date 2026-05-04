@@ -12,8 +12,8 @@
 
 - 安装路径仍以 `git clone`、`go run ./cmd/avm`、`make build` 为主。用户看不到一个稳定的 release binary、安装脚本或包管理入口。
 - 安装后还要求用户手动执行 `avm init`。这一步对用户没有明显价值，且容易让首次路径变长。
-- `agent create` 依赖很多 flag，例如 `--runtime`、`--skills`、`--mcps`、`--memory`。这适合脚本和 CI，不适合第一次理解概念。
-- README 主路径强调 `avm use`，但 CLI runtime 的真实生效路径还需要 `avm activate` 输出 shell env，例如 `CODEX_HOME`、`CLAUDE_CONFIG_DIR`、`OPENCODE_CONFIG`。首次用户容易误解“use 之后我到底怎么启动 Codex/Claude/OpenCode”。
+- `agent create` 依赖很多 flag，例如 `--runtime`、`--skills`、`--mcps`。这适合脚本和 CI，不适合第一次理解概念。
+- README 主路径强调 `avm use`，但 CLI runtime 的真实生效路径还需要 `avm activate` 输出 shell env，例如 `CODEX_HOME`、`CLAUDE_CONFIG_DIR`、`OPENCODE_CONFIG`；OpenCode 还需要 `avm run opencode` 注入进程级 data/state env。首次用户容易误解“use 之后我到底怎么启动 Codex/Claude/OpenCode”。
 - `export/import` 已经能表达 `.avm.zip` package，但还没有面向用户的 package 发现、创建和安装路径。
 
 ## 2. 推荐的首次用户路径
@@ -157,7 +157,7 @@ avm env create coding --codex backend-coder --claude-code reviewer
    - 选择 runtime：Codex、Claude Code、OpenCode、Cline、Cursor
    - 选择 model/reasoning，提供默认值
    - 从本地 registry 已安装 skills/MCP 中选择，也可手动输入未安装引用
-   - 选择 memory refs，可先跳过
+   - 选择 skills/MCP，可先跳过
    - 选择保存范围：global 或 current project
 3. 展示 preview：
    - 即将写入的 AVM YAML
@@ -197,13 +197,13 @@ Then start your runtime:
 
 公开概念只保留 `package`。不再把 template 作为用户需要理解的平级概念。
 
-Package 是 AVM 可分发单元。V1 先只覆盖 agent package：一个 zip 里携带一个可复用 Agent Profile，以及它引用的 skills、MCP metadata 和 memory refs。env 编排保留为底层兼容能力，暂不进入 package 主路径。
+Package 是 AVM 可分发单元。V1 先只覆盖 agent package：一个 zip 里携带一个可复用 Agent Profile，以及它引用的 skills、MCP metadata。env 编排保留为底层兼容能力，暂不进入 package 主路径。
 
 | 用法 | 命令 | 用户心智 | 结果 |
 | --- | --- | --- | --- |
 | 从 package 创建 | `avm create backend-coder` | 用一个起点创建我自己的 agent | 生成可改名、可定制的本地 Agent Profile |
 | 导出 package | `avm export api-coder --output api-coder.avm.zip` | 把我调好的 agent 分享出去 | 生成可分发 zip |
-| 安装 package | `avm install api-coder.avm.zip` | 把别人配好的 agent 装进来 | 写入 package 中的 agent/capability/memory |
+| 安装 package | `avm install api-coder.avm.zip` | 把别人配好的 agent 装进来 | 写入 package 中的 agent/capability |
 
 底层 manifest 可以区分 package 是否支持哪些行为，但这不是新的公开名词。
 
@@ -222,7 +222,7 @@ Create package 用于回答“我要创建一个什么”。package 内容应该
 - suggested name，例如 `backend-coder`
 - runtime defaults
 - model defaults
-- skills/MCP/memory suggestions
+- skills/MCP suggestions
 - prompt/instruction starter
 - wizard questions
 
@@ -244,7 +244,7 @@ avm package show backend-coder
 
 - 将写入哪些 `~/.avm/**` 文件
 - 是否覆盖已有 profile
-- 是否包含 skills/MCP/memory refs
+- 是否包含 skills/MCP refs
 - 是否引用 secrets 环境变量
 
 默认不自动 activate。安装后用户显式执行 `avm use <agent>`。

@@ -173,7 +173,13 @@ avm deactivate
 
 With shell integration installed, `avm use` updates the current shell so runtime
 environment variables such as `CODEX_HOME`, `CLAUDE_CONFIG_DIR`, and
-`OPENCODE_CONFIG_DIR` point to AVM-managed runtime homes.
+`OPENCODE_CONFIG_DIR` point to AVM-managed, agent-scoped runtime homes.
+
+OpenCode needs process-scoped data/state variables for full isolation. Use:
+
+```bash
+avm run opencode
+```
 
 `avm sync` exists in the preview, but it should be treated as an advanced repair
 or debugging command rather than a primary user module.
@@ -205,12 +211,6 @@ avm package export <agent-or-env>
 avm package inspect <file.avm.zip>
 ```
 
-### 6. Memory
-
-Memory is intentionally not part of the main path yet. The preview has
-`avm memory import --dry-run`, but the product model should not force users to
-understand memory before Agent and Environment CRUD is complete.
-
 ## Runtime Support
 
 AVM renders Agent or Environment activation into runtime-specific managed files.
@@ -240,7 +240,6 @@ surface is not finished.
 | Package | list/show/inspect/export/install | install/export naming still split across commands |
 | Skills | `skill list` | should be surfaced primarily inside Agent create/edit |
 | Sync | `sync` | should mostly disappear behind `use`/activation |
-| Memory | import dry-run | intentionally deferred from the main path |
 
 ## Safety Model
 
@@ -264,7 +263,8 @@ make build
 ```
 
 The main package is `cmd/avm`. Core packages live under `internal/config`,
-`internal/adapter`, `internal/memory`, `internal/sync`, and `internal/state`.
+`internal/adapter`, `internal/sync`, `internal/runtime`, `internal/state`, and
+`internal/packageio`.
 
 Useful project docs:
 

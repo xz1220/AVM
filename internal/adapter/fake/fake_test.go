@@ -14,7 +14,6 @@ import (
 
 func TestAdapterImplementsContracts(t *testing.T) {
 	var _ adapter.Adapter = (*fake.Adapter)(nil)
-	var _ adapter.MemoryImportCapable = (*fake.Adapter)(nil)
 }
 
 func TestPlanIsDeterministic(t *testing.T) {
@@ -48,10 +47,6 @@ func TestPlanIsDeterministic(t *testing.T) {
 				{Name: "github"},
 			},
 		},
-		Memory: []adapter.PortableMemory{
-			{ID: "z-memory"},
-			{ID: "a-memory"},
-		},
 		ProjectRoot: "/repo",
 	}
 
@@ -72,7 +67,6 @@ func TestPlanIsDeterministic(t *testing.T) {
 	for _, expected := range []string{
 		"skill: git\nskill: test",
 		"mcp: github\nmcp: postgres",
-		"memory: a-memory\nmemory: z-memory",
 	} {
 		if !strings.Contains(content, expected) {
 			t.Fatalf("rendered content missing deterministic block %q:\n%s", expected, content)
@@ -200,20 +194,5 @@ func assertFileContent(t *testing.T, path, expected string) {
 	}
 	if string(content) != expected {
 		t.Fatalf("unexpected file content %q, want %q", content, expected)
-	}
-}
-
-func TestImportMemoryDefaultUsesOptions(t *testing.T) {
-	plan, err := fake.New().ImportMemory(context.Background(), adapter.MemoryImportOptions{
-		Runtime: "codex",
-		Source:  "native",
-		DryRun:  true,
-	})
-	if err != nil {
-		t.Fatalf("import memory failed: %v", err)
-	}
-
-	if plan.Runtime != "codex" || plan.Source != "native" {
-		t.Fatalf("unexpected memory import plan: %#v", plan)
 	}
 }

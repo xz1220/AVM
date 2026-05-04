@@ -60,7 +60,6 @@ func TestPlanIsDeterministic(t *testing.T) {
 		"skills:\n  - \"git\"\n  - \"test\"",
 		"mcpServers:\n  - \"github\"\n  - \"postgres\"",
 		"Active AVM skills:\n- git (/active/skills/git/SKILL.md)\n- test (/active/skills/test/SKILL.md)",
-		"AVM memory refs:\n- a-memory (scope=project, mode=read, path=/active/memory/a.md)\n- z-memory (scope=project, mode=read, path=/active/memory/z.md)",
 		"Permission approval policy:\non-request",
 	} {
 		if !strings.Contains(agentContent, expected) {
@@ -99,33 +98,12 @@ func TestPlanMappingsCoverNativeRenderedIgnoredAndUnsupportedFields(t *testing.T
 
 	assertMapping(t, plan, "agent.model.model", adapter.MappingNative)
 	assertMapping(t, plan, "capabilities.skills", adapter.MappingNative)
-	assertMapping(t, plan, "agent.memory_refs", adapter.MappingNative)
 	assertMapping(t, plan, "agent.instructions.references", adapter.MappingRenderedAsInstructions)
 	assertMapping(t, plan, "agent.permissions.approval", adapter.MappingRenderedAsInstructions)
 	assertMapping(t, plan, "project.CLAUDE.md", adapter.MappingIgnored)
 	assertMapping(t, plan, "agent.model.temperature", adapter.MappingUnsupported)
 	assertMapping(t, plan, "agent.permissions.additional_directories", adapter.MappingUnsupported)
 	assertMapping(t, plan, "capabilities.mcp_servers.missing", adapter.MappingUnsupported)
-}
-
-func TestPlanRendersUnsupportedMemoryRefsAsInstructions(t *testing.T) {
-	input := richInput("/repo")
-	input.Agent.MemoryRefs = append(input.Agent.MemoryRefs, adapter.MemoryRef{
-		ID:    "team-memory",
-		Scope: "team",
-		Path:  "/active/memory/team.md",
-		Mode:  "read",
-	})
-
-	plan, err := claude.New().Plan(context.Background(), input)
-	if err != nil {
-		t.Fatalf("plan failed: %v", err)
-	}
-
-	assertMapping(t, plan, "agent.memory_refs", adapter.MappingRenderedAsInstructions)
-	if !strings.Contains(strings.Join(plan.Warnings, "\n"), "memory refs were rendered as instructions") {
-		t.Fatalf("expected memory scope warning, got %#v", plan.Warnings)
-	}
 }
 
 func TestRenderWritesManagedPathsAsIsolatedHomeAndIsIdempotent(t *testing.T) {
@@ -186,7 +164,6 @@ func TestRenderWritesManagedPathsAsIsolatedHomeAndIsIdempotent(t *testing.T) {
 	for _, expected := range []string{
 		"---\nname: \"backend-coder\"",
 		"description: \"Backend implementation agent\"",
-		"memory: \"project\"",
 		"Developer instructions:\nPrefer small, reviewable changes.",
 	} {
 		if !strings.Contains(agentContent, expected) {
@@ -416,8 +393,8 @@ func richInput(projectRoot string) adapter.RenderInput {
 				System:    "You implement backend changes with tests.",
 				Developer: "Prefer small, reviewable changes.",
 				References: []string{
-					"/active/memory/z.md",
-					"/active/memory/a.md",
+					"/active/docs/z.md",
+					"/active/docs/a.md",
 				},
 			},
 			Model: adapter.ModelConfig{
@@ -435,10 +412,6 @@ func richInput(projectRoot string) adapter.RenderInput {
 				Deny: []string{
 					"Bash(rm -rf *)",
 				},
-			},
-			MemoryRefs: []adapter.MemoryRef{
-				{ID: "z-memory", Scope: "project", Path: "/active/memory/z.md", Mode: "read"},
-				{ID: "a-memory", Scope: "project", Path: "/active/memory/a.md", Mode: "read"},
 			},
 		},
 		Capabilities: adapter.CapabilitySet{
@@ -459,10 +432,6 @@ func richInput(projectRoot string) adapter.RenderInput {
 				{Name: "browser", Mode: "disabled"},
 				{Name: "shell", Mode: "limited"},
 			},
-		},
-		Memory: []adapter.PortableMemory{
-			{ID: "z-memory", Scope: "project", Path: "/active/memory/z.md", Mode: "read"},
-			{ID: "a-memory", Scope: "project", Path: "/active/memory/a.md", Mode: "read"},
 		},
 		ProjectRoot: projectRoot,
 	}

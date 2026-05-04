@@ -1,8 +1,0 @@
-id: yaml-standards
-scope: project
-format: yaml
-description: YAML standards imported from a YAML file.
-content: |
-  rules:
-    - Prefer structured config parsers.
-    - Keep dry-runs read-only.

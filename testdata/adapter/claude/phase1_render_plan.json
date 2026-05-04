@@ -56,12 +56,6 @@
       "reason": "Claude Code agent files do not have a separate references field in Phase 1."
     },
     {
-      "source_path": "agent.memory_refs",
-      "target_path": "<PROJECT_ROOT>/.claude/agents/backend-coder.md#frontmatter.memory",
-      "status": "native",
-      "reason": "Claude Code can express this AVM memory scope in agent frontmatter; memory content remains read-only during avm use."
-    },
-    {
       "source_path": "agent.model.temperature",
       "status": "unsupported",
       "reason": "Claude Code adapter Phase 1 does not support temperature."

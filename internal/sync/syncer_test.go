@@ -230,8 +230,8 @@ func TestRuntimeHomeSidecarsUseRealHomeFallback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("capture codex sidecars: %v", err)
 	}
-	if err := resetRuntimeHome(codexHome); err != nil {
-		t.Fatalf("reset codex home: %v", err)
+	if err := os.MkdirAll(codexHome, 0o700); err != nil {
+		t.Fatalf("create codex home: %v", err)
 	}
 	if err := restoreRuntimeHomeSidecars(codexHome, codexSidecars); err != nil {
 		t.Fatalf("restore codex sidecars: %v", err)
@@ -243,8 +243,8 @@ func TestRuntimeHomeSidecarsUseRealHomeFallback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("capture claude sidecars: %v", err)
 	}
-	if err := resetRuntimeHome(claudeHome); err != nil {
-		t.Fatalf("reset claude home: %v", err)
+	if err := os.MkdirAll(claudeHome, 0o700); err != nil {
+		t.Fatalf("create claude home: %v", err)
 	}
 	if err := restoreRuntimeHomeSidecars(claudeHome, claudeSidecars); err != nil {
 		t.Fatalf("restore claude sidecars: %v", err)

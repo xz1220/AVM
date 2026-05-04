@@ -1,7 +1,7 @@
 # Phase 1 Fixtures
 
 Phase 1 fixtures cover the source-of-truth config model, dry-run portable
-memory import, adapter render plans, and runtime-specific conventions for:
+adapter render plans and runtime-specific conventions for:
 
 - Codex
 - Claude Code

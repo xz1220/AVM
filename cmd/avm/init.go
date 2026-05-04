@@ -51,11 +51,6 @@ func initAVMHome(force bool) (bool, error) {
 		config.RegistryDir(),
 		config.RegistryKindDir("skills"),
 		config.RegistryKindDir("mcps"),
-		config.MemoryDir(),
-		config.MemoryScopeDir(config.ScopeUser),
-		config.MemoryScopeDir(config.ScopeProject),
-		config.MemoryScopeDir(config.ScopeLocal),
-		config.MemoryScopeDir(config.ScopeTeam),
 		config.ActiveDir(),
 		config.StateDir(),
 		config.BackupDir(),
@@ -120,6 +115,7 @@ func defaultGlobalConfig() *config.GlobalConfig {
 func defaultAgentProfile() *config.AgentProfile {
 	agent := &config.AgentProfile{
 		Name: "default",
+		ID:   "agt_00000000000000000000000000000000",
 		Runtime: config.RuntimePreferences{
 			Preferred: "codex",
 		},

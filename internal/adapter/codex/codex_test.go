@@ -89,7 +89,6 @@ func TestPlanIsDeterministic(t *testing.T) {
 	roleContent := operationContent(t, first, "codex-agent-role")
 	for _, expected := range []string{
 		"Active AVM skills:\\n- git (/active/skills/git/SKILL.md)\\n- test (/active/skills/test/SKILL.md)",
-		"AVM memory refs:\\n- a-memory (scope=project, mode=read, path=/active/memory/a.md)\\n- z-memory (scope=project, mode=read, path=/active/memory/z.md)",
 		"Denied command guidance:\\n- Bash(rm -rf *)",
 	} {
 		if !strings.Contains(roleContent, expected) {
@@ -133,14 +132,12 @@ func TestPlanMappingsCoverRenderedIgnoredAndUnsupportedFields(t *testing.T) {
 	assertMapping(t, plan, "agent.instructions.developer", adapter.MappingNative)
 	assertMapping(t, plan, "agent.instructions.references", adapter.MappingRenderedAsInstructions)
 	assertMapping(t, plan, "capabilities.skills", adapter.MappingRenderedAsInstructions)
-	assertMapping(t, plan, "agent.memory_refs", adapter.MappingRenderedAsInstructions)
 	assertMapping(t, plan, "agent.model.verbosity", adapter.MappingRenderedAsInstructions)
 	assertMapping(t, plan, "agent.permissions.allow", adapter.MappingRenderedAsInstructions)
 	assertMapping(t, plan, "agent.permissions.deny", adapter.MappingRenderedAsInstructions)
 	assertMapping(t, plan, "capabilities.commands", adapter.MappingRenderedAsInstructions)
 	assertMapping(t, plan, "capabilities.hooks", adapter.MappingRenderedAsInstructions)
 	assertMapping(t, plan, "capabilities.toolsets", adapter.MappingRenderedAsInstructions)
-	assertMapping(t, plan, "memory", adapter.MappingRenderedAsInstructions)
 	assertMapping(t, plan, "project.AGENTS.md", adapter.MappingIgnored)
 	assertMapping(t, plan, "capabilities.mcp_servers.github", adapter.MappingNative)
 	assertMapping(t, plan, "capabilities.mcp_servers.postgres", adapter.MappingNative)
@@ -551,7 +548,7 @@ func fixtureInput() adapter.RenderInput {
 			Instructions: adapter.Instructions{
 				System:     "You implement backend changes with tests.",
 				Developer:  "Prefer small, reviewable changes.",
-				References: []string{"memory/project/backend-standards.md"},
+				References: []string{"docs/backend-standards.md"},
 			},
 			Model: adapter.ModelConfig{
 				Model:           "gpt-5.4",
@@ -569,9 +566,6 @@ func fixtureInput() adapter.RenderInput {
 				Deny: []string{
 					"Bash(rm -rf *)",
 				},
-			},
-			MemoryRefs: []adapter.MemoryRef{
-				{ID: "backend-standards", Scope: "project", Path: "<AVM_HOME>/memory/project/backend-standards.md", Mode: "read"},
 			},
 		},
 		Capabilities: adapter.CapabilitySet{
@@ -606,8 +600,8 @@ func richInput(projectRoot string) adapter.RenderInput {
 				System:    "You implement backend changes with tests.",
 				Developer: "Prefer small, reviewable changes.",
 				References: []string{
-					"/active/memory/z.md",
-					"/active/memory/a.md",
+					"/active/docs/z.md",
+					"/active/docs/a.md",
 				},
 			},
 			Model: adapter.ModelConfig{
@@ -625,10 +619,6 @@ func richInput(projectRoot string) adapter.RenderInput {
 				Deny: []string{
 					"Bash(rm -rf *)",
 				},
-			},
-			MemoryRefs: []adapter.MemoryRef{
-				{ID: "z-memory", Scope: "project", Path: "/active/memory/z.md", Mode: "read"},
-				{ID: "a-memory", Scope: "project", Path: "/active/memory/a.md", Mode: "read"},
 			},
 		},
 		Capabilities: adapter.CapabilitySet{
@@ -652,10 +642,6 @@ func richInput(projectRoot string) adapter.RenderInput {
 				{Name: "browser", Mode: "disabled"},
 				{Name: "shell", Mode: "limited"},
 			},
-		},
-		Memory: []adapter.PortableMemory{
-			{ID: "z-memory", Scope: "project", Path: "/active/memory/z.md", Mode: "read"},
-			{ID: "a-memory", Scope: "project", Path: "/active/memory/a.md", Mode: "read"},
 		},
 		ProjectRoot: projectRoot,
 	}

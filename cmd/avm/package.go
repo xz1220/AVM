@@ -48,12 +48,6 @@ func printPackageInspect(cmd *cobra.Command, result *packageio.InspectResult) {
 	printStringSection(out, "commands", manifest.Capabilities.Commands)
 	printStringSection(out, "hooks", manifest.Capabilities.Hooks)
 	printStringSection(out, "toolsets", manifest.Capabilities.Toolsets)
-	if len(manifest.MemoryRefs) > 0 {
-		fmt.Fprintln(out, "memory refs:")
-		for _, ref := range manifest.MemoryRefs {
-			fmt.Fprintf(out, "  %s/%s\n", ref.Scope, ref.ID)
-		}
-	}
 	printStringSection(out, "files", result.Files)
 }
 

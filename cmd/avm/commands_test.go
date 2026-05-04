@@ -26,7 +26,7 @@ func TestRegisteredCommandHelp(t *testing.T) {
 		{
 			name: "root",
 			args: []string{"--help"},
-			want: []string{"activate", "agent", "create", "deactivate", "env", "init", "memory", "package", "skill", "shell", "status", "sync", "use"},
+			want: []string{"activate", "agent", "create", "deactivate", "env", "init", "package", "skill", "shell", "status", "sync", "use"},
 		},
 		{
 			name: "create",
@@ -61,17 +61,12 @@ func TestRegisteredCommandHelp(t *testing.T) {
 		{
 			name: "agent create",
 			args: []string{"agent", "create", "--help"},
-			want: []string{"create <name>", "--runtime", "--skills", "--mcps", "--memory"},
+			want: []string{"create <name>", "--runtime", "--skills", "--mcps"},
 		},
 		{
 			name: "env create",
 			args: []string{"env", "create", "--help"},
 			want: []string{"create <name>", "--codex", "--claude-code", "--opencode", "--cline", "--cursor"},
-		},
-		{
-			name: "memory import",
-			args: []string{"memory", "import", "--help"},
-			want: []string{"import", "--from", "--dry-run", "--format"},
 		},
 		{
 			name: "activate",
@@ -115,28 +110,6 @@ func TestRegisteredCommandHelp(t *testing.T) {
 				if !strings.Contains(got, want) {
 					t.Fatalf("help output missing %q:\n%s", want, got)
 				}
-			}
-		})
-	}
-}
-
-func TestSkeletonCommandsReturnNotImplemented(t *testing.T) {
-	tests := []struct {
-		name string
-		args []string
-		want string
-	}{
-		{name: "memory import", args: []string{"memory", "import"}, want: "avm memory import: not implemented"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			_, err := executeCommand(tt.args...)
-			if err == nil {
-				t.Fatal("expected not implemented error")
-			}
-			if got := err.Error(); got != tt.want {
-				t.Fatalf("unexpected error:\n got: %q\nwant: %q", got, tt.want)
 			}
 		})
 	}

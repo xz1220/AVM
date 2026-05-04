@@ -44,7 +44,8 @@ make build
 - `avm init` must not modify runtime config files.
 - Runtime writes must go through adapter-owned managed paths.
 - Unsupported runtime fields must be reported, not silently dropped.
-- Runtime-native memory import/export must be explicit.
+- Runtime-native memory import/export is not part of the current AVM model.
+  Do not add it without a separate design review.
 - Secrets should be referenced, not serialized into portable profiles.
 
 ## Pull Request Checklist

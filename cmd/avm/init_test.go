@@ -28,7 +28,6 @@ func TestInitCreatesBaseDirsAndInitialState(t *testing.T) {
 		config.RegistryDir(),
 		config.RegistryKindDir("skills"),
 		config.RegistryKindDir("mcps"),
-		config.MemoryDir(),
 		config.ActiveDir(),
 		config.StateDir(),
 		config.BackupDir(),

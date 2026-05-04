@@ -26,12 +26,6 @@ func TestAgentCloneEditRenameDelete(t *testing.T) {
 			Skills: []string{"docs"},
 			MCPs:   []string{"github"},
 		},
-		MemoryRefs: []config.MemoryRef{{
-			ID:    "standards",
-			Scope: string(config.ScopeProject),
-			Path:  "/memory/standards.md",
-			Mode:  "read",
-		}},
 	}
 	if err := config.WriteAgent(&source, config.ScopeGlobal, project); err != nil {
 		t.Fatalf("write source agent: %v", err)
@@ -48,9 +42,13 @@ func TestAgentCloneEditRenameDelete(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read cloned agent: %v", err)
 	}
-	if cloned.Description != source.Description || !reflect.DeepEqual(cloned.Capabilities.Skills, source.Capabilities.Skills) || len(cloned.MemoryRefs) != 1 {
+	if cloned.Description != source.Description || !reflect.DeepEqual(cloned.Capabilities.Skills, source.Capabilities.Skills) {
 		t.Fatalf("clone did not preserve source fields: %#v", cloned)
 	}
+	if cloned.ID == "" || cloned.ID == source.ID {
+		t.Fatalf("clone should create a distinct stable agent id: source=%q cloned=%q", source.ID, cloned.ID)
+	}
+	clonedID := cloned.ID
 
 	out, err = executeCommand(
 		"agent", "edit", "copy-agent",
@@ -61,7 +59,6 @@ func TestAgentCloneEditRenameDelete(t *testing.T) {
 		"--skills", "test,docs",
 		"--mcps", "github",
 		"--system", "system prompt",
-		"--memory", "edited-memory:project:/memory/edited.md:append",
 	)
 	if err != nil {
 		t.Fatalf("agent edit returned error: %v\n%s", err, out)
@@ -78,9 +75,7 @@ func TestAgentCloneEditRenameDelete(t *testing.T) {
 		!reflect.DeepEqual(edited.Runtime.Fallback, []string{"codex"}) ||
 		edited.ModelRun.Model != "gpt-5.4" ||
 		edited.ModelRun.ReasoningEffort != "high" ||
-		edited.Instructions.System != "system prompt" ||
-		len(edited.MemoryRefs) != 1 ||
-		edited.MemoryRefs[0].Mode != "append" {
+		edited.Instructions.System != "system prompt" {
 		t.Fatalf("unexpected edited agent: %#v", edited)
 	}
 
@@ -120,6 +115,13 @@ func TestAgentCloneEditRenameDelete(t *testing.T) {
 	}
 	if renamedEnv.RuntimeAgents["codex"].Primary != "renamed-agent" {
 		t.Fatalf("rename did not update env reference: %#v", renamedEnv.RuntimeAgents)
+	}
+	renamed, err := config.ReadAgent("renamed-agent", config.ScopeGlobal, project)
+	if err != nil {
+		t.Fatalf("read renamed agent: %v", err)
+	}
+	if renamed.ID != clonedID {
+		t.Fatalf("rename changed agent id: before=%q after=%q", clonedID, renamed.ID)
 	}
 
 	out, err = executeCommand("agent", "delete", "renamed-agent")

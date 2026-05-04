@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"strings"
 	"testing"
@@ -51,13 +50,13 @@ func TestStage5AcceptanceSmokeFlow(t *testing.T) {
 	assertPathMissing(t, filepath.Join(project, ".avm"))
 	assertNoRegularFiles(t, claudeConfigDir)
 	assertManagedRuntimePathsMissing(t, acceptanceRuntimePaths{
-		codexHome:  config.RuntimeHomeDir(config.ActiveRef{Kind: config.ActiveKindEnv, Name: "all-runtimes"}, "codex"),
-		claudeHome: config.RuntimeHomeDir(config.ActiveRef{Kind: config.ActiveKindEnv, Name: "all-runtimes"}, "claude-code"),
+		codexHome:  filepath.Join(home, ".avm", "runtime-homes", "agents", "missing-codex-agent", "codex"),
+		claudeHome: filepath.Join(home, ".avm", "runtime-homes", "agents", "missing-claude-agent", "claude"),
 		clineHome:  clineDataHome,
 		project:    project,
 	})
 
-	createAcceptanceAgent(t, "codex-agent", "codex", "--model", "gpt-5.4", "--reasoning", "medium", "--skills", "test", "--mcps", "github", "--memory", "acceptance-standards:project:/memory/acceptance-standards.md:read")
+	createAcceptanceAgent(t, "codex-agent", "codex", "--model", "gpt-5.4", "--reasoning", "medium", "--skills", "test", "--mcps", "github")
 	createAcceptanceAgent(t, "claude-agent", "claude-code", "--model", "claude-sonnet", "--reasoning", "medium", "--skills", "test")
 	createAcceptanceAgent(t, "cline-agent", "cline", "--model", "cline-model", "--reasoning", "medium", "--skills", "test")
 	createAcceptanceAgent(t, "cursor-agent", "cursor", "--model", "cursor-model", "--reasoning", "medium", "--skills", "test")
@@ -74,7 +73,7 @@ func TestStage5AcceptanceSmokeFlow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("agent show returned error: %v", err)
 	}
-	for _, want := range []string{"name: codex-agent", "preferred: codex", "model: gpt-5.4", "id: acceptance-standards"} {
+	for _, want := range []string{"name: codex-agent", "preferred: codex", "model: gpt-5.4"} {
 		assertContains(t, showOut, want)
 	}
 
@@ -90,22 +89,9 @@ func TestStage5AcceptanceSmokeFlow(t *testing.T) {
 	}
 	assertContains(t, envOut, "created env all-runtimes")
 
-	memoryBefore := listRegularFiles(t, filepath.Join(home, ".avm", "memory"))
-	memorySource := acceptanceTestdataPath(t, "memory", "acceptance-standards.md")
-	memoryOut, err := executeCommand("memory", "import", "--from", memorySource, "--dry-run", "--format", "json")
-	if err != nil {
-		t.Fatalf("memory import dry-run returned error: %v", err)
-	}
-	for _, want := range []string{`"dry_run": true`, `"id": "acceptance-standards"`, `"status": "new"`} {
-		assertContains(t, memoryOut, want)
-	}
-	memoryAfter := listRegularFiles(t, filepath.Join(home, ".avm", "memory"))
-	if strings.Join(memoryAfter, "\n") != strings.Join(memoryBefore, "\n") {
-		t.Fatalf("memory import dry-run wrote formal memory files:\nbefore: %#v\nafter: %#v", memoryBefore, memoryAfter)
-	}
 	assertManagedRuntimePathsMissing(t, acceptanceRuntimePaths{
-		codexHome:  config.RuntimeHomeDir(config.ActiveRef{Kind: config.ActiveKindEnv, Name: "all-runtimes"}, "codex"),
-		claudeHome: config.RuntimeHomeDir(config.ActiveRef{Kind: config.ActiveKindEnv, Name: "all-runtimes"}, "claude-code"),
+		codexHome:  agentRuntimeHomeForTest(t, "codex-agent", "codex"),
+		claudeHome: agentRuntimeHomeForTest(t, "claude-agent", "claude-code"),
 		clineHome:  clineDataHome,
 		project:    project,
 	})
@@ -125,10 +111,9 @@ func TestStage5AcceptanceSmokeFlow(t *testing.T) {
 		assertContains(t, useOut, want)
 	}
 
-	active := config.ActiveRef{Kind: config.ActiveKindEnv, Name: "all-runtimes"}
 	paths := acceptanceRuntimePaths{
-		codexHome:  config.RuntimeHomeDir(active, "codex"),
-		claudeHome: config.RuntimeHomeDir(active, "claude-code"),
+		codexHome:  agentRuntimeHomeForTest(t, "codex-agent", "codex"),
+		claudeHome: agentRuntimeHomeForTest(t, "claude-agent", "claude-code"),
 		clineHome:  clineDataHome,
 		project:    project,
 	}
@@ -415,16 +400,6 @@ func assertContains(t *testing.T, got, want string) {
 	if !strings.Contains(got, want) {
 		t.Fatalf("output missing %q:\n%s", want, got)
 	}
-}
-
-func acceptanceTestdataPath(t *testing.T, elems ...string) string {
-	t.Helper()
-	_, file, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("runtime.Caller failed")
-	}
-	parts := append([]string{filepath.Dir(file), "..", "..", "testdata", "acceptance"}, elems...)
-	return filepath.Clean(filepath.Join(parts...))
 }
 
 func currentWorkingDir(t *testing.T) string {

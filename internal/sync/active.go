@@ -91,7 +91,7 @@ func rebuildActive(resolved *config.ResolvedActivation, activeDir string, now ti
 }
 
 func buildActiveTree(root string, resolved *config.ResolvedActivation, now time.Time) error {
-	for _, dir := range []string{"agents", "skills", "mcps", "commands", "hooks", "memory", "render"} {
+	for _, dir := range []string{"agents", "skills", "mcps", "commands", "hooks", "render"} {
 		if err := os.MkdirAll(filepath.Join(root, dir), 0o700); err != nil {
 			return err
 		}

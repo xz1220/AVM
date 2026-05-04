@@ -336,12 +336,6 @@ func (r renderContext) renderRulesFile() string {
 	if len(r.input.Capabilities.Toolsets) > 0 {
 		sections = append(sections, bulletSection("Requested toolsets", shared.ToolsetLines(r.input.Capabilities.Toolsets)))
 	}
-	if len(r.input.Agent.MemoryRefs) > 0 {
-		sections = append(sections, bulletSection("AVM memory refs", shared.MemoryRefLines(r.input.Agent.MemoryRefs)))
-	}
-	if len(r.input.Memory) > 0 {
-		sections = append(sections, bulletSection("Portable memory", shared.PortableMemoryLines(r.input.Memory)))
-	}
 	if mcpLines := r.mcpInstructionLines(); len(mcpLines) > 0 {
 		sections = append(sections, bulletSection("MCP servers configured by AVM", mcpLines))
 	}
@@ -448,12 +442,6 @@ func (r renderContext) mappings() []adapter.FieldMapping {
 			TargetPath: targetRules,
 			Status:     adapter.MappingRenderedAsInstructions,
 			Reason:     "Cline consumes workspace rules as instruction text.",
-		},
-		{
-			SourcePath: "agent.memory_refs",
-			TargetPath: targetRules,
-			Status:     adapter.MappingRenderedAsInstructions,
-			Reason:     "Portable memory references are rendered as Cline rules in Phase 1.",
 		},
 		{
 			SourcePath: "project.clinerules",
@@ -577,15 +565,6 @@ func (r renderContext) mappings() []adapter.FieldMapping {
 			Reason:     "Cline adapter Phase 1 does not enforce AVM toolset modes natively.",
 		})
 	}
-	if len(r.input.Memory) > 0 {
-		mappings = append(mappings, adapter.FieldMapping{
-			SourcePath: "memory",
-			TargetPath: targetRules,
-			Status:     adapter.MappingRenderedAsInstructions,
-			Reason:     "Portable memory content is referenced from Cline rules in Phase 1.",
-		})
-	}
-
 	for _, server := range shared.SortedMCPServers(r.input.Capabilities.MCPServers) {
 		source := "capabilities.mcp_servers." + server.Name
 		if shared.MCPServerRenderable(server) {

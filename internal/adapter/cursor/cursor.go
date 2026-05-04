@@ -355,7 +355,6 @@ func (r renderContext) mappings() []adapter.FieldMapping {
 
 	mappings = append(mappings, r.modelMappings()...)
 	mappings = append(mappings, r.permissionMappings()...)
-	mappings = append(mappings, r.memoryMappings()...)
 	mappings = append(mappings, r.capabilityMappings()...)
 	return mappings
 }
@@ -393,17 +392,6 @@ func (r renderContext) permissionMappings() []adapter.FieldMapping {
 	}
 	if len(r.input.Agent.Permissions.AdditionalDirectories) > 0 {
 		mappings = append(mappings, unsupported("agent.permissions.additional_directories", "Cursor Phase 1 PoC cannot grant additional writable directories."))
-	}
-	return mappings
-}
-
-func (r renderContext) memoryMappings() []adapter.FieldMapping {
-	var mappings []adapter.FieldMapping
-	if len(r.input.Agent.MemoryRefs) > 0 {
-		mappings = append(mappings, unsupported("agent.memory_refs", "Cursor Phase 1 PoC does not provide reliable portable memory scoping."))
-	}
-	if len(r.input.Memory) > 0 {
-		mappings = append(mappings, unsupported("memory", "Cursor Phase 1 PoC does not write native memory."))
 	}
 	return mappings
 }
@@ -450,9 +438,6 @@ func (r renderContext) warnings() []string {
 	}
 	if hasPermissionConfig(r.input.Agent.Permissions) {
 		warnings = append(warnings, "cursor partial support does not enforce permissions; agent.permissions.* mappings are unsupported")
-	}
-	if len(r.input.Agent.MemoryRefs) > 0 || len(r.input.Memory) > 0 {
-		warnings = append(warnings, "cursor partial support does not render portable memory; memory mappings are unsupported")
 	}
 	if hasNonMCPCapabilities(r.input.Capabilities) {
 		warnings = append(warnings, "cursor partial support renders MCP only; non-MCP capability mappings are unsupported")

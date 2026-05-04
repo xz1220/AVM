@@ -1,4 +1,5 @@
 name: backend-coder
+id: agt_11111111111111111111111111111111
 description: Backend implementation agent
 version: "1.0.0"
 source_scope: global
@@ -20,7 +21,7 @@ instructions:
   developer: |
     Prefer small, reviewable changes.
   references:
-    - memory/project/backend-standards.md
+    - docs/backend-standards.md
 model_run:
   model: gpt-5.4
   reasoning_effort: medium
@@ -50,11 +51,6 @@ permissions:
     - "Bash(git *)"
   deny:
     - "Bash(rm -rf *)"
-memory_refs:
-  - id: backend-standards
-    scope: project
-    path: ~/.avm/memory/project/backend-standards.md
-    mode: read
 runtime_extensions:
   claude-code:
     agent_type: primary

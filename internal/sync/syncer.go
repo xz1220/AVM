@@ -13,6 +13,7 @@ import (
 
 	"github.com/xz1220/agent-vm/internal/adapter"
 	"github.com/xz1220/agent-vm/internal/backup"
+	"github.com/xz1220/agent-vm/internal/boundary"
 	"github.com/xz1220/agent-vm/internal/config"
 	"github.com/xz1220/agent-vm/internal/state"
 )
@@ -25,12 +26,13 @@ func (r StaticAdapterRegistry) Get(runtime string) (adapter.Adapter, bool) {
 }
 
 type Syncer struct {
-	Registry AdapterRegistry
-	Now      func() time.Time
+	Registry         AdapterRegistry
+	BoundaryRegistry *boundary.Registry
+	Now              func() time.Time
 }
 
 func NewSyncer(registry AdapterRegistry) *Syncer {
-	return &Syncer{Registry: registry}
+	return &Syncer{Registry: registry, BoundaryRegistry: boundary.NewRegistry()}
 }
 
 func (s *Syncer) SyncActivation(ctx context.Context, resolved *config.ResolvedActivation, opts Options) (*Result, error) {
@@ -46,11 +48,15 @@ func (s *Syncer) SyncActivation(ctx context.Context, resolved *config.ResolvedAc
 
 	opts = defaultOptions(opts)
 	now := s.now()
-	runtimeHomes := runtimeHomesForActivation(resolved.Active, resolved.Targets, opts.RuntimeHomes)
+	boundaries, err := s.boundariesForActivation(resolved, opts.RuntimeHomes)
+	if err != nil {
+		return nil, err
+	}
 	inputs, err := adapter.RenderInputsFromResolved(resolved, adapter.RenderInputOptions{
 		ProjectRoot:  opts.ProjectRoot,
 		ActiveDir:    opts.ActiveDir,
-		RuntimeHomes: runtimeHomes,
+		Boundaries:   boundaries,
+		RuntimeHomes: opts.RuntimeHomes,
 	})
 	if err != nil {
 		return nil, err
@@ -134,8 +140,10 @@ func (s *Syncer) renderTarget(ctx context.Context, input adapter.RenderInput, ac
 		Status:      TargetStatusFailed,
 		Active:      active,
 		AgentName:   input.Agent.Name,
+		Boundary:    input.Boundary,
 		RuntimeHome: input.RuntimeHome,
 	}
+	targetResult.Warnings = append(targetResult.Warnings, input.Boundary.Warnings...)
 
 	adp, ok := s.Registry.Get(input.Runtime)
 	if !ok || adp == nil {
@@ -146,6 +154,15 @@ func (s *Syncer) renderTarget(ctx context.Context, input adapter.RenderInput, ac
 
 	if input.RuntimeHome != "" && !opts.DryRun {
 		if err := os.MkdirAll(input.RuntimeHome, 0o700); err != nil {
+			targetResult.Error = err.Error()
+			return targetResult
+		}
+		sidecars, err := captureRuntimeHomeSidecars(input.Runtime, input.RuntimeHome)
+		if err != nil {
+			targetResult.Error = err.Error()
+			return targetResult
+		}
+		if err := restoreRuntimeHomeSidecars(input.RuntimeHome, sidecars); err != nil {
 			targetResult.Error = err.Error()
 			return targetResult
 		}
@@ -199,21 +216,7 @@ func (s *Syncer) renderTarget(ctx context.Context, input adapter.RenderInput, ac
 		return targetResult
 	}
 
-	if input.RuntimeHome != "" {
-		sidecars, err := captureRuntimeHomeSidecars(input.Runtime, input.RuntimeHome)
-		if err != nil {
-			targetResult.Error = err.Error()
-			return targetResult
-		}
-		if err := resetRuntimeHome(input.RuntimeHome); err != nil {
-			targetResult.Error = err.Error()
-			return targetResult
-		}
-		if err := restoreRuntimeHomeSidecars(input.RuntimeHome, sidecars); err != nil {
-			targetResult.Error = err.Error()
-			return targetResult
-		}
-	} else {
+	if input.RuntimeHome == "" {
 		if _, err := backup.BackupManagedPaths(input.Runtime, managedPaths, opts.BackupDir, now); err != nil {
 			targetResult.Error = err.Error()
 			return targetResult
@@ -274,6 +277,7 @@ func runtimeStateFromTarget(target TargetResult, managedPaths []adapter.ManagedP
 		Status:      state.RuntimeStatus(target.Status),
 		Active:      target.Active,
 		AgentName:   target.AgentName,
+		Boundary:    state.RuntimeBoundaryStateFromBoundary(target.Boundary),
 		RuntimeHome: target.RuntimeHome,
 		Mappings:    state.MappingStates(target.Mappings),
 		Warnings:    append([]string(nil), target.Warnings...),
@@ -347,7 +351,22 @@ func cloneRuntimeStates(in map[string]state.RuntimeState) map[string]state.Runti
 		runtimeState.ManagedPaths = append([]state.ManagedPathState(nil), runtimeState.ManagedPaths...)
 		runtimeState.Mappings = append([]state.MappingState(nil), runtimeState.Mappings...)
 		runtimeState.Warnings = append([]string(nil), runtimeState.Warnings...)
+		runtimeState.Boundary.Env = cloneStringMap(runtimeState.Boundary.Env)
+		runtimeState.Boundary.RunEnv = cloneStringMap(runtimeState.Boundary.RunEnv)
+		runtimeState.Boundary.Paths = cloneStringMap(runtimeState.Boundary.Paths)
+		runtimeState.Boundary.Warnings = append([]string(nil), runtimeState.Boundary.Warnings...)
 		out[runtime] = runtimeState
+	}
+	return out
+}
+
+func cloneStringMap(in map[string]string) map[string]string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(in))
+	for key, value := range in {
+		out[key] = value
 	}
 	return out
 }
@@ -492,49 +511,35 @@ func defaultOptions(opts Options) Options {
 	return opts
 }
 
-func runtimeHomesForActivation(active config.ActiveRef, targets []string, overrides map[string]string) map[string]string {
-	homes := make(map[string]string)
-	for runtime, home := range overrides {
-		if home != "" {
-			homes[runtime] = home
+func (s *Syncer) boundariesForActivation(resolved *config.ResolvedActivation, overrides map[string]string) (map[string]boundary.RuntimeBoundary, error) {
+	if resolved == nil || len(resolved.RuntimeAgents) == 0 {
+		return nil, nil
+	}
+	registry := s.BoundaryRegistry
+	if registry == nil {
+		registry = boundary.NewRegistry()
+	}
+	boundaries := make(map[string]boundary.RuntimeBoundary, len(resolved.RuntimeAgents))
+	for runtime, agent := range resolved.RuntimeAgents {
+		agentID := agent.ID
+		if agentID == "" {
+			agentID = config.NewAgentID()
 		}
-	}
-	for _, runtime := range targets {
-		if !runtimeUsesIsolatedHome(runtime) {
-			continue
+		runtimeBoundary, err := registry.ResolveBoundary(boundary.Input{
+			Runtime:   runtime,
+			AgentID:   agentID,
+			AgentName: agent.Name,
+			Overrides: overrides,
+		})
+		if err != nil {
+			return nil, err
 		}
-		if homes[runtime] == "" {
-			homes[runtime] = config.RuntimeHomeDir(active, runtime)
-		}
+		boundaries[runtime] = runtimeBoundary
 	}
-	if len(homes) == 0 {
-		return nil
+	if len(boundaries) == 0 {
+		return nil, nil
 	}
-	return homes
-}
-
-func runtimeUsesIsolatedHome(runtime string) bool {
-	switch runtime {
-	case "codex", "claude-code", "opencode":
-		return true
-	default:
-		return false
-	}
-}
-
-func resetRuntimeHome(home string) error {
-	if home == "" {
-		return nil
-	}
-	clean := filepath.Clean(home)
-	parent := filepath.Dir(clean)
-	if err := os.MkdirAll(parent, 0o700); err != nil {
-		return err
-	}
-	if err := os.RemoveAll(clean); err != nil {
-		return err
-	}
-	return os.MkdirAll(clean, 0o700)
+	return boundaries, nil
 }
 
 type runtimeHomeSidecar struct {

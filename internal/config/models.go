@@ -6,8 +6,6 @@ const (
 	ScopeGlobal  Scope = "global"
 	ScopeProject Scope = "project"
 	ScopeLocal   Scope = "local"
-	ScopeUser    Scope = "user"
-	ScopeTeam    Scope = "team"
 )
 
 const (
@@ -59,6 +57,7 @@ type ShellPromptSettings struct {
 
 type AgentProfile struct {
 	Name              string                    `yaml:"name"`
+	ID                string                    `yaml:"id,omitempty"`
 	Description       string                    `yaml:"description,omitempty"`
 	Version           string                    `yaml:"version"`
 	SourceScope       string                    `yaml:"source_scope"`
@@ -69,7 +68,6 @@ type AgentProfile struct {
 	IOContract        IOContract                `yaml:"io_contract,omitempty"`
 	Capabilities      CapabilityRefs            `yaml:"capabilities,omitempty"`
 	Permissions       Permissions               `yaml:"permissions"`
-	MemoryRefs        []MemoryRef               `yaml:"memory_refs,omitempty"`
 	LifecycleHooks    LifecycleHooks            `yaml:"lifecycle_hooks,omitempty"`
 	RuntimeExtensions map[string]map[string]any `yaml:"runtime_extensions,omitempty"`
 }
@@ -147,13 +145,6 @@ type Permissions struct {
 	AdditionalDirectories []string `yaml:"additional_directories,omitempty"`
 }
 
-type MemoryRef struct {
-	ID    string `yaml:"id"`
-	Scope string `yaml:"scope"`
-	Path  string `yaml:"path"`
-	Mode  string `yaml:"mode"`
-}
-
 type LifecycleHooks struct {
 	BeforeRun []string `yaml:"before_run,omitempty"`
 	AfterRun  []string `yaml:"after_run,omitempty"`
@@ -173,31 +164,9 @@ type RuntimeAgent struct {
 	Available []string `yaml:"available,omitempty"`
 }
 
-type PortableMemory struct {
-	ID          string            `yaml:"id"`
-	Scope       string            `yaml:"scope"`
-	Format      string            `yaml:"format"`
-	Path        string            `yaml:"path"`
-	Description string            `yaml:"description,omitempty"`
-	Mode        string            `yaml:"mode"`
-	Tags        []string          `yaml:"tags,omitempty"`
-	Origin      MemoryOrigin      `yaml:"origin,omitempty"`
-	WritePolicy MemoryWritePolicy `yaml:"write_policy,omitempty"`
-}
-
-type MemoryOrigin struct {
-	Type       string `yaml:"type,omitempty"`
-	Runtime    string `yaml:"runtime,omitempty"`
-	SourcePath string `yaml:"source_path,omitempty"`
-}
-
-type MemoryWritePolicy struct {
-	AllowPush           bool `yaml:"allow_push"`
-	RequireConfirmation bool `yaml:"require_confirmation"`
-}
-
 type AgentSummary struct {
 	Name        string
+	ID          string
 	Description string
 	Version     string
 	SourceScope string
@@ -209,14 +178,6 @@ type EnvironmentSummary struct {
 	Description string
 	Version     string
 	Path        string
-}
-
-type PortableMemorySummary struct {
-	ID          string
-	Scope       string
-	Format      string
-	Path        string
-	Description string
 }
 
 func (c *GlobalConfig) ApplyDefaults() {
@@ -250,6 +211,9 @@ func (c *GlobalConfig) ApplyDefaults() {
 }
 
 func (a *AgentProfile) ApplyDefaults(defaultSourceScope string) {
+	if a.ID == "" {
+		a.ID = NewAgentID()
+	}
 	if a.Version == "" {
 		a.Version = "1.0.0"
 	}
@@ -282,17 +246,5 @@ func (a *AgentProfile) ApplyDefaults(defaultSourceScope string) {
 func (e *Environment) ApplyDefaults() {
 	if e.Version == "" {
 		e.Version = "1.0.0"
-	}
-}
-
-func (m *PortableMemory) ApplyDefaults() {
-	if m.Format == "" {
-		m.Format = "markdown"
-	}
-	if m.Mode == "" {
-		m.Mode = "read"
-	}
-	if m.Origin.Type == "" {
-		m.Origin.Type = "file"
 	}
 }

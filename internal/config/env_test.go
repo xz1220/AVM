@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestEnvironmentYAMLRejectsCapabilitiesAndMemoryLayers(t *testing.T) {
+func TestEnvironmentYAMLRejectsCapabilities(t *testing.T) {
 	home := t.TempDir()
 	project := t.TempDir()
 	t.Setenv("HOME", home)
@@ -27,20 +27,6 @@ capabilities:
 		t.Fatalf("expected capabilities decode error for global env, got %v", err)
 	}
 
-	writeEnvTestYAML(t, EnvPath("bad-memory-layers"), `name: bad-memory-layers
-version: 1.0.0
-runtime_agents:
-  codex:
-    primary: default
-targets:
-  - codex
-memory_layers:
-  - project
-`)
-	if _, err := ReadEnvironment("bad-memory-layers"); err == nil || !strings.Contains(err.Error(), "memory_layers") {
-		t.Fatalf("expected memory_layers decode error for global env, got %v", err)
-	}
-
 	writeEnvTestYAML(t, ProjectEnvPath(project), `extends: backend-dev
 capabilities:
   skills:
@@ -48,14 +34,6 @@ capabilities:
 `)
 	if _, err := ReadProjectOverride(project); err == nil || !strings.Contains(err.Error(), "capabilities") {
 		t.Fatalf("expected capabilities decode error for project env override, got %v", err)
-	}
-
-	writeEnvTestYAML(t, ProjectEnvPath(project), `extends: backend-dev
-memory_layers:
-  - project
-`)
-	if _, err := ReadProjectOverride(project); err == nil || !strings.Contains(err.Error(), "memory_layers") {
-		t.Fatalf("expected memory_layers decode error for project env override, got %v", err)
 	}
 }
 

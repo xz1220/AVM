@@ -409,6 +409,7 @@ func agentFromCreateSource(source createSource, values resolvedCreateValues) *co
 
 func agentFromExistingProfile(source *config.AgentProfile, values resolvedCreateValues) *config.AgentProfile {
 	agent := cloneAgentProfile(source)
+	agent.ID = ""
 	agent.Name = values.Name
 	agent.SourceScope = string(values.Scope)
 	if agent.Identity.DisplayName == "" || agent.Identity.DisplayName == source.Name {
@@ -440,7 +441,6 @@ func cloneAgentProfile(source *config.AgentProfile) *config.AgentProfile {
 	agent.Permissions.Allow = append([]string(nil), source.Permissions.Allow...)
 	agent.Permissions.Deny = append([]string(nil), source.Permissions.Deny...)
 	agent.Permissions.AdditionalDirectories = append([]string(nil), source.Permissions.AdditionalDirectories...)
-	agent.MemoryRefs = append([]config.MemoryRef(nil), source.MemoryRefs...)
 	agent.LifecycleHooks.BeforeRun = append([]string(nil), source.LifecycleHooks.BeforeRun...)
 	agent.LifecycleHooks.AfterRun = append([]string(nil), source.LifecycleHooks.AfterRun...)
 	agent.RuntimeExtensions = cloneRuntimeExtensionsCreate(source.RuntimeExtensions)

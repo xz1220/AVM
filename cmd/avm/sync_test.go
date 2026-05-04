@@ -71,7 +71,7 @@ func TestSyncCommandReplacesExternalChangeInsideIsolatedRuntimeHome(t *testing.T
 		t.Fatalf("use returned error: %v", err)
 	}
 
-	codexHome := config.RuntimeHomeDir(config.ActiveRef{Kind: config.ActiveKindProfile, Name: "backend-coder"}, "codex")
+	codexHome := agentRuntimeHomeForTest(t, "backend-coder", "codex")
 	rolePath := filepath.Join(codexHome, "agents", "backend-coder.toml")
 	if err := os.WriteFile(rolePath, []byte("external change\n"), 0o600); err != nil {
 		t.Fatalf("modify codex role: %v", err)

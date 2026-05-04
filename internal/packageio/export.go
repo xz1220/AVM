@@ -30,13 +30,12 @@ type ExportResult struct {
 }
 
 type packageBuilder struct {
-	cwd        string
-	files      map[string][]byte
-	agents     map[string]struct{}
-	envs       map[string]struct{}
-	memoryRefs map[MemoryRefEntry]struct{}
-	caps       capabilitySets
-	warnings   []string
+	cwd      string
+	files    map[string][]byte
+	agents   map[string]struct{}
+	envs     map[string]struct{}
+	caps     capabilitySets
+	warnings []string
 }
 
 type capabilitySets struct {
@@ -78,7 +77,6 @@ func ExportPackage(opts ExportOptions) (*ExportResult, error) {
 		Agents:       sortedSet(builder.agents),
 		Envs:         sortedSet(builder.envs),
 		Capabilities: builder.caps.manifest(),
-		MemoryRefs:   sortedMemoryRefs(builder.memoryRefs),
 		IncludeFiles: sortedFileNames(builder.files),
 	}
 	if manifest.Capabilities.empty() {
@@ -97,11 +95,10 @@ func ExportPackage(opts ExportOptions) (*ExportResult, error) {
 
 func newPackageBuilder(cwd string) *packageBuilder {
 	return &packageBuilder{
-		cwd:        cwd,
-		files:      make(map[string][]byte),
-		agents:     make(map[string]struct{}),
-		envs:       make(map[string]struct{}),
-		memoryRefs: make(map[MemoryRefEntry]struct{}),
+		cwd:    cwd,
+		files:  make(map[string][]byte),
+		agents: make(map[string]struct{}),
+		envs:   make(map[string]struct{}),
 		caps: capabilitySets{
 			skills:   make(map[string]struct{}),
 			mcps:     make(map[string]struct{}),
@@ -177,11 +174,6 @@ func (b *packageBuilder) addAgent(agent *config.AgentProfile, source string) err
 	}
 
 	b.addCapabilities(agent.Capabilities)
-	for _, ref := range agent.MemoryRefs {
-		if err := b.addMemoryRef(ref); err != nil {
-			return err
-		}
-	}
 	return nil
 }
 
@@ -230,52 +222,6 @@ func (b *packageBuilder) addCapabilityMetadata(kind, name string) {
 			b.warnings = append(b.warnings, err.Error())
 		}
 	}
-}
-
-func (b *packageBuilder) addMemoryRef(ref config.MemoryRef) error {
-	entry := MemoryRefEntry{ID: ref.ID, Scope: ref.Scope}
-	b.memoryRefs[entry] = struct{}{}
-
-	var contentCandidates []string
-	metadataPath := config.MemoryPath(ref.ID, config.Scope(ref.Scope))
-	if metadata, err := config.ReadPortableMemory(ref.ID, config.Scope(ref.Scope)); err == nil {
-		if err := b.addFile(packageMemoryPath(ref.Scope, filepath.Base(metadataPath)), metadataPath); err != nil {
-			return err
-		}
-		if metadata.Path != "" {
-			contentCandidates = append(contentCandidates, metadata.Path)
-		}
-	} else if !os.IsNotExist(err) {
-		return err
-	}
-	if ref.Path != "" {
-		contentCandidates = append(contentCandidates, ref.Path)
-	}
-
-	for _, candidate := range contentCandidates {
-		source := expandHome(candidate)
-		pkgPath, ok := memoryPackagePathForSource(source)
-		if !ok {
-			b.warnings = append(b.warnings, fmt.Sprintf("skipped memory file outside AVM memory dir: %s", candidate))
-			continue
-		}
-		if pkgPath == packageMemoryPath(ref.Scope, filepath.Base(metadataPath)) {
-			continue
-		}
-		if _, ok := b.files[pkgPath]; ok {
-			continue
-		}
-		if _, err := os.Stat(source); err != nil {
-			if !os.IsNotExist(err) {
-				return err
-			}
-			continue
-		}
-		if err := b.addFile(pkgPath, source); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 func (b *packageBuilder) addDirectory(sourceDir, packageDir string) error {
@@ -489,47 +435,6 @@ func envAgentNames(env *config.Environment) []string {
 	return sortedSet(seen)
 }
 
-func memoryPackagePathForSource(source string) (string, bool) {
-	rel, ok := relPathUnder(config.MemoryDir(), source)
-	if !ok {
-		return "", false
-	}
-	return path.Join("memory", filepath.ToSlash(rel)), true
-}
-
-func relPathUnder(root, target string) (string, bool) {
-	rootAbs, err := filepath.Abs(root)
-	if err != nil {
-		return "", false
-	}
-	targetAbs, err := filepath.Abs(target)
-	if err != nil {
-		return "", false
-	}
-	rel, err := filepath.Rel(rootAbs, targetAbs)
-	if err != nil {
-		return "", false
-	}
-	if rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return "", false
-	}
-	return rel, true
-}
-
-func expandHome(value string) string {
-	home, err := os.UserHomeDir()
-	if err != nil || home == "" {
-		home = strings.TrimSuffix(config.AvmDir(), string(filepath.Separator)+".avm")
-	}
-	if value == "~" {
-		return home
-	}
-	if strings.HasPrefix(value, "~/") {
-		return filepath.Join(home, strings.TrimPrefix(value, "~/"))
-	}
-	return value
-}
-
 func isStructuredMetadata(source string) bool {
 	switch strings.ToLower(filepath.Ext(source)) {
 	case ".yaml", ".yml", ".json", ".toml":
@@ -594,10 +499,6 @@ func packageRegistryPath(kind, name string) string {
 	return path.Join("registry", kind, name)
 }
 
-func packageMemoryPath(scope, name string) string {
-	return path.Join("memory", scope, name)
-}
-
 func sortedFileNames(files map[string][]byte) []string {
 	names := make([]string, 0, len(files))
 	for name := range files {
@@ -613,20 +514,6 @@ func sortedSet(values map[string]struct{}) []string {
 		out = append(out, value)
 	}
 	sort.Strings(out)
-	return out
-}
-
-func sortedMemoryRefs(values map[MemoryRefEntry]struct{}) []MemoryRefEntry {
-	out := make([]MemoryRefEntry, 0, len(values))
-	for value := range values {
-		out = append(out, value)
-	}
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].Scope == out[j].Scope {
-			return out[i].ID < out[j].ID
-		}
-		return out[i].Scope < out[j].Scope
-	})
 	return out
 }
 

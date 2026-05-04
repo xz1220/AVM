@@ -66,7 +66,7 @@ func TestPlanIsDeterministicAndPreservesEnvReferences(t *testing.T) {
 	}
 
 	ruleContent := operationContent(t, first, "cursor-avm-rule")
-	if strings.Index(ruleContent, "/active/memory/a.md") > strings.Index(ruleContent, "/active/memory/z.md") {
+	if strings.Index(ruleContent, "/active/docs/a.md") > strings.Index(ruleContent, "/active/docs/z.md") {
 		t.Fatalf("instruction references were not sorted deterministically:\n%s", ruleContent)
 	}
 	for _, expected := range []string{
@@ -116,8 +116,6 @@ func TestPlanMappingsCoverPartialUnsupportedIgnoredAndNativeFields(t *testing.T)
 	assertMapping(t, plan, "agent.model.temperature", adapter.MappingUnsupported)
 	assertMapping(t, plan, "agent.permissions.approval", adapter.MappingUnsupported)
 	assertMapping(t, plan, "agent.permissions.additional_directories", adapter.MappingUnsupported)
-	assertMapping(t, plan, "agent.memory_refs", adapter.MappingUnsupported)
-	assertMapping(t, plan, "memory", adapter.MappingUnsupported)
 	assertMapping(t, plan, "capabilities.skills", adapter.MappingUnsupported)
 	assertMapping(t, plan, "capabilities.commands", adapter.MappingUnsupported)
 	assertMapping(t, plan, "capabilities.hooks", adapter.MappingUnsupported)
@@ -126,7 +124,7 @@ func TestPlanMappingsCoverPartialUnsupportedIgnoredAndNativeFields(t *testing.T)
 	assertMapping(t, plan, "capabilities.mcp_servers.missing", adapter.MappingUnsupported)
 	assertMapping(t, plan, "project..cursorrules", adapter.MappingIgnored)
 
-	for _, expected := range []string{"model", "permissions", "memory", "non-MCP capability"} {
+	for _, expected := range []string{"model", "permissions", "non-MCP capability"} {
 		if !containsSubstring(plan.Warnings, expected) {
 			t.Fatalf("warnings missing %q: %#v", expected, plan.Warnings)
 		}
@@ -303,8 +301,8 @@ func richInput(projectRoot string) adapter.RenderInput {
 				System:    "You implement backend changes with tests.",
 				Developer: "Prefer small, reviewable changes.",
 				References: []string{
-					"/active/memory/z.md",
-					"/active/memory/a.md",
+					"/active/docs/z.md",
+					"/active/docs/a.md",
 				},
 			},
 			Model: adapter.ModelConfig{
@@ -322,10 +320,6 @@ func richInput(projectRoot string) adapter.RenderInput {
 				Deny: []string{
 					"Bash(rm -rf *)",
 				},
-			},
-			MemoryRefs: []adapter.MemoryRef{
-				{ID: "z-memory", Scope: "project", Path: "/active/memory/z.md", Mode: "read"},
-				{ID: "a-memory", Scope: "project", Path: "/active/memory/a.md", Mode: "read"},
 			},
 		},
 		Capabilities: adapter.CapabilitySet{
@@ -349,10 +343,6 @@ func richInput(projectRoot string) adapter.RenderInput {
 				{Name: "browser", Mode: "disabled"},
 				{Name: "shell", Mode: "limited"},
 			},
-		},
-		Memory: []adapter.PortableMemory{
-			{ID: "z-memory", Scope: "project", Path: "/active/memory/z.md", Mode: "read"},
-			{ID: "a-memory", Scope: "project", Path: "/active/memory/a.md", Mode: "read"},
 		},
 		ProjectRoot: projectRoot,
 	}

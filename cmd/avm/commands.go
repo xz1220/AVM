@@ -14,13 +14,13 @@ func addCommands(root *cobra.Command) {
 		newSkillCommand(),
 		newAgentCommand(),
 		newEnvCommand(),
-		newMemoryCommand(),
 		newActivateCommand(),
 		newUseCommand(),
 		newStatusCommand(),
 		newShellCommand(),
 		newDeactivateCommand(),
 		newSyncCommand(),
+		newRunCommand(),
 	)
 }
 

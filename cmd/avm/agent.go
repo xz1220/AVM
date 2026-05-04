@@ -10,6 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/xz1220/agent-vm/internal/adapter"
+	"github.com/xz1220/agent-vm/internal/boundary"
 	"github.com/xz1220/agent-vm/internal/config"
 	avmruntime "github.com/xz1220/agent-vm/internal/runtime"
 	"gopkg.in/yaml.v3"
@@ -81,7 +82,6 @@ func newAgentCreateCommand() *cobra.Command {
 	cmd.Flags().String("reasoning", "", "reasoning effort override")
 	cmd.Flags().StringSlice("skills", nil, "skills to attach")
 	cmd.Flags().StringSlice("mcps", nil, "MCP servers to attach")
-	cmd.Flags().StringSlice("memory", nil, "portable memory refs to attach")
 	return cmd
 }
 
@@ -148,14 +148,6 @@ func runAgentCreate(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	memoryValues, err := cmd.Flags().GetStringSlice("memory")
-	if err != nil {
-		return err
-	}
-	memoryRefs, err := parseMemoryRefs(memoryValues)
-	if err != nil {
-		return err
-	}
 	if exists, err := config.AgentExists(args[0], scope, cwd); err != nil {
 		return err
 	} else if exists {
@@ -176,7 +168,6 @@ func runAgentCreate(cmd *cobra.Command, args []string) error {
 			Skills: normalizeStringList(skills),
 			MCPs:   normalizeStringList(mcps),
 		},
-		MemoryRefs: memoryRefs,
 	}
 	if err := config.WriteAgent(agent, scope, cwd); err != nil {
 		return err
@@ -263,12 +254,20 @@ func buildAgentMappingPreview(ctx context.Context, agent *config.AgentProfile, r
 		return nil, fmt.Errorf("runtime %q adapter not registered", runtime)
 	}
 
+	runtimeBoundary, err := boundary.Resolve(boundary.Input{
+		Runtime:   runtime,
+		AgentID:   agent.ID,
+		AgentName: agent.Name,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("runtime %q boundary failed: %w", runtime, err)
+	}
 	resolved := resolvedActivationForAgentPreview(agent, runtime)
 	input, err := adapter.RenderInputFromResolved(resolved, runtime, adapter.RenderInputOptions{
 		ProjectRoot: cwd,
 		ActiveDir:   config.ActiveDir(),
-		RuntimeHomes: map[string]string{
-			runtime: config.RuntimeHomeDir(resolved.Active, runtime),
+		Boundaries: map[string]boundary.RuntimeBoundary{
+			runtime: runtimeBoundary,
 		},
 	})
 	if err != nil {
@@ -461,41 +460,6 @@ func scopeFromFlag(cmd *cobra.Command) (config.Scope, error) {
 	default:
 		return "", fmt.Errorf("invalid scope %q", value)
 	}
-}
-
-func parseMemoryRefs(values []string) ([]config.MemoryRef, error) {
-	values = normalizeStringList(values)
-	refs := make([]config.MemoryRef, 0, len(values))
-	for _, value := range values {
-		parts := strings.Split(value, ":")
-		if len(parts) > 4 {
-			return nil, fmt.Errorf("invalid memory ref %q", value)
-		}
-
-		id := strings.TrimSpace(parts[0])
-		scope := string(config.ScopeProject)
-		path := ""
-		mode := "read"
-		if len(parts) > 1 && strings.TrimSpace(parts[1]) != "" {
-			scope = strings.TrimSpace(parts[1])
-		}
-		if len(parts) > 2 {
-			path = strings.TrimSpace(parts[2])
-		}
-		if len(parts) > 3 && strings.TrimSpace(parts[3]) != "" {
-			mode = strings.TrimSpace(parts[3])
-		}
-		if path == "" {
-			path = config.MemoryPath(id, config.Scope(scope))
-		}
-		refs = append(refs, config.MemoryRef{
-			ID:    id,
-			Scope: scope,
-			Path:  path,
-			Mode:  mode,
-		})
-	}
-	return refs, nil
 }
 
 func normalizeStringList(values []string) []string {

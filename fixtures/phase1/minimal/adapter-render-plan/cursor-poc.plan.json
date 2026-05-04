@@ -72,12 +72,6 @@
       "reason": "Cursor PoC does not promise permission mapping."
     },
     {
-      "source_path": "agents.backend-coder.memory_refs",
-      "target_path": "",
-      "status": "unsupported",
-      "reason": "Cursor PoC does not provide reliable portable memory scoping."
-    },
-    {
       "source_path": "agents.backend-coder.capabilities.skills",
       "target_path": "",
       "status": "unsupported",

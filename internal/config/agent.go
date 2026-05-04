@@ -19,12 +19,18 @@ func ReadAgent(name string, scope Scope, cwd string) (*AgentProfile, error) {
 	if err := readYAML(path, &agent); err != nil {
 		return nil, err
 	}
+	missingID := agent.ID == ""
 	agent.ApplyDefaults(defaultSourceScopeForAgent(scope))
 	if agent.Name != name {
 		return nil, fieldError(path, "name", "expected %q, got %q", name, agent.Name)
 	}
 	if err := validateAgentProfile(&agent, path); err != nil {
 		return nil, err
+	}
+	if missingID {
+		if err := writeYAML(path, &agent); err != nil {
+			return nil, err
+		}
 	}
 	return &agent, nil
 }
@@ -109,12 +115,19 @@ func ListAgents(scope Scope, cwd string) ([]AgentSummary, error) {
 		if err := readYAML(path, &agent); err != nil {
 			return nil, err
 		}
+		missingID := agent.ID == ""
 		agent.ApplyDefaults(defaultSourceScopeForAgent(scope))
 		if err := validateAgentProfile(&agent, path); err != nil {
 			return nil, err
 		}
+		if missingID {
+			if err := writeYAML(path, &agent); err != nil {
+				return nil, err
+			}
+		}
 		summaries = append(summaries, AgentSummary{
 			Name:        agent.Name,
+			ID:          agent.ID,
 			Description: agent.Description,
 			Version:     agent.Version,
 			SourceScope: agent.SourceScope,

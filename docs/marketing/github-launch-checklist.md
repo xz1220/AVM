@@ -57,7 +57,7 @@ Create a short terminal recording that shows:
 
 1. `avm init`
 2. creating `backend-coder`
-3. attaching one skill, one MCP ref, and one memory ref
+3. attaching one skill and one MCP ref
 4. `avm use backend-coder`
 5. `avm status` showing native, rendered, unsupported, and ignored mappings
 6. the generated runtime config diff
@@ -74,7 +74,7 @@ I am building Agent VM: a local control plane for AI coding agent profiles.
 
 Instead of syncing scattered prompt files and MCP configs by hand, AVM makes the
 agent itself a portable object: role, tools, permissions, model settings, and
-memory refs. The first target is developers who use multiple coding agents such
+runtime choice. The first target is developers who use multiple coding agents such
 as Codex, Claude Code, OpenClaw, and Hermes Agent.
 ```
 

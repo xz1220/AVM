@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -54,23 +54,21 @@ func printShellActivation(out io.Writer, result *activationResult) {
 		if target.Status != "synced" {
 			continue
 		}
-		home := target.RuntimeHome
-		if home == "" {
-			home = config.RuntimeHomeDir(result.Active, target.Runtime)
-		}
-		switch target.Runtime {
-		case "codex":
-			writeShellExport(out, "CODEX_HOME", home)
-		case "claude-code":
-			writeShellExport(out, "CLAUDE_CONFIG_DIR", home)
-			writeShellExport(out, "AVM_CLAUDE_MCP_CONFIG", filepath.Join(home, "mcp.json"))
-			if target.AgentName != "" {
-				writeShellExport(out, "AVM_CLAUDE_AGENT", target.AgentName)
-			}
-		case "opencode":
-			writeShellExport(out, "OPENCODE_CONFIG", filepath.Join(home, "opencode.json"))
-			writeShellExport(out, "OPENCODE_CONFIG_DIR", home)
-		}
+		writeShellEnv(out, target.Boundary.Env)
+	}
+}
+
+func writeShellEnv(out io.Writer, env map[string]string) {
+	if len(env) == 0 {
+		return
+	}
+	names := make([]string, 0, len(env))
+	for name := range env {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		writeShellExport(out, name, env[name])
 	}
 }
 

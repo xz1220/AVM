@@ -5,7 +5,10 @@ import (
 	"regexp"
 )
 
-var nameRegex = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)
+var (
+	nameRegex    = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)
+	agentIDRegex = regexp.MustCompile(`^agt_[a-f0-9]{16,64}$`)
+)
 
 func Validate(value any) error {
 	switch v := value.(type) {
@@ -21,10 +24,6 @@ func Validate(value any) error {
 		return validateEnvironment(v, "")
 	case Environment:
 		return validateEnvironment(&v, "")
-	case *PortableMemory:
-		return validatePortableMemory(v, "")
-	case PortableMemory:
-		return validatePortableMemory(&v, "")
 	case *ActiveRef:
 		return validateActiveRef(*v, "")
 	case ActiveRef:
@@ -48,10 +47,6 @@ func ValidateAgentProfile(agent *AgentProfile) error {
 
 func ValidateEnvironment(env *Environment) error {
 	return validateEnvironment(env, "")
-}
-
-func ValidatePortableMemory(memory *PortableMemory) error {
-	return validatePortableMemory(memory, "")
 }
 
 func validateActiveRef(ref ActiveRef, path string) error {
@@ -105,6 +100,9 @@ func validateAgentProfile(agent *AgentProfile, path string) error {
 	if !validName(agent.Name) {
 		return fieldError(path, "name", "invalid name %q", agent.Name)
 	}
+	if !validAgentID(agent.ID) {
+		return fieldError(path, "id", "invalid agent id %q", agent.ID)
+	}
 	if agent.Version == "" {
 		return fieldError(path, "version", "required")
 	}
@@ -154,11 +152,6 @@ func validateAgentProfile(agent *AgentProfile, path string) error {
 	if !oneOf(agent.Permissions.Sandbox, "read-only", "workspace-write", "danger-full-access") {
 		return fieldError(path, "permissions.sandbox", "invalid value %q", agent.Permissions.Sandbox)
 	}
-	for i, ref := range agent.MemoryRefs {
-		if err := validateMemoryRef(ref, path, fmt.Sprintf("memory_refs[%d]", i)); err != nil {
-			return err
-		}
-	}
 	for runtime := range agent.RuntimeExtensions {
 		if !validName(runtime) {
 			return fieldError(path, "runtime_extensions", "invalid runtime name %q", runtime)
@@ -207,50 +200,6 @@ func validateEnvironment(env *Environment, path string) error {
 	return nil
 }
 
-func validatePortableMemory(memory *PortableMemory, path string) error {
-	if memory == nil {
-		return fieldError(path, "", "portable memory is nil")
-	}
-	if !validName(memory.ID) {
-		return fieldError(path, "id", "invalid id %q", memory.ID)
-	}
-	if !validMemoryScope(memory.Scope) {
-		return fieldError(path, "scope", "invalid value %q", memory.Scope)
-	}
-	if !oneOf(memory.Format, "markdown", "yaml") {
-		return fieldError(path, "format", "invalid value %q", memory.Format)
-	}
-	if memory.Path == "" {
-		return fieldError(path, "path", "required")
-	}
-	if !oneOf(memory.Mode, "read", "append") {
-		return fieldError(path, "mode", "invalid value %q", memory.Mode)
-	}
-	if memory.Origin.Type != "" && !oneOf(memory.Origin.Type, "file", "runtime-native", "import") {
-		return fieldError(path, "origin.type", "invalid value %q", memory.Origin.Type)
-	}
-	if memory.Origin.Runtime != "" && !isKnownTarget(memory.Origin.Runtime) {
-		return fieldError(path, "origin.runtime", "invalid value %q", memory.Origin.Runtime)
-	}
-	return nil
-}
-
-func validateMemoryRef(ref MemoryRef, path, field string) error {
-	if !validName(ref.ID) {
-		return fieldError(path, field+".id", "invalid id %q", ref.ID)
-	}
-	if !validMemoryScope(ref.Scope) {
-		return fieldError(path, field+".scope", "invalid value %q", ref.Scope)
-	}
-	if ref.Path == "" {
-		return fieldError(path, field+".path", "required")
-	}
-	if !oneOf(ref.Mode, "read", "append") {
-		return fieldError(path, field+".mode", "invalid value %q", ref.Mode)
-	}
-	return nil
-}
-
 func validateCapabilityNames(path, field string, names []string) error {
 	for i, name := range names {
 		if !validName(name) {
@@ -278,12 +227,12 @@ func validName(name string) bool {
 	return nameRegex.MatchString(name)
 }
 
-func validSourceScope(scope string) bool {
-	return oneOf(scope, string(ScopeGlobal), string(ScopeProject), string(ScopeLocal))
+func validAgentID(id string) bool {
+	return agentIDRegex.MatchString(id)
 }
 
-func validMemoryScope(scope string) bool {
-	return oneOf(scope, string(ScopeUser), string(ScopeProject), string(ScopeLocal), string(ScopeTeam))
+func validSourceScope(scope string) bool {
+	return oneOf(scope, string(ScopeGlobal), string(ScopeProject), string(ScopeLocal))
 }
 
 func isKnownTarget(target string) bool {

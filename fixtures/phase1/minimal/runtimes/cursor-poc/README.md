@@ -7,4 +7,4 @@ only. Render-plan fixtures should cover:
 - `<PROJECT_ROOT>/.cursor/rules/avm-<agent>.md` for rendered instructions.
 
 Cursor plans must declare `status: partial` or an equivalent field-level
-mapping status for unsupported Agent Profile, memory, and permission behavior.
+mapping status for unsupported Agent Profile and permission behavior.

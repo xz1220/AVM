@@ -27,7 +27,7 @@ nvm for AI coding agents.
 Supporting phrase:
 
 ```text
-One portable profile for tools, permissions, model settings, and memory refs.
+One portable profile for tools, permissions, model settings, and runtime choice.
 ```
 
 Do not over-explain the product in the hero. The first screen should make one
@@ -44,7 +44,7 @@ Key characteristics:
 - dark navy / ink backgrounds
 - subtle grid texture for technical depth
 - cyan and blue gradients for "routing" and "activation"
-- amber accents for memory refs and state
+- amber accents for warnings and highlight state
 - dark terminal cards with mono text
 - clean runtime pills for Codex, Claude Code, OpenClaw, Hermes Agent
 - precise alignment; no text should touch or overflow a card edge
@@ -78,7 +78,7 @@ Avoid:
 | --- | --- | --- |
 | `avm-cyan` | `#5EEAD4` | activation, command prompts, primary accent |
 | `avm-blue` | `#93C5FD` | Codex, links, cool gradient midpoint |
-| `avm-amber` | `#FDE68A` | memory refs, warnings, highlight state |
+| `avm-amber` | `#FDE68A` | warnings, highlight state |
 | `avm-green` | `#10B981` | OpenClaw, success, available |
 | `avm-violet` | `#A78BFA` | Hermes Agent, secondary runtime |
 | `avm-orange` | `#F59E0B` | Claude Code, caution, warm contrast |
@@ -159,14 +159,14 @@ Use for CLI examples and activation state.
 - Radius: 18px
 - Prompt text: `#5EEAD4`
 - State text: `#E2E8F0`
-- Memory/ref highlight: `#FDE68A`
+- Warning/state highlight: `#FDE68A`
 
 Keep terminal commands short:
 
 ```text
 $ avm use backend-coder
 profile  backend-coder
-memory   backend-standards
+runtime  codex
 ```
 
 Avoid long file paths in hero graphics. Put long paths in README code blocks.

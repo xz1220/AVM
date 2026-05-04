@@ -109,7 +109,6 @@ func TestPlanMappingsCoverNativeRenderedIgnoredAndUnsupportedFields(t *testing.T
 	assertMapping(t, plan, "agent.model.temperature", adapter.MappingNative)
 	assertMapping(t, plan, "agent.model.reasoning_effort", adapter.MappingRenderedAsInstructions)
 	assertMapping(t, plan, "agent.permissions.additional_directories", adapter.MappingNative)
-	assertMapping(t, plan, "agent.memory_refs", adapter.MappingRenderedAsInstructions)
 	assertMapping(t, plan, "capabilities.skills", adapter.MappingRenderedAsInstructions)
 	assertMapping(t, plan, "capabilities.commands", adapter.MappingRenderedAsInstructions)
 	assertMapping(t, plan, "capabilities.hooks", adapter.MappingRenderedAsInstructions)
@@ -239,8 +238,8 @@ func richInput(projectRoot string) adapter.RenderInput {
 				System:    "You implement backend changes with tests.",
 				Developer: "Prefer small, reviewable changes.",
 				References: []string{
-					"/active/memory/z.md",
-					"/active/memory/a.md",
+					"/active/docs/z.md",
+					"/active/docs/a.md",
 				},
 			},
 			Model: adapter.ModelConfig{
@@ -258,10 +257,6 @@ func richInput(projectRoot string) adapter.RenderInput {
 				Deny: []string{
 					"Bash(rm -rf *)",
 				},
-			},
-			MemoryRefs: []adapter.MemoryRef{
-				{ID: "z-memory", Scope: "project", Path: "/active/memory/z.md", Mode: "read"},
-				{ID: "a-memory", Scope: "project", Path: "/active/memory/a.md", Mode: "read"},
 			},
 		},
 		Capabilities: adapter.CapabilitySet{
@@ -285,10 +280,6 @@ func richInput(projectRoot string) adapter.RenderInput {
 				{Name: "browser", Mode: "disabled"},
 				{Name: "shell", Mode: "limited"},
 			},
-		},
-		Memory: []adapter.PortableMemory{
-			{ID: "z-memory", Scope: "project", Path: "/active/memory/z.md", Mode: "read"},
-			{ID: "a-memory", Scope: "project", Path: "/active/memory/a.md", Mode: "read"},
 		},
 		ProjectRoot: projectRoot,
 	}

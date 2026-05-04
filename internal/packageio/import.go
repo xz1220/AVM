@@ -85,6 +85,9 @@ func ImportPackage(opts ImportOptions) (*ImportResult, error) {
 	sort.Slice(plans, func(i, j int) bool {
 		return plans[i].packagePath < plans[j].packagePath
 	})
+	if err := normalizeImportedAgentIDs(plans, cwd); err != nil {
+		return nil, err
+	}
 
 	result := &ImportResult{Manifest: archive.manifest}
 	for _, plan := range plans {
@@ -182,6 +185,7 @@ type importPlan struct {
 	packagePath string
 	targetPath  string
 	data        []byte
+	agent       *config.AgentProfile
 }
 
 func readZip(packagePath string) (map[string][]byte, error) {
@@ -259,6 +263,15 @@ func importPlanForFile(packagePath string, data []byte, cwd string) (importPlan,
 		if err := unmarshalKnownYAML(data, &agent); err != nil {
 			return importPlan{}, fmt.Errorf("%s: %w", packagePath, err)
 		}
+		missingID := agent.ID == ""
+		targetPath := targetAgentPath(agent.SourceScope, strings.TrimSuffix(parts[1], ".yaml"), cwd)
+		if missingID {
+			if existingID, ok, err := existingAgentIDAtPath(targetPath); err != nil {
+				return importPlan{}, err
+			} else if ok {
+				agent.ID = existingID
+			}
+		}
 		agent.ApplyDefaults(agent.SourceScope)
 		if err := config.ValidateAgentProfile(&agent); err != nil {
 			return importPlan{}, fmt.Errorf("%s: %w", packagePath, err)
@@ -267,7 +280,16 @@ func importPlanForFile(packagePath string, data []byte, cwd string) (importPlan,
 		if agent.Name != name {
 			return importPlan{}, fmt.Errorf("%s: name: expected %q, got %q", packagePath, name, agent.Name)
 		}
-		return importPlan{packagePath: packagePath, targetPath: targetAgentPath(agent.SourceScope, agent.Name, cwd), data: data}, nil
+		data, err := marshalYAMLDocument(&agent)
+		if err != nil {
+			return importPlan{}, fmt.Errorf("%s: %w", packagePath, err)
+		}
+		return importPlan{
+			packagePath: packagePath,
+			targetPath:  targetPath,
+			data:        data,
+			agent:       &agent,
+		}, nil
 	case "envs":
 		if len(parts) != 2 || path.Ext(parts[1]) != ".yaml" {
 			return importPlan{}, fmt.Errorf("unsupported env package file %s", packagePath)
@@ -285,14 +307,6 @@ func importPlanForFile(packagePath string, data []byte, cwd string) (importPlan,
 			return importPlan{}, fmt.Errorf("%s: name: expected %q, got %q", packagePath, name, env.Name)
 		}
 		return importPlan{packagePath: packagePath, targetPath: config.EnvPath(env.Name), data: data}, nil
-	case "memory":
-		if len(parts) < 3 {
-			return importPlan{}, fmt.Errorf("unsupported memory package file %s", packagePath)
-		}
-		if err := validateMemoryPackagePath(packagePath, data); err != nil {
-			return importPlan{}, err
-		}
-		return importPlan{packagePath: packagePath, targetPath: filepath.Join(config.MemoryDir(), filepath.FromSlash(strings.TrimPrefix(packagePath, "memory/"))), data: data}, nil
 	case "registry":
 		if len(parts) < 3 {
 			return importPlan{}, fmt.Errorf("unsupported registry package file %s", packagePath)
@@ -303,38 +317,6 @@ func importPlanForFile(packagePath string, data []byte, cwd string) (importPlan,
 	}
 }
 
-func validateMemoryPackagePath(packagePath string, data []byte) error {
-	parts := strings.Split(packagePath, "/")
-	scope := parts[1]
-	if err := config.ValidatePortableMemory(&config.PortableMemory{
-		ID:     "placeholder",
-		Scope:  scope,
-		Format: "markdown",
-		Path:   "placeholder.md",
-		Mode:   "read",
-	}); err != nil {
-		return fmt.Errorf("%s: invalid memory scope %q", packagePath, scope)
-	}
-	if path.Ext(packagePath) == ".yaml" && len(parts) == 3 {
-		var memory config.PortableMemory
-		if err := unmarshalKnownYAML(data, &memory); err != nil {
-			return fmt.Errorf("%s: %w", packagePath, err)
-		}
-		memory.ApplyDefaults()
-		if err := config.ValidatePortableMemory(&memory); err != nil {
-			return fmt.Errorf("%s: %w", packagePath, err)
-		}
-		name := strings.TrimSuffix(parts[2], ".yaml")
-		if memory.ID != name {
-			return fmt.Errorf("%s: id: expected %q, got %q", packagePath, name, memory.ID)
-		}
-		if memory.Scope != scope {
-			return fmt.Errorf("%s: scope: expected %q, got %q", packagePath, scope, memory.Scope)
-		}
-	}
-	return nil
-}
-
 func targetAgentPath(scope, name, cwd string) string {
 	switch config.Scope(scope) {
 	case config.ScopeProject, config.ScopeLocal:
@@ -342,6 +324,89 @@ func targetAgentPath(scope, name, cwd string) string {
 	default:
 		return config.AgentPath(name)
 	}
+}
+
+func normalizeImportedAgentIDs(plans []importPlan, cwd string) error {
+	used, err := existingAgentIDPaths(cwd)
+	if err != nil {
+		return err
+	}
+	for i := range plans {
+		if plans[i].agent == nil {
+			continue
+		}
+		targetPath := filepath.Clean(plans[i].targetPath)
+		if ownerPath, ok := used[plans[i].agent.ID]; ok && filepath.Clean(ownerPath) != targetPath {
+			plans[i].agent.ID = config.NewAgentID()
+			data, err := marshalYAMLDocument(plans[i].agent)
+			if err != nil {
+				return err
+			}
+			plans[i].data = data
+		}
+		used[plans[i].agent.ID] = targetPath
+	}
+	return nil
+}
+
+func existingAgentIDPaths(cwd string) (map[string]string, error) {
+	used := make(map[string]string)
+	for _, dir := range []string{config.AgentsDir(), config.ProjectAgentsDir(cwd)} {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			return nil, err
+		}
+		for _, entry := range entries {
+			if entry.IsDir() || filepath.Ext(entry.Name()) != ".yaml" {
+				continue
+			}
+			path := filepath.Join(dir, entry.Name())
+			data, err := os.ReadFile(path)
+			if err != nil {
+				return nil, err
+			}
+			var agent config.AgentProfile
+			if err := unmarshalKnownYAML(data, &agent); err != nil {
+				return nil, err
+			}
+			if agent.ID != "" {
+				used[agent.ID] = path
+			}
+		}
+	}
+	return used, nil
+}
+
+func existingAgentIDAtPath(path string) (string, bool, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return "", false, nil
+		}
+		return "", false, err
+	}
+	var agent config.AgentProfile
+	if err := unmarshalKnownYAML(data, &agent); err != nil {
+		return "", false, err
+	}
+	return agent.ID, agent.ID != "", nil
+}
+
+func marshalYAMLDocument(value any) ([]byte, error) {
+	var out bytes.Buffer
+	encoder := yaml.NewEncoder(&out)
+	encoder.SetIndent(2)
+	if err := encoder.Encode(value); err != nil {
+		_ = encoder.Close()
+		return nil, err
+	}
+	if err := encoder.Close(); err != nil {
+		return nil, err
+	}
+	return out.Bytes(), nil
 }
 
 func writeImportFile(targetPath string, data []byte) error {

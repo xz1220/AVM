@@ -20,12 +20,11 @@ const defaultName = "fake"
 type Adapter struct {
 	mu sync.Mutex
 
-	name       string
-	found      bool
-	version    string
-	configDir  string
-	memoryPlan *adapter.MemoryImportPlan
-	rendered   []*adapter.RenderPlan
+	name      string
+	found     bool
+	version   string
+	configDir string
+	rendered  []*adapter.RenderPlan
 }
 
 type Option func(*Adapter)
@@ -66,12 +65,6 @@ func WithVersion(version string) Option {
 func WithConfigDir(configDir string) Option {
 	return func(a *Adapter) {
 		a.configDir = configDir
-	}
-}
-
-func WithMemoryImportPlan(plan *adapter.MemoryImportPlan) Option {
-	return func(a *Adapter) {
-		a.memoryPlan = cloneMemoryImportPlan(plan)
 	}
 }
 
@@ -147,19 +140,9 @@ func (a *Adapter) Plan(ctx adapter.Context, input adapter.RenderInput) (*adapter
 				Status:     adapter.MappingRenderedAsInstructions,
 			},
 			{
-				SourcePath: "agent.memory_refs",
-				TargetPath: targetPath + "#memory",
-				Status:     adapter.MappingRenderedAsInstructions,
-			},
-			{
 				SourcePath: "agent.lifecycle_hooks",
 				Status:     adapter.MappingIgnored,
 				Reason:     "fake adapter does not execute lifecycle hooks",
-			},
-			{
-				SourcePath: "runtime.native_memory_write",
-				Status:     adapter.MappingUnsupported,
-				Reason:     "fake adapter only supports memory import planning",
 			},
 		},
 	}
@@ -279,27 +262,6 @@ func (a *Adapter) ManagedPaths(ctx adapter.Context, plan *adapter.RenderPlan) []
 	return append([]adapter.ManagedPath(nil), normalized.ManagedPaths...)
 }
 
-func (a *Adapter) ImportMemory(ctx adapter.Context, opts adapter.MemoryImportOptions) (*adapter.MemoryImportPlan, error) {
-	_ = ctx
-
-	a.mu.Lock()
-	defer a.mu.Unlock()
-
-	if a.memoryPlan != nil {
-		return cloneMemoryImportPlan(a.memoryPlan), nil
-	}
-
-	runtime := opts.Runtime
-	if runtime == "" {
-		runtime = a.name
-	}
-
-	return &adapter.MemoryImportPlan{
-		Runtime: runtime,
-		Source:  opts.Source,
-	}, nil
-}
-
 func (a *Adapter) RenderedPlans() []*adapter.RenderPlan {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -343,10 +305,6 @@ func renderedContent(runtime, agentName string, input adapter.RenderInput) strin
 	for _, name := range sortedMCPNames(input.Capabilities.MCPServers) {
 		writeLine("mcp: %s", name)
 	}
-	for _, id := range sortedMemoryIDs(input.Memory) {
-		writeLine("memory: %s", id)
-	}
-
 	return builder.String()
 }
 
@@ -366,25 +324,4 @@ func sortedMCPNames(servers []adapter.MCPServer) []string {
 	}
 	sort.Strings(names)
 	return names
-}
-
-func sortedMemoryIDs(memory []adapter.PortableMemory) []string {
-	ids := make([]string, 0, len(memory))
-	for _, item := range memory {
-		ids = append(ids, item.ID)
-	}
-	sort.Strings(ids)
-	return ids
-}
-
-func cloneMemoryImportPlan(plan *adapter.MemoryImportPlan) *adapter.MemoryImportPlan {
-	if plan == nil {
-		return nil
-	}
-
-	cloned := *plan
-	cloned.Candidates = append([]adapter.PortableMemory(nil), plan.Candidates...)
-	cloned.Diffs = append([]adapter.MemoryDiff(nil), plan.Diffs...)
-	cloned.Warnings = append([]string(nil), plan.Warnings...)
-	return &cloned
 }

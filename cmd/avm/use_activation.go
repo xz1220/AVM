@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/xz1220/agent-vm/internal/boundary"
 	"github.com/xz1220/agent-vm/internal/config"
 	avmruntime "github.com/xz1220/agent-vm/internal/runtime"
 	avmsync "github.com/xz1220/agent-vm/internal/sync"
@@ -27,6 +28,7 @@ type activationTargetResult struct {
 	Runtime     string
 	Status      avmsync.TargetStatus
 	AgentName   string
+	Boundary    boundary.RuntimeBoundary
 	RuntimeHome string
 }
 
@@ -152,6 +154,7 @@ func activationResultFromSync(result *avmsync.Result) *activationResult {
 			Runtime:     target.Runtime,
 			Status:      target.Status,
 			AgentName:   target.AgentName,
+			Boundary:    target.Boundary,
 			RuntimeHome: target.RuntimeHome,
 		})
 		for _, warning := range target.Warnings {

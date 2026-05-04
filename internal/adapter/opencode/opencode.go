@@ -286,6 +286,11 @@ func (a *Adapter) opencodeDir() string {
 }
 
 func (a *Adapter) opencodeDirForInput(input adapter.RenderInput) string {
+	if input.Boundary.Paths != nil {
+		if configDir := input.Boundary.Paths["config_dir"]; configDir != "" {
+			return configDir
+		}
+	}
 	if input.RuntimeHome != "" {
 		return input.RuntimeHome
 	}
@@ -400,12 +405,6 @@ func (r renderContext) agentInstructions() string {
 	if len(r.input.Capabilities.Skills) > 0 {
 		sections = append(sections, bulletSection("Active AVM skills", shared.CapabilityLines(r.input.Capabilities.Skills)))
 	}
-	if len(r.input.Agent.MemoryRefs) > 0 {
-		sections = append(sections, bulletSection("AVM memory refs", shared.MemoryRefLines(r.input.Agent.MemoryRefs)))
-	}
-	if len(r.input.Memory) > 0 {
-		sections = append(sections, bulletSection("Portable memory", shared.PortableMemoryLines(r.input.Memory)))
-	}
 	if r.input.Agent.Model.ReasoningEffort != "" {
 		sections = append(sections, section("Reasoning effort", r.input.Agent.Model.ReasoningEffort))
 	}
@@ -495,22 +494,6 @@ func (r renderContext) mappings() []adapter.FieldMapping {
 			TargetPath: targetBody,
 			Status:     adapter.MappingRenderedAsInstructions,
 			Reason:     "OpenCode agent files do not have a separate AVM references field.",
-		})
-	}
-	if len(r.input.Agent.MemoryRefs) > 0 {
-		mappings = append(mappings, adapter.FieldMapping{
-			SourcePath: "agent.memory_refs",
-			TargetPath: targetBody,
-			Status:     adapter.MappingRenderedAsInstructions,
-			Reason:     "Portable AVM memory refs are rendered as OpenCode agent instructions in Phase 1.",
-		})
-	}
-	if len(r.input.Memory) > 0 {
-		mappings = append(mappings, adapter.FieldMapping{
-			SourcePath: "memory",
-			TargetPath: targetBody,
-			Status:     adapter.MappingRenderedAsInstructions,
-			Reason:     "Portable memory content is referenced from OpenCode agent instructions in Phase 1.",
 		})
 	}
 	if len(r.input.Capabilities.Skills) > 0 {

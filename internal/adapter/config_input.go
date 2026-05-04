@@ -5,12 +5,14 @@ import (
 	"path/filepath"
 	"sort"
 
+	"github.com/xz1220/agent-vm/internal/boundary"
 	"github.com/xz1220/agent-vm/internal/config"
 )
 
 type RenderInputOptions struct {
 	ProjectRoot  string
 	ActiveDir    string
+	Boundaries   map[string]boundary.RuntimeBoundary
 	RuntimeHomes map[string]string
 }
 
@@ -30,15 +32,20 @@ func RenderInputFromResolved(resolved *config.ResolvedActivation, runtime string
 		opts.ActiveDir = config.ActiveDir()
 	}
 
+	runtimeBoundary := opts.Boundaries[runtime]
+	runtimeHome := runtimeBoundary.Root
+	if runtimeHome == "" {
+		runtimeHome = opts.RuntimeHomes[runtime]
+	}
 	return RenderInput{
 		Active:       activeRefFromConfig(resolved.Active),
 		Runtime:      runtime,
 		Agent:        agentFromConfig(agent),
 		Capabilities: capabilitySetFromConfig(resolved.Capabilities[runtime], opts.ActiveDir),
-		Memory:       portableMemoryFromConfig(resolved.Memory[runtime]),
 		ProjectRoot:  opts.ProjectRoot,
 		ActiveDir:    opts.ActiveDir,
-		RuntimeHome:  opts.RuntimeHomes[runtime],
+		Boundary:     runtimeBoundary,
+		RuntimeHome:  runtimeHome,
 	}, nil
 }
 
@@ -68,6 +75,7 @@ func activeRefFromConfig(ref config.ActiveRef) ActiveRef {
 
 func agentFromConfig(agent config.AgentProfile) Agent {
 	return Agent{
+		ID:          agent.ID,
 		Name:        agent.Name,
 		Description: agent.Description,
 		SourceScope: agent.SourceScope,
@@ -89,7 +97,6 @@ func agentFromConfig(agent config.AgentProfile) Agent {
 			Deny:                  append([]string(nil), agent.Permissions.Deny...),
 			AdditionalDirectories: append([]string(nil), agent.Permissions.AdditionalDirectories...),
 		},
-		MemoryRefs: memoryRefsFromConfig(agent.MemoryRefs),
 	}
 }
 
@@ -232,32 +239,6 @@ func toolsets(values map[string]string) []Toolset {
 		items = append(items, Toolset{Name: name, Mode: values[name]})
 	}
 	return items
-}
-
-func memoryRefsFromConfig(refs []config.MemoryRef) []MemoryRef {
-	out := make([]MemoryRef, 0, len(refs))
-	for _, ref := range refs {
-		out = append(out, MemoryRef{
-			ID:    ref.ID,
-			Scope: ref.Scope,
-			Path:  ref.Path,
-			Mode:  ref.Mode,
-		})
-	}
-	return out
-}
-
-func portableMemoryFromConfig(memory []config.PortableMemory) []PortableMemory {
-	out := make([]PortableMemory, 0, len(memory))
-	for _, item := range memory {
-		out = append(out, PortableMemory{
-			ID:    item.ID,
-			Scope: item.Scope,
-			Path:  item.Path,
-			Mode:  item.Mode,
-		})
-	}
-	return out
 }
 
 func resolvedRuntimeOrder(resolved *config.ResolvedActivation) []string {

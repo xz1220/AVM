@@ -34,9 +34,6 @@ func TestRenderInputFromResolved(t *testing.T) {
 					Deny:                  []string{"Bash(rm *)"},
 					AdditionalDirectories: []string{"../shared"},
 				},
-				MemoryRefs: []config.MemoryRef{
-					{ID: "standards", Scope: "project", Path: "/memory/standards.md", Mode: "read"},
-				},
 			},
 		},
 		Capabilities: map[string]config.ResolvedCapabilities{
@@ -60,11 +57,6 @@ func TestRenderInputFromResolved(t *testing.T) {
 				Commands: []string{"fmt"},
 				Hooks:    []string{"pre"},
 				Toolsets: map[string]string{"shell": "limited"},
-			},
-		},
-		Memory: map[string][]config.PortableMemory{
-			"codex": {
-				{ID: "standards", Scope: "project", Path: "/memory/standards.md", Mode: "read"},
 			},
 		},
 	}
@@ -99,9 +91,6 @@ func TestRenderInputFromResolved(t *testing.T) {
 	}
 	if got := input.Capabilities.Toolsets[0]; got != (Toolset{Name: "shell", Mode: "limited"}) {
 		t.Fatalf("toolset projection not populated: %#v", got)
-	}
-	if got := input.Memory[0].ID; got != "standards" {
-		t.Fatalf("memory projection not populated: %#v", input.Memory)
 	}
 }
 

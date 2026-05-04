@@ -69,7 +69,6 @@ func TestAgentCreateListShow(t *testing.T) {
 		"--reasoning", "high",
 		"--skills", "git,test",
 		"--mcps", "github",
-		"--memory", "backend-standards",
 	)
 	if err != nil {
 		t.Fatalf("agent create returned error: %v", err)
@@ -94,10 +93,6 @@ func TestAgentCreateListShow(t *testing.T) {
 	if !reflect.DeepEqual(agent.Capabilities.MCPs, []string{"github"}) {
 		t.Fatalf("unexpected mcps: %#v", agent.Capabilities.MCPs)
 	}
-	if len(agent.MemoryRefs) != 1 || agent.MemoryRefs[0].ID != "backend-standards" || agent.MemoryRefs[0].Scope != string(config.ScopeProject) {
-		t.Fatalf("unexpected memory refs: %#v", agent.MemoryRefs)
-	}
-
 	listOut, err := executeCommand("agent", "list")
 	if err != nil {
 		t.Fatalf("agent list returned error: %v", err)
@@ -117,7 +112,6 @@ func TestAgentCreateListShow(t *testing.T) {
 		"reasoning_effort: high",
 		"- git",
 		"- github",
-		"id: backend-standards",
 	} {
 		if !strings.Contains(showOut, want) {
 			t.Fatalf("show output missing %q:\n%s", want, showOut)
@@ -164,7 +158,7 @@ func TestEnvCreate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read env yaml: %v", err)
 	}
-	if bytes := string(data); strings.Contains(bytes, "capabilities") || strings.Contains(bytes, "memory_layers") {
+	if bytes := string(data); strings.Contains(bytes, "capabilities") {
 		t.Fatalf("env yaml declared unsupported fields:\n%s", bytes)
 	}
 }

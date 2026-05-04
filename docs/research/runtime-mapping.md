@@ -105,7 +105,7 @@ Claude Code 支持 agent memory scope：
 - project: `<project>/.claude/agent-memory/<agent>/MEMORY.md`
 - local: `<project>/.claude/agent-memory-local/<agent>/MEMORY.md`
 
-AVM Phase 1 在 `avm use` 中只投影 `memory_refs`：能安全表达 scope 时写 agent frontmatter 或 AVM 管理片段，不能匹配时渲染为 instructions，并标记 `rendered_as_instructions`。Claude native memory 内容的读取/写回只通过显式 `avm memory import/pull/push` 发生，并且必须输出 diff。
+当前 AVM 不映射 Claude native memory，不生成 memory frontmatter，也不提供 memory import/pull/push。这里仅保留 runtime-native 行为调研，供后续重新讨论原则时参考。
 
 ---
 

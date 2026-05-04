@@ -67,12 +67,6 @@
       "reason": "Codex role files have developer instructions but no separate AVM system instruction field in Phase 1."
     },
     {
-      "source_path": "agent.memory_refs",
-      "target_path": "<CODEX_HOME>/agents/backend-coder.toml#developer_instructions",
-      "status": "rendered_as_instructions",
-      "reason": "Codex has no native portable memory scope in Phase 1."
-    },
-    {
       "source_path": "agent.model.model",
       "target_path": "profiles.avm-coding.model",
       "status": "native"

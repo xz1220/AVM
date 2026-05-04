@@ -44,7 +44,7 @@ func TestSkillListShowsActiveSkillsInActivatedShell(t *testing.T) {
 	}
 	assertFileExistsSkillTest(t, filepath.Join(config.ActiveDir(), "skills", "docs", "SKILL.md"))
 	assertFileMissingSkillTest(t, filepath.Join(config.ActiveDir(), "skills", "security", "SKILL.md"))
-	runtimeHome := config.RuntimeHomeDir(config.ActiveRef{Kind: config.ActiveKindProfile, Name: "docs-agent"}, "codex")
+	runtimeHome := agentRuntimeHomeForTest(t, "docs-agent", "codex")
 	assertFileExistsSkillTest(t, filepath.Join(runtimeHome, "skills", "docs", "SKILL.md"))
 	assertFileMissingSkillTest(t, filepath.Join(runtimeHome, "skills", "security", "SKILL.md"))
 

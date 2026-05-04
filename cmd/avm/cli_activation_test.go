@@ -48,7 +48,7 @@ func TestUseStatusDeactivateCommands(t *testing.T) {
 		t.Fatalf("unexpected active ref: %#v", cfg.Active)
 	}
 	assertCurrentActive(t, "profile:backend-coder")
-	codexHome := config.RuntimeHomeDir(config.ActiveRef{Kind: config.ActiveKindProfile, Name: "backend-coder"}, "codex")
+	codexHome := agentRuntimeHomeForTest(t, "backend-coder", "codex")
 	codexConfig := readFileForTest(t, filepath.Join(codexHome, "config.toml"))
 	if !strings.Contains(codexConfig, "profile = \"avm-backend-coder\"") {
 		t.Fatalf("codex config did not switch selector:\n%s", codexConfig)
@@ -76,7 +76,6 @@ func TestUseStatusDeactivateCommands(t *testing.T) {
 		"    - agent.description -> agents.backend-coder.description: native\n"+
 		"    - agent.instructions.developer -> %s#developer_instructions: native\n"+
 		"    - agent.instructions.system -> %s#developer_instructions: rendered_as_instructions (Codex role files have developer instructions but no separate AVM system instruction field in Phase 1.)\n"+
-		"    - agent.memory_refs -> %s#developer_instructions: rendered_as_instructions (Codex has no native portable memory scope in Phase 1.)\n"+
 		"    - agent.model.model -> profiles.avm-backend-coder.model: native\n"+
 		"    - agent.model.reasoning_effort -> profiles.avm-backend-coder.model_reasoning_effort: native\n"+
 		"    - agent.model.verbosity -> %s#developer_instructions: rendered_as_instructions (Codex Phase 1 does not expose an AVM verbosity field; it is preserved as role guidance.)\n"+
@@ -85,8 +84,10 @@ func TestUseStatusDeactivateCommands(t *testing.T) {
 		"    - agent.permissions.sandbox -> profiles.avm-backend-coder.sandbox_mode: native\n"+
 		"    - capabilities.skills -> %s#developer_instructions: rendered_as_instructions (Codex has no native AVM skill registry mount in Phase 1.)\n"+
 		"    - project.AGENTS.md: ignored (Codex project instructions are user-owned; the Codex adapter does not overwrite AGENTS.md.)\n"+
+		"memory isolation:\n"+
+		"  codex: isolated root=%s\n"+
 		"warnings:\n"+
-		"  none\n", rolePath, configPath, rolePath, rolePath, rolePath, rolePath, rolePath)
+		"  none\n", rolePath, configPath, rolePath, rolePath, rolePath, rolePath, codexHome)
 	if statusOut != wantStatus {
 		t.Fatalf("unexpected status output:\n got: %q\nwant: %q", statusOut, wantStatus)
 	}
@@ -160,6 +161,8 @@ func TestStatusShowsSyncStateDetails(t *testing.T) {
 		"mapping status:\n" +
 		"  codex:\n" +
 		"    - model_run.model -> profiles.avm.model: native\n" +
+		"memory isolation:\n" +
+		"  codex: unknown\n" +
 		"warnings:\n" +
 		"  - codex: unsupported field capabilities.hooks\n"
 	if statusOut != wantStatus {
@@ -241,10 +244,9 @@ func TestActivatePrintsShellExportsForIsolatedRuntimeHomes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("activate returned error: %v\n%s", err, out)
 	}
-	active := config.ActiveRef{Kind: config.ActiveKindEnv, Name: "dual-runtime"}
-	codexHome := config.RuntimeHomeDir(active, "codex")
-	claudeHome := config.RuntimeHomeDir(active, "claude-code")
-	opencodeHome := config.RuntimeHomeDir(active, "opencode")
+	codexHome := agentRuntimeHomeForTest(t, "codex-agent", "codex")
+	claudeHome := agentRuntimeHomeForTest(t, "claude-agent", "claude-code")
+	opencodeHome := agentRuntimeHomeForTest(t, "opencode-agent", "opencode")
 	for _, want := range []string{
 		"export AVM_HOME='" + filepath.Join(home, ".avm") + "'",
 		"export AVM_ACTIVE='env:dual-runtime'",
@@ -252,8 +254,8 @@ func TestActivatePrintsShellExportsForIsolatedRuntimeHomes(t *testing.T) {
 		"export CLAUDE_CONFIG_DIR='" + claudeHome + "'",
 		"export AVM_CLAUDE_MCP_CONFIG='" + filepath.Join(claudeHome, "mcp.json") + "'",
 		"export AVM_CLAUDE_AGENT='claude-agent'",
-		"export OPENCODE_CONFIG='" + filepath.Join(opencodeHome, "opencode.json") + "'",
-		"export OPENCODE_CONFIG_DIR='" + opencodeHome + "'",
+		"export OPENCODE_CONFIG='" + filepath.Join(opencodeHome, "config", "opencode.json") + "'",
+		"export OPENCODE_CONFIG_DIR='" + filepath.Join(opencodeHome, "config") + "'",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("activate output missing %q:\n%s", want, out)
@@ -273,8 +275,8 @@ func TestActivatePrintsShellExportsForIsolatedRuntimeHomes(t *testing.T) {
 	if got := readFileForTest(t, filepath.Join(claudeHome, "config.json")); got != "{\"primaryApiKey\":\"source\"}\n" {
 		t.Fatalf("claude config auth sidecar was not copied into runtime home: %q", got)
 	}
-	assertPathExistsForTest(t, filepath.Join(opencodeHome, "opencode.json"))
-	assertPathExistsForTest(t, filepath.Join(opencodeHome, "agents", "opencode-agent.md"))
+	assertPathExistsForTest(t, filepath.Join(opencodeHome, "config", "opencode.json"))
+	assertPathExistsForTest(t, filepath.Join(opencodeHome, "config", "agents", "opencode-agent.md"))
 
 	writeFileForTest(t, filepath.Join(codexHome, "auth.json"), "{\"auth_mode\":\"isolated-login\"}\n")
 	writeFileForTest(t, filepath.Join(claudeHome, ".credentials.json"), "{\"type\":\"isolated-oauth\"}\n")
@@ -340,7 +342,7 @@ func TestStatusFiltersStaleRuntimeStateAfterActivationSwitch(t *testing.T) {
 		t.Fatalf("profile status leaked stale cursor state:\n%s", profileStatus)
 	}
 
-	codexHome := config.RuntimeHomeDir(config.ActiveRef{Kind: config.ActiveKindProfile, Name: "writer-agent"}, "codex")
+	codexHome := agentRuntimeHomeForTest(t, "writer-agent", "codex")
 	codexConfig := readFileForTest(t, filepath.Join(codexHome, "config.toml"))
 	if !strings.Contains(codexConfig, "profile = \"avm-writer-agent\"") {
 		t.Fatalf("codex config did not switch to writer-agent selector:\n%s", codexConfig)
@@ -372,9 +374,8 @@ func TestUseRendersMCPRegistryDefinitions(t *testing.T) {
 		t.Fatalf("use env returned error: %v\n%s", err, out)
 	}
 
-	active := config.ActiveRef{Kind: config.ActiveKindEnv, Name: "all-runtimes"}
-	codexHome := config.RuntimeHomeDir(active, "codex")
-	claudeConfigDir := config.RuntimeHomeDir(active, "claude-code")
+	codexHome := agentRuntimeHomeForTest(t, "codex-agent", "codex")
+	claudeConfigDir := agentRuntimeHomeForTest(t, "claude-agent", "claude-code")
 	codexConfig := readFileForTest(t, filepath.Join(codexHome, "config.toml"))
 	for _, want := range []string{
 		"profile = \"avm-all-runtimes\"",
@@ -436,9 +437,8 @@ func TestUseActivatesSkillContentForRuntimeSkillDirs(t *testing.T) {
 	if out, err := executeCommand("use", "--kind", "env", "skill-env"); err != nil {
 		t.Fatalf("use skill env returned error: %v\n%s", err, out)
 	}
-	skillEnv := config.ActiveRef{Kind: config.ActiveKindEnv, Name: "skill-env"}
-	codexHome := config.RuntimeHomeDir(skillEnv, "codex")
-	claudeConfigDir := config.RuntimeHomeDir(skillEnv, "claude-code")
+	codexHome := agentRuntimeHomeForTest(t, "codex-skill-agent", "codex")
+	claudeConfigDir := agentRuntimeHomeForTest(t, "claude-skill-agent", "claude-code")
 
 	activeSkillPath := filepath.Join(home, ".avm", "active", "skills", "probe-skill", "SKILL.md")
 	activeUnusedPath := filepath.Join(home, ".avm", "active", "skills", "unused-skill", "SKILL.md")
@@ -472,7 +472,7 @@ func TestUseActivatesSkillContentForRuntimeSkillDirs(t *testing.T) {
 	if out, err := executeCommand("use", "--kind", "profile", "no-skill-agent"); err != nil {
 		t.Fatalf("use no-skill profile returned error: %v\n%s", err, out)
 	}
-	noSkillCodexHome := config.RuntimeHomeDir(config.ActiveRef{Kind: config.ActiveKindProfile, Name: "no-skill-agent"}, "codex")
+	noSkillCodexHome := agentRuntimeHomeForTest(t, "no-skill-agent", "codex")
 	for _, path := range []string{
 		activeSkillPath,
 		filepath.Join(noSkillCodexHome, "skills", "probe-skill", "SKILL.md"),

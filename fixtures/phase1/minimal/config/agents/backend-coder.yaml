@@ -23,7 +23,7 @@ instructions:
   developer: |
     Prefer small, reviewable changes.
   references:
-    - memory/project/backend-standards.md
+    - docs/backend-standards.md
 
 model_run:
   model: gpt-5.4
@@ -58,12 +58,6 @@ permissions:
   deny:
     - "Bash(rm -rf *)"
   additional_directories: []
-
-memory_refs:
-  - id: backend-standards
-    scope: project
-    path: <AVM_HOME>/memory/project/backend-standards.md
-    mode: read
 
 lifecycle_hooks:
   before_run: []

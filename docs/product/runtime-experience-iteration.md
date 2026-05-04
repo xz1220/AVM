@@ -79,20 +79,25 @@ OpenCode official docs define:
 AVM renders OpenCode into an isolated runtime home:
 
 ```text
-~/.avm/runtime-homes/<active>/opencode/
-  opencode.json
-  agents/<agent>.md
-  skills/<skill>/SKILL.md
+~/.avm/runtime-homes/agents/<agent-id>/opencode/
+  config/opencode.json
+  config/agents/<agent>.md
+  config/skills/<skill>/SKILL.md
+  data/opencode.db
+  xdg-data/
+  xdg-state/
+  xdg-cache/
 ```
 
 Activation exports:
 
 ```bash
-export OPENCODE_CONFIG=".../opencode.json"
-export OPENCODE_CONFIG_DIR=".../opencode"
+export OPENCODE_CONFIG=".../opencode/config/opencode.json"
+export OPENCODE_CONFIG_DIR=".../opencode/config"
 ```
 
-This avoids the earlier soft-link/overwrite class of problems and keeps the user's native OpenCode config untouched.
+For full data/state isolation, start OpenCode through `avm run opencode`; it
+injects `OPENCODE_DB` and `XDG_*` only into that process.
 
 ## Support Rules
 

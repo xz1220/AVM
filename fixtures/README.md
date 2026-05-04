@@ -12,7 +12,6 @@ fixtures/
     `-- minimal/
         |-- config/
         |-- adapter-render-plan/
-        |-- memory-import-dry-run/
         `-- runtimes/
 ```
 

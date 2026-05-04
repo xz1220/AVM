@@ -2,6 +2,7 @@ package sync
 
 import (
 	"github.com/xz1220/agent-vm/internal/adapter"
+	"github.com/xz1220/agent-vm/internal/boundary"
 	"github.com/xz1220/agent-vm/internal/config"
 )
 
@@ -30,17 +31,18 @@ const (
 )
 
 type TargetResult struct {
-	Runtime      string                 `json:"runtime"`
-	Status       TargetStatus           `json:"status"`
-	Active       config.ActiveRef       `json:"active"`
-	AgentName    string                 `json:"agent_name,omitempty"`
-	RuntimeHome  string                 `json:"runtime_home,omitempty"`
-	Plan         *adapter.RenderPlan    `json:"plan,omitempty"`
-	RenderResult *adapter.RenderResult  `json:"render_result,omitempty"`
-	ManagedPaths []adapter.ManagedPath  `json:"managed_paths,omitempty"`
-	Mappings     []adapter.FieldMapping `json:"mappings,omitempty"`
-	Warnings     []string               `json:"warnings,omitempty"`
-	Error        string                 `json:"error,omitempty"`
+	Runtime      string                   `json:"runtime"`
+	Status       TargetStatus             `json:"status"`
+	Active       config.ActiveRef         `json:"active"`
+	AgentName    string                   `json:"agent_name,omitempty"`
+	Boundary     boundary.RuntimeBoundary `json:"boundary,omitempty"`
+	RuntimeHome  string                   `json:"runtime_home,omitempty"`
+	Plan         *adapter.RenderPlan      `json:"plan,omitempty"`
+	RenderResult *adapter.RenderResult    `json:"render_result,omitempty"`
+	ManagedPaths []adapter.ManagedPath    `json:"managed_paths,omitempty"`
+	Mappings     []adapter.FieldMapping   `json:"mappings,omitempty"`
+	Warnings     []string                 `json:"warnings,omitempty"`
+	Error        string                   `json:"error,omitempty"`
 }
 
 type Result struct {

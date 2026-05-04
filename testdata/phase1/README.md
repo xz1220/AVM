@@ -1,7 +1,7 @@
 # Phase 1 Testdata
 
 Package tests may place narrow, package-owned fixtures here. Cross-runtime
-golden examples live under `fixtures/phase1/` so config, adapter, and memory
+golden examples live under `fixtures/phase1/` so config and adapter
 tests can share one convention.
 
 Use the same path tokens as repository fixtures:

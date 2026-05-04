@@ -81,12 +81,6 @@
       "reason": "Cline skills are not installed by the Phase 1 adapter."
     },
     {
-      "source_path": "agent.memory_refs",
-      "target_path": "<PROJECT_ROOT>/.clinerules/avm/backend-coder.md",
-      "status": "rendered_as_instructions",
-      "reason": "Portable memory references are rendered as Cline rules in Phase 1."
-    },
-    {
       "source_path": "project.clinerules",
       "status": "ignored",
       "reason": "Existing user Cline rules are preserved; AVM writes only .clinerules/avm/<agent>.md."

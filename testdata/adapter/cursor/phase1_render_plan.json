@@ -67,11 +67,6 @@
       "reason": "Cursor Phase 1 PoC cannot enforce AVM approval policy."
     },
     {
-      "source_path": "agent.memory_refs",
-      "status": "unsupported",
-      "reason": "Cursor Phase 1 PoC does not provide reliable portable memory scoping."
-    },
-    {
       "source_path": "capabilities.skills",
       "status": "unsupported",
       "reason": "Cursor Phase 1 PoC does not install or mount AVM skills."

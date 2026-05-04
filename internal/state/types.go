@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/xz1220/agent-vm/internal/adapter"
+	"github.com/xz1220/agent-vm/internal/boundary"
 	"github.com/xz1220/agent-vm/internal/config"
 )
 
@@ -26,16 +27,29 @@ type SyncState struct {
 }
 
 type RuntimeState struct {
-	Runtime      string             `json:"runtime"`
-	Status       RuntimeStatus      `json:"status"`
-	Active       config.ActiveRef   `json:"active"`
-	AgentName    string             `json:"agent_name"`
-	RuntimeHome  string             `json:"runtime_home,omitempty"`
-	ManagedPaths []ManagedPathState `json:"managed_paths,omitempty"`
-	Mappings     []MappingState     `json:"mappings,omitempty"`
-	Warnings     []string           `json:"warnings,omitempty"`
-	Error        string             `json:"error,omitempty"`
-	UpdatedAt    time.Time          `json:"updated_at"`
+	Runtime      string               `json:"runtime"`
+	Status       RuntimeStatus        `json:"status"`
+	Active       config.ActiveRef     `json:"active"`
+	AgentName    string               `json:"agent_name"`
+	Boundary     RuntimeBoundaryState `json:"boundary,omitempty"`
+	RuntimeHome  string               `json:"runtime_home,omitempty"`
+	ManagedPaths []ManagedPathState   `json:"managed_paths,omitempty"`
+	Mappings     []MappingState       `json:"mappings,omitempty"`
+	Warnings     []string             `json:"warnings,omitempty"`
+	Error        string               `json:"error,omitempty"`
+	UpdatedAt    time.Time            `json:"updated_at"`
+}
+
+type RuntimeBoundaryState struct {
+	AgentID      string            `json:"agent_id,omitempty"`
+	AgentName    string            `json:"agent_name,omitempty"`
+	Root         string            `json:"root,omitempty"`
+	Env          map[string]string `json:"env,omitempty"`
+	RunEnv       map[string]string `json:"run_env,omitempty"`
+	Paths        map[string]string `json:"paths,omitempty"`
+	Isolation    string            `json:"isolation,omitempty"`
+	BoundaryType string            `json:"boundary_type,omitempty"`
+	Warnings     []string          `json:"warnings,omitempty"`
 }
 
 type ManagedPathState struct {
@@ -85,4 +99,29 @@ func MappingStates(mappings []adapter.FieldMapping) []MappingState {
 		})
 	}
 	return states
+}
+
+func RuntimeBoundaryStateFromBoundary(runtimeBoundary boundary.RuntimeBoundary) RuntimeBoundaryState {
+	return RuntimeBoundaryState{
+		AgentID:      runtimeBoundary.Key.AgentID,
+		AgentName:    runtimeBoundary.Key.AgentName,
+		Root:         runtimeBoundary.Root,
+		Env:          cloneStringMap(runtimeBoundary.Env),
+		RunEnv:       cloneStringMap(runtimeBoundary.RunEnv),
+		Paths:        cloneStringMap(runtimeBoundary.Paths),
+		Isolation:    string(runtimeBoundary.Isolation),
+		BoundaryType: string(runtimeBoundary.BoundaryType),
+		Warnings:     append([]string(nil), runtimeBoundary.Warnings...),
+	}
+}
+
+func cloneStringMap(in map[string]string) map[string]string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(in))
+	for key, value := range in {
+		out[key] = value
+	}
+	return out
 }
