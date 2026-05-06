@@ -27,6 +27,27 @@ Do not use "minimum change", "short-term workaround", or "temporary compatibilit
 
 Implementation plans should name the owning abstraction, the data boundary, and the long-term behavior before listing code edits. If the existing code shape makes the correct design harder, adjust the abstraction instead of spreading special cases across CLI, sync, adapter, and config layers.
 
+## Communication Discipline
+
+When the user is exploring an idea or asking for judgment, use Socratic
+clarifying questions before forcing a conclusion. Prefer 1-3 targeted questions
+that expose assumptions, constraints, tradeoffs, or decision criteria.
+
+Every final response at the end of a turn must be logically auditable. This is
+a collaboration rule, not a tool-use rule. Even if the agent used tools during
+the turn, the final response should explain the outcome with visible reasoning
+structure:
+
+- `Question`: restate the user's actual question or decision.
+- `Premises`: list the key facts, assumptions, or constraints being used.
+- `Reasoning`: explain the inference in clear steps, without exposing private chain-of-thought.
+- `Conclusion`: state the answer or recommendation directly.
+- `Uncertainty`: name what is unknown, what could change the conclusion, or what needs confirmation.
+
+For very small answers, this structure may be compressed into a short paragraph
+or a compact subset of headings, but the answer should still distinguish
+evidence, inference, conclusion, and uncertainty.
+
 ## Testing Guidelines
 
 Tests use the standard Go `testing` package and live beside implementation files as `*_test.go`. Prefer table-driven tests for validation, parsing, rendering, and CLI behavior. Put reusable golden inputs in `testdata/`; put human-readable scenario fixtures in `fixtures/`. Add tests for behavior changes, especially adapter mapping, config resolution, activation, sync, import/export, and error handling.

@@ -5,7 +5,7 @@
 <h1 align="center">Agent VM</h1>
 
 <p align="center">
-  <strong>Manage AI agent profiles and environments across runtimes.</strong>
+  <strong>Manage AI agent profiles across runtimes.</strong>
   <br>
   Create reusable agent configurations and apply them to Codex, Claude Code, OpenCode, Cline, or Cursor.
 </p>
@@ -25,17 +25,18 @@ Agent VM, or `avm`, is a local manager for AI coding agent configuration. It giv
 users a small set of durable objects:
 
 - **Agent**: a reusable agent profile with instructions, skills, MCP servers,
-  permissions, model preferences, and runtime preferences.
-- **Environment**: a named working scenario that maps one or more runtimes to
-  agents.
-- **Package**: a distributable bundle that can install agents, environments, and
-  their referenced capabilities.
+  and runtime configuration.
+- **Environment**: a future lightweight working context that lists which Agents
+  are available. The current product path uses one default Environment.
+- **Package**: a distributable bundle that can install agents and their
+  referenced capabilities. Future packages may also carry Environment metadata.
 - **Runtime**: the target tool where an agent becomes active, such as Codex,
   Claude Code, OpenCode, Cline, or Cursor.
 
-Everything else is supporting machinery. Skills are part of an Agent profile.
-Runtime detection and syncing are implementation details behind `avm use` and
-the managed activation model.
+In daily use, create or install an Agent, run or switch to that Agent, then
+start Codex, Claude Code, OpenCode, Cline, or Cursor. Skills are configured
+while creating or editing an Agent; AVM handles runtime detection, syncing, and
+managed activation for you.
 
 ## Daily Path
 
@@ -49,14 +50,13 @@ The intended path is simple:
 
 1. Install and initialize AVM.
 2. Create an Agent profile with the current preview wizard.
-3. Optionally group agents into an Environment.
-4. Use an Agent or Environment in the current shell.
-5. Start your runtime.
+3. Run an Agent, or use an Agent in the current shell.
+4. Start your runtime when using shell activation.
 
 ```text
 Package / existing Agent
   -> create Agent
-    -> use Agent or Environment
+    -> run or use Agent
       -> runtime-specific managed config
         -> Codex / Claude Code / OpenCode / Cline / Cursor
 ```
@@ -92,8 +92,7 @@ avm shell uninstall
 ### 2. Agent Configuration
 
 Agent configuration is the primary product surface. An Agent owns its skills,
-MCP servers, model preferences, permissions, instructions, and runtime
-preferences.
+MCP servers, instructions, and runtime configuration.
 
 Current preview:
 
@@ -131,44 +130,17 @@ Agent from one of these sources:
 - a built-in or installed Package
 - an existing Agent
 
-### 3. Environment Configuration
+### 3. Default Environment And Future Environments
 
-An Environment is a working scenario. It maps runtimes to Agent profiles and is
-useful only when a user wants one named setup to cover multiple tools.
+Environment management is not a core user module in the current product path.
+AVM only needs one default Environment for now.
 
-Current preview:
+If Environment becomes a first-class feature later, it should stay a small layer:
+a named working context that lists which Agents are available. It should not map
+runtimes to Agents, because each Agent already owns its runtime configuration.
 
-```bash
-avm env create work \
-  --codex backend-coder \
-  --claude-code reviewer \
-  --opencode opencode-coder
-avm env list
-avm env show work
-avm env show work --resolved
-avm env edit work
-avm env clone work --name api-work
-avm env rename api-work backend-work --update-refs
-avm env delete backend-work
-avm env delete --local
-```
-
-Environment CRUD surface:
-
-```bash
-avm env create
-avm env list
-avm env show <name>
-avm env show <name> --resolved
-avm env edit <name>
-avm env delete <name>
-avm env clone <name> --name <new-name>
-avm env rename <old-name> <new-name> --update-refs
-avm env delete --local
-```
-
-Use an Agent when there is one active role. Use an Environment when a scenario
-needs different agents for different runtimes.
+Current preview builds may still expose `avm env` commands. Treat them as
+experimental compatibility surface, not the daily path.
 
 ### 4. Use And Activation
 
@@ -176,7 +148,6 @@ This is the daily switching surface.
 
 ```bash
 avm use backend-coder
-avm use --kind env work
 avm status
 avm deactivate
 ```
@@ -196,9 +167,9 @@ or debugging command rather than a primary user module.
 
 ### 5. Packages
 
-Packages are for distribution and reuse. Users install packages to get Agents,
-Environments, and referenced capabilities; they do not usually "use" a package
-directly.
+Packages are for distribution and reuse. Users install packages to get Agents
+and referenced capabilities; they do not usually "use" a package directly.
+Future packages may also carry Environment metadata.
 
 Current preview:
 
@@ -217,13 +188,13 @@ avm package list
 avm package show <package>
 avm package install <package-or-file>
 avm package uninstall <package>
-avm package export <agent-or-env>
+avm package export <agent>
 avm package inspect <file.avm.zip>
 ```
 
 ## Runtime Support
 
-AVM renders Agent or Environment activation into runtime-specific managed files.
+AVM renders the selected Agent into runtime-specific managed files.
 
 | Runtime | Status | Notes |
 | --- | --- | --- |
@@ -245,7 +216,7 @@ surface is not finished.
 | Area | Available today | Gap |
 | --- | --- | --- |
 | Agent | `create`, `list`, `show`, `edit`, `delete`, `rename`, `clone` | richer first-run/package-backed create flow and interactive polish |
-| Environment | `create`, `list`, `show`, `edit`, `delete`, `rename`, `clone` | richer interactive flow and cross-project override discovery |
+| Environment | partial `env` commands | default-only product path; future semantics should be an Agent set, not runtime mapping |
 | Install lifecycle | installer, `init`, `shell init` | missing first-class doctor/uninstall commands |
 | Package | list/show/inspect/export/install | install/export naming still split across commands |
 | Skills | `skill list` | should be surfaced primarily inside Agent create/edit |
@@ -256,8 +227,7 @@ surface is not finished.
 AVM is conservative by default:
 
 - installer initialization and `avm init` write under `~/.avm`.
-- Agent and Environment config should become explicit CRUD resources, not
-  implicit overwrites.
+- Agent config should become an explicit CRUD resource, not implicit overwrites.
 - Runtime-native files are written only through adapter-declared managed paths.
 - Unsupported runtime fields are reported, not silently dropped.
 - Secrets should be referenced through environment variables, not exported as
