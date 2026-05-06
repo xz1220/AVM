@@ -46,7 +46,7 @@ codex
 4. 如果使用 shell 激活，再启动具体 runtime。
 
 ```text
-Package / 已有 Agent
+Blank/default / 现有 Package
   -> 创建 Agent
     -> run 或 use Agent
       -> runtime-specific managed config
@@ -115,8 +115,9 @@ avm agent rename <old-name> <new-name>
 `avm create` 可以继续作为首次创建向导和快捷入口。它应该允许用户从这些来源创建 Agent：
 
 - 空白/default Agent
-- 内置或已安装 Package
-- 已有 Agent
+- 用户自己创建或已经安装的现有 Package
+
+创建或编辑 Agent 时，skills 和 MCP 选择器应该展示当前全量能力：AVM 管理的能力，以及从支持的 runtime 中实时发现的用户全局安装能力。
 
 ### 3. Default Environment 和未来扩展
 

@@ -1,6 +1,6 @@
 # Agent VM — 产品需求文档（PRD）
 
-> 最后更新：2026-05-06（v17 — 删除实现差距章节）
+> 最后更新：2026-05-06（v18 — 创建来源与能力发现收敛）
 
 ## 1. 产品定位
 
@@ -238,8 +238,7 @@ avm agent rename <old-name> <new-name>
 
 ```text
 blank/default
-package
-existing agent
+existing package（用户自己创建的或已经安装的）
 ```
 
 创建流程应包含：
@@ -247,7 +246,7 @@ existing agent
 1. 选择来源。
 2. 设置 Agent 名称和描述。
 3. 设置 instructions。
-4. 选择 skills 和 MCP servers。
+4. 从全量可发现能力中选择 skills 和 MCP servers。
 5. 设置 runtime 配置。
 6. 展示 preview。
 7. 确认写入。
@@ -261,6 +260,25 @@ existing agent
 - 修改 runtime 配置
 - 预览 runtime mapping 影响
 
+Skills 和 MCP servers 的选择列表必须来自实时全量发现，而不是只读取 AVM 自己管理的 registry。
+
+全量发现包括：
+
+- AVM 管理或 Package 安装的 skills/MCP。
+- 用户已经安装在 runtime 全局目录里的 skills/MCP，即使这些能力不是 AVM 管理的。
+- 用户在 AVM 外部新增或删除全局 skills/MCP 后，下一次 `create` 或 `edit` 必须看到更新后的列表。
+
+例如用户机器上原本有 10 个 runtime 全局 skills，之后通过 Codex、Claude Code 或其他方式又安装了 1 个，
+那么下一次创建或编辑 Agent 时，候选列表应显示 11 个。
+
+能力来源要求：
+
+- 每个候选项必须标明来源，例如 `avm-managed`、`package-installed` 或 `runtime-global`。
+- runtime-global 能力默认是只读外部引用；AVM 不能移动、覆盖或删除它们。
+- Agent 可以引用 runtime-global 能力，但 `show`、preview 和 export 必须说明这些能力不是 AVM 拥有的 portable 内容。
+- Package export 不能静默打包 runtime-global 能力；如果 Agent 引用了这类能力，必须把它们展示为外部依赖或要求用户先显式导入为 AVM-managed capability。
+- 不同来源出现同名 skills/MCP 时，产品必须让用户区分来源，不能静默合并或随机选择。
+
 删除流程应支持：
 
 - 删除前展示引用关系，例如 active Agent、Package 元数据或未来 Environment 正在使用这个 Agent。
@@ -272,12 +290,14 @@ existing agent
 - `create` 不是隐式 overwrite。
 - 已存在同名 Agent 时必须明确提示 rename、overwrite 或 cancel。
 - `show` 能展示 source path 和 runtime mapping 状态。
+- `create` 和 `edit` 的 skills/MCP 候选列表必须反映当前机器上的全量发现结果。
 - `edit` 和 `delete` 都有 non-interactive flags 或可脚本化模式。
 
 当前 preview：
 
 - 已有 `avm create`、`avm agent create/list/show/edit/delete/rename/clone`。
-- 已有 `--from`，`agent clone` 也可复用已有 profile。
+- 当前 preview 的 `--from` 仍偏向已有 profile 复用；目标语义应收敛到 blank/default 与 existing package。
+- `agent clone` 是独立复制操作，不属于 `create` 的来源选择。
 - `agent create` 已收紧为同名失败，不再隐式 overwrite。
 - `agent edit` 默认交互式，传 field flags 时可脚本化。
 - `agent rename/delete` 会保护 active profile 和已有 env 引用。
@@ -476,11 +496,11 @@ avm run backend-coder
 
 1. 安装后默认初始化。
 2. `agent create` 打开交互式 UI。
-3. 用户选择来源、runtime 配置、skills 和 MCP。
+3. 用户选择 blank/default 或 existing package 作为来源，并从实时全量能力列表选择 skills/MCP。
 4. AVM 展示 preview。
 5. 创建成功后给出下一步：`avm run <agent>`，以及可选的 `avm use <agent>`。
 
-### 6.2 从已有 Agent 创建新 Agent
+### 6.2 复制已有 Agent
 
 ```bash
 avm agent clone default --name api-coder
@@ -490,6 +510,7 @@ avm run api-coder
 
 期望体验：
 
+- 这是显式 `clone` 操作，不属于 `create` 的来源选择。
 - 用户不需要手写 YAML。
 - clone 后可以交互式修改 skills/MCP/runtime。
 - 修改前后可以看到 diff。

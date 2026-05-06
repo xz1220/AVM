@@ -54,7 +54,7 @@ The intended path is simple:
 4. Start your runtime when using shell activation.
 
 ```text
-Package / existing Agent
+Blank/default / existing Package
   -> create Agent
     -> run or use Agent
       -> runtime-specific managed config
@@ -127,8 +127,11 @@ avm agent rename <old-name> <new-name>
 Agent from one of these sources:
 
 - a blank/default Agent
-- a built-in or installed Package
-- an existing Agent
+- an existing Package created by the user or already installed
+
+When creating or editing an Agent, the skills and MCP picker should show the
+current full inventory: AVM-managed capabilities plus user-installed
+runtime-global capabilities discovered from supported runtimes.
 
 ### 3. Default Environment And Future Environments
 
