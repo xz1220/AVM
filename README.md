@@ -29,7 +29,7 @@ users a small set of durable objects:
 - **Environment**: a future lightweight working context that lists which Agents
   are available. The current product path uses one default Environment.
 - **Package**: a distributable bundle that can install agents and their
-  referenced capabilities. Future packages may also carry Environment metadata.
+  referenced capabilities.
 - **Runtime**: the target tool where an agent becomes active, such as Codex,
   Claude Code, OpenCode, Cline, or Cursor.
 
@@ -169,7 +169,7 @@ or debugging command rather than a primary user module.
 
 Packages are for distribution and reuse. Users install packages to get Agents
 and referenced capabilities; they do not usually "use" a package directly.
-Future packages may also carry Environment metadata.
+Packages do not install, export, or carry Environment metadata.
 
 Current preview:
 

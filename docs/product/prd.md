@@ -1,6 +1,6 @@
 # Agent VM — 产品需求文档（PRD）
 
-> 最后更新：2026-05-06（v15 — Environment 收敛为轻量上下文）
+> 最后更新：2026-05-06（v16 — Package 边界收敛）
 
 ## 1. 产品定位
 
@@ -166,14 +166,13 @@ Package 是分发单元，不是日常激活对象。
 Package 可以包含：
 
 - Agent
-- Environment（未来扩展）
 - skills
 - MCP definitions
 - hooks / commands / toolsets
 - metadata 和版本信息
 
-用户安装 Package 后，得到的是可管理的 Agent。未来如果支持 Environment，Package
-也可以携带 Environment。日常使用仍然是：
+用户安装 Package 后，得到的是可管理的 Agent。Package 不安装、不导出、不携带 Environment；
+即使未来支持 Environment，Environment 也不进入 Package 的分发边界。日常使用仍然是：
 
 ```bash
 avm run <agent>
@@ -294,7 +293,8 @@ Agent-first 的激活上下文。
 - README 和日常路径不推广 `avm env`。
 - 已有 `avm env` 命令可以暂时保留，但视为实验/兼容入口。
 - 默认不为 Environment 补齐完整 CRUD。
-- Agent 删除、重命名、Package 导入导出等 P0 流程不应因为 Environment 扩展而复杂化。
+- Agent 删除、重命名等 P0 流程不应因为 Environment 扩展而复杂化。
+- Package 导入导出不处理 Environment。
 
 未来如果确实需要按工作上下文组织一组 Agent，可以继续扩展 Environment。届时再引入完整能力：
 
@@ -388,6 +388,7 @@ avm package inspect <file.avm.zip>
 
 - 安装 Package 后，用户得到 Agent。
 - Package 不应成为 active 对象。
+- Package 不包含 Environment；未来 Environment 配置也不通过 Package 分发。
 - Package 安装前必须展示将写入哪些对象。
 - 冲突时必须提供 rename、skip、overwrite、cancel。
 - export 时能选择是否包含被引用的 skills/MCP。
@@ -396,7 +397,6 @@ avm package inspect <file.avm.zip>
 
 - 已有 package inspect/install/export。
 - export/import/install 的用户心智还需要统一到 package 模块。
-- 如果当前实现支持导出 Environment，应视为未来兼容能力，不进入 P0 主线。
 
 ### 4.6 Memory
 
@@ -458,7 +458,7 @@ Runtime
 - Agent 是能力和行为的归属。
 - Runtime 是 Agent 的执行载体和生效目标，不负责从多个 Agent 中反向选择，也不是主配置对象。
 - Environment 是未来用于组织一组 Agent 的上下文，不是当前核心对象。
-- Package 是 Agent 的分发载体，未来可扩展到 Environment。
+- Package 是 Agent 的分发载体，不关注 Environment。
 - Skills 是 Agent 的组成部分，不是主模块。
 - Sync 是 run/use 的实现细节，不是主模块。
 
