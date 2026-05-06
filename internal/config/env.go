@@ -1,6 +1,10 @@
 package config
 
-import "sort"
+import (
+	"fmt"
+	"os"
+	"sort"
+)
 
 func ReadEnvironment(name string) (*Environment, error) {
 	if !validName(name) {
@@ -37,6 +41,45 @@ func WriteEnvironment(env *Environment) error {
 	return writeYAML(path, env)
 }
 
+func EnvironmentExists(name string) (bool, error) {
+	if _, err := ReadEnvironment(name); err == nil {
+		return true, nil
+	} else if os.IsNotExist(err) {
+		return false, nil
+	} else {
+		return false, err
+	}
+}
+
+func DeleteEnvironment(name string) error {
+	if !validName(name) {
+		return fieldError("", "name", "invalid name %q", name)
+	}
+	return os.Remove(EnvPath(name))
+}
+
+func RenameEnvironment(oldName, newName string) error {
+	if oldName == newName {
+		return fmt.Errorf("old and new environment names are the same")
+	}
+	env, err := ReadEnvironment(oldName)
+	if err != nil {
+		return err
+	}
+	if exists, err := EnvironmentExists(newName); err != nil {
+		return err
+	} else if exists {
+		return fmt.Errorf("environment %q already exists", newName)
+	}
+
+	renamed := cloneEnvironment(env)
+	renamed.Name = newName
+	if err := WriteEnvironment(renamed); err != nil {
+		return err
+	}
+	return DeleteEnvironment(oldName)
+}
+
 func ReadProjectOverride(cwd string) (*ProjectOverride, error) {
 	return readProjectOverride(ProjectEnvPath(cwd))
 }
@@ -50,6 +93,20 @@ func WriteProjectOverride(cwd string, override *ProjectOverride) error {
 		return err
 	}
 	return writeYAML(path, override)
+}
+
+func ProjectOverrideExists(cwd string) (bool, error) {
+	if _, err := ReadProjectOverride(cwd); err == nil {
+		return true, nil
+	} else if os.IsNotExist(err) {
+		return false, nil
+	} else {
+		return false, err
+	}
+}
+
+func DeleteProjectOverride(cwd string) error {
+	return os.Remove(ProjectEnvPath(cwd))
 }
 
 func ListEnvironments() ([]EnvironmentSummary, error) {

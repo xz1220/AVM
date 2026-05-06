@@ -192,6 +192,12 @@ func validateEnvironment(env *Environment, path string) error {
 	if err := validateTargets(path, "targets", env.Targets); err != nil {
 		return err
 	}
+	for _, target := range env.Targets {
+		agent, ok := env.RuntimeAgents[target]
+		if !ok || agent.Primary == "" {
+			return fieldError(path, "targets", "target %q has no runtime agent mapping", target)
+		}
+	}
 	for runtime := range env.RuntimeOverrides {
 		if !isKnownTarget(runtime) {
 			return fieldError(path, "runtime_overrides", "invalid runtime %q", runtime)

@@ -37,6 +37,24 @@ capabilities:
 	}
 }
 
+func TestEnvironmentYAMLRequiresRuntimeAgentForEveryTarget(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	writeEnvTestYAML(t, EnvPath("missing-target-agent"), `name: missing-target-agent
+version: 1.0.0
+runtime_agents:
+  codex:
+    primary: default
+targets:
+  - codex
+  - claude-code
+`)
+	if _, err := ReadEnvironment("missing-target-agent"); err == nil || !strings.Contains(err.Error(), `target "claude-code" has no runtime agent mapping`) {
+		t.Fatalf("expected target coverage error, got %v", err)
+	}
+}
+
 func writeEnvTestYAML(t *testing.T, path, data string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
