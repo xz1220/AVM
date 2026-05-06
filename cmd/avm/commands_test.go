@@ -64,9 +64,14 @@ func TestRegisteredCommandHelp(t *testing.T) {
 			want: []string{"create <name>", "--runtime", "--skills", "--mcps"},
 		},
 		{
+			name: "env",
+			args: []string{"env", "--help"},
+			want: []string{"create", "list", "show", "edit", "delete", "clone", "rename"},
+		},
+		{
 			name: "env create",
 			args: []string{"env", "create", "--help"},
-			want: []string{"create <name>", "--codex", "--claude-code", "--opencode", "--cline", "--cursor"},
+			want: []string{"create [name]", "--codex", "--claude-code", "--opencode", "--cline", "--cursor"},
 		},
 		{
 			name: "activate",

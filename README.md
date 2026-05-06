@@ -143,18 +143,28 @@ avm env create work \
   --codex backend-coder \
   --claude-code reviewer \
   --opencode opencode-coder
+avm env list
+avm env show work
+avm env show work --resolved
+avm env edit work
+avm env clone work --name api-work
+avm env rename api-work backend-work --update-refs
+avm env delete backend-work
+avm env delete --local
 ```
 
-Product target:
+Environment CRUD surface:
 
 ```bash
 avm env create
 avm env list
 avm env show <name>
+avm env show <name> --resolved
 avm env edit <name>
 avm env delete <name>
 avm env clone <name> --name <new-name>
-avm env rename <old-name> <new-name>
+avm env rename <old-name> <new-name> --update-refs
+avm env delete --local
 ```
 
 Use an Agent when there is one active role. Use an Environment when a scenario
@@ -235,7 +245,7 @@ surface is not finished.
 | Area | Available today | Gap |
 | --- | --- | --- |
 | Agent | `create`, `list`, `show`, `edit`, `delete`, `rename`, `clone` | richer first-run/package-backed create flow and interactive polish |
-| Environment | `create` | missing list/show/edit/delete/rename/clone |
+| Environment | `create`, `list`, `show`, `edit`, `delete`, `rename`, `clone` | richer interactive flow and cross-project override discovery |
 | Install lifecycle | installer, `init`, `shell init` | missing first-class doctor/uninstall commands |
 | Package | list/show/inspect/export/install | install/export naming still split across commands |
 | Skills | `skill list` | should be surfaced primarily inside Agent create/edit |
