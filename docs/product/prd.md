@@ -1,6 +1,6 @@
 # Agent VM — 产品需求文档（PRD）
 
-> 最后更新：2026-05-06（v21 — 删除非目标和成功标准章节）
+> 最后更新：2026-05-06（v22 — 能力来源要求降级为基础原则）
 
 ## 1. 产品定位
 
@@ -260,11 +260,11 @@ Skills 和 MCP servers 的选择列表必须来自实时全量发现，而不是
 
 能力来源要求：
 
-- 每个候选项必须标明来源，例如 `avm-managed`、`package-installed` 或 `runtime-global`。
-- runtime-global 能力默认是只读外部引用；AVM 不能移动、覆盖或删除它们。
-- Agent 可以引用 runtime-global 能力，但 `show`、preview 和 export 必须说明这些能力不是 AVM 拥有的 portable 内容。
-- Package export 不能静默打包 runtime-global 能力；如果 Agent 引用了这类能力，必须把它们展示为外部依赖或要求用户先显式导入为 AVM-managed capability。
-- 不同来源出现同名 skills/MCP 时，产品必须让用户区分来源，不能静默合并或随机选择。
+- 每个候选项必须能解释来源，例如 AVM 管理、Package 安装、或 runtime 全局目录发现。
+- AVM 不能在用户不知情的情况下移动、覆盖、删除或接管 runtime 全局能力。
+- 当不同来源出现同名 skills/MCP 时，产品必须让用户能区分来源，不能静默合并或随机选择。
+- Agent 对 runtime 全局能力的引用、复制、导入、导出和同步策略，需要在调研各 runtime 的实际能力模型后再确定。
+- 在策略确定前，PRD 只要求 create/edit 能看到这些能力，并能解释来源和潜在风险。
 
 删除流程应支持：
 
