@@ -10,7 +10,7 @@
 
 3. Claude Code **没有统一 extension registry**。Skills 来自 7 个来源（managed/user/project/additional dirs/plugin/bundled/MCP），MCP 来自 8 个 scope（enterprise/local/project/user/plugin/dynamic/managed/Claude.ai）。PRD 说的"全量发现"在 Claude Code 这里是**多源合并**，且每个来源都有自己的 trust/approval 闸口。
 
-4. Claude Code 的**隔离不是一个开关**。默认 sandbox `enabled: false`，落地的隔离能力分散在四个正交维度：permission rules（tool allow/deny）、filesystem path classifier（敏感路径硬拦截）、可选的 `@anthropic-ai/sandbox-runtime`（平台依赖、默认关）、subprocess 边界（每条 shell 命令一个进程）。PRD 没把 sandbox 列为 Agent 字段，所以这不是 PRD 假设的冲突；但 adapter 想给用户透明展示"本次运行的隔离状态"时，单字段表达不了，要至少展开到这四维（`src/utils/sandbox/sandbox-adapter.ts:459`、`532`，`src/utils/permissions/permissions.ts:473`，`src/utils/Shell.ts:177`）。
+4. Claude Code 会**自我保护**敏感路径：`.git`、`.claude`、shell rc 文件、`.mcp.json`、Claude config 等基础名 / 目录被 filesystem path classifier 硬拦截，即使没开外部 sandbox 也拦得住。这给 PRD §4.2"AVM 不能静默覆盖 runtime 全局能力"提供天然保护——AVM 写 settings 时不用自己防御工具误改用户敏感文件（`src/utils/permissions/filesystem.ts:57`、`74`、`1030`）。
 
 5. Claude Code 的状态边界**不止 `~/.claude`**。Global config 在 `~/.claude.json`（独立文件，不在 `.claude/` 里），plugin cache 可被 `CLAUDE_CODE_PLUGIN_CACHE_DIR` 改向，env-paths cache 走 XDG，secure storage 在非 macOS 上 fallback 到明文 `~/.claude/.credentials.json`。如果 AVM 想用 per-agent 独立目录实现 PRD §4.6 的 runtime memory isolation，要意识到这是**多目录**而不是单点（`src/utils/env.ts:13`，`src/utils/plugins/pluginDirectories.ts:49`，`src/utils/cachePaths.ts:1`，`src/utils/secureStorage/plainTextStorage.ts:13`）。
 
@@ -112,7 +112,6 @@ Managed settings 路径默认：
 
 - 项目第一次跑时未信任，**project 与 local settings 的 env 变量、MCP headersHelper、project MCP server 都被 hold**（`src/utils/managedEnv.ts:93`、`src/services/mcp/utils.ts:351`、`src/services/mcp/headersHelper.ts:40`）。
 - Trust 状态记录在 global config 的 trusted dirs 里。
-- Bypass mode（`--dangerously-skip-permissions`）受额外约束：root 用户必须有 sandbox marker；Ant 内部 build 还要求 Docker / bubblewrap / `IS_SANDBOX=1` 且无网（`src/setup.ts:395`、`414`）。
 
 **对 AVM 的含义**：
 - AVM 写 project `.claude/settings.json` 是合法的，但要么提示用户 trust，要么把关键内容（env、MCP）写到 user 层。
@@ -120,56 +119,24 @@ Managed settings 路径默认：
 
 ---
 
-## 五、隔离模型
+## 五、对 AVM 实际相关的两条边界
 
-> 说明：PRD 没规定 Agent 要带 sandbox 字段，所以本节只是 adapter 实现参考——告诉 AVM 想透明展示或控制 Claude Code 的隔离状态时，能动哪些钮。
+> 说明：Claude Code 还有 permission rules、外部 sandbox 等隔离机制，**AVM 当前 scope 不管这些**（PRD 没列 sandbox 字段、没要求 AVM 控制权限）。本节只列两条 AVM 写 adapter 时绕不开的边界。
 
-Claude Code 的隔离落地在四个正交维度：
+### 1. Filesystem path classifier 自动保护敏感路径
 
-| 维度 | 取值 / 形态 | 源码 |
-|---|---|---|
-| Permission rules | tool allow/ask/deny pattern，按 source（user/project/local/CLI/command/session）合并 | `src/utils/permissions/permissions.ts:109`、`473`，`permissionSetup.ts:721` |
-| Filesystem path classifier | 敏感 basename / dir / 内部路径硬拦截，与 permission rules 正交 | `src/utils/permissions/filesystem.ts:57`、`74`、`1030` |
-| External sandbox runtime | `@anthropic-ai/sandbox-runtime`，受平台/依赖/settings 控制；**默认关** | `src/utils/sandbox/sandbox-adapter.ts:459`、`532` |
-| Subprocess 边界 | 每条 shell 命令一个新进程；可选套 sandbox wrapper；temp dir mode 0700 | `src/utils/Shell.ts:177`、`259`、`315` |
-
-### Permission rules
-
-- 中心化的 `hasPermissionsToUseTool()` 是所有 tool 调用的闸口（`permissions.ts:473`）。
-- 规则来源：所有启用的 settings sources + CLI args + commands + session（`permissionsLoader.ts:120`、`permissions.ts:109`）。可编辑来源是 user / project / local（`permissionsLoader.ts:151`）。
-- Auto mode 会检测并移除过宽的 Bash/PowerShell 权限（`permissionSetup.ts:948`）。
-- Policy 可以限定为 managed rules only（`permissionsLoader.ts:120`）。
-
-### Filesystem 边界
-
-- 敏感 basename：shell rc files、git config/module、`.mcp.json`、Claude config（`filesystem.ts:57`）。
+不需要打开任何 sandbox，Claude Code 的工具读写都会先过 path classifier：
+- 敏感 basename：shell rc files、git config/module、`.mcp.json`、Claude config 文件（`filesystem.ts:57`）。
 - 敏感目录：`.git`、`.vscode`、`.idea`、`.claude`（`filesystem.ts:74`）。
-- 允许的 working dirs = original cwd + `--add-dir`（`filesystem.ts:667`）。
-- `checkReadPermissionForTool()` 阻止 UNC / suspicious path，按 deny→ask→allow 顺序判断（`filesystem.ts:1030`）。
-- Tool result 目录、当前 session scratchpad、**同 project 跨 session 的 project temp dir**、agent memory / auto-memory 路径都是 special readable internal path（`filesystem.ts:1660`、`1676`、`1688`、`1703`）。
-- Skill 路径识别：`.claude/skills/<skill>/**`（`filesystem.ts:94`）；Claude 自有配置文件（settings/commands/agents/skills 在 `.claude` 下）（`filesystem.ts:224`）。
+- `checkReadPermissionForTool()` 按 deny → ask → allow 顺序判断，UNC / suspicious path 直接拒（`filesystem.ts:1030`）。
 
-### External sandbox（可选）
+**对 AVM**：这是 PRD §4.2"不能静默覆盖 runtime 全局能力"的天然保护。AVM 写 user / project settings 时，Claude Code 自己就会拦工具误改这些文件，AVM 不用再加防御层。
 
-`@anthropic-ai/sandbox-runtime` 由 sandbox-adapter 委托（`src/utils/sandbox/sandbox-adapter.ts:1`）。打开后：
-- Settings permission rules → sandbox filesystem path rules（`sandbox-adapter.ts:83`、`121`）。
-- 网络 allow/deny 来自 `sandbox.network.allowedDomains` 和 `WebFetch(domain:...)` 规则（`sandbox-adapter.ts:177`）。
-- 写权限：默认允许 `.` 和 Claude temp dir；settings paths / managed drop-ins / `.claude/skills` 强制 deny；bare git repo 文件 deny 或 scrub（`sandbox-adapter.ts:222`、`230`、`238`、`257`）。
-- 配置允许时 worktree main repo 和 `--add-dir` 加入 allow（`sandbox-adapter.ts:282`）。
+### 2. Subprocess 继承 env 变量
 
-**默认值**：`enabled: false`、`autoAllow: true`、`allowUnsandboxedCommands: true`（`sandbox-adapter.ts:459`）。打开需要平台支持 + 依赖装好 + 配置启用 + `sandbox.enabled: true`（`sandbox-adapter.ts:532`）。
+`Shell.ts` 每条命令 spawn 一个进程，env 由 `subprocessEnv()` 拼出来，**继承父进程的环境变量**（`Shell.ts:177`、`315`）。
 
-### Subprocess
-
-- `Shell.ts` 每条命令 spawn 一个进程，参数含 `preventCwdChanges`、`shouldUseSandbox`（`Shell.ts:177`、`181`）。
-- 启用 sandbox 时套 wrapper，建 mode 0700 per-command temp dir（`Shell.ts:259`）。
-- 子进程 env 由 `subprocessEnv()` 拼，加上 shell/editor markers、cwd 与 Claude runtime markers（`Shell.ts:315`）。
-- 前台 shell 任务可通过 tracking file 改 runtime cwd，session env 与 hooks 随之 invalidate（`Shell.ts:394`）。
-- BashTool 决定是否要 sandbox：excluded commands 明确不是 security boundary（`shouldUseSandbox.ts:18`、`130`）。
-
-**对 AVM 的含义**：
-- 即使不开 external sandbox，filesystem path classifier 已经会拦敏感路径（`.git`、`.claude`、shell rc files、`.mcp.json`），这是 PRD §4.2"不能静默覆盖 runtime 全局能力"的天然保护，AVM 不需要额外做什么。
-- 如果 AVM 后续要在 Agent schema 加可选的隔离配置（PRD 当前没要求），最少要管 `permission.*` rules + `sandbox.enabled` + `--add-dir` 三处才能在 Claude Code 上 round-trip。
+**对 AVM**：这是 `avm run` 用 `CLAUDE_CONFIG_DIR` / `CLAUDE_CODE_PLUGIN_CACHE_DIR` / `CLAUDE_CODE_TMPDIR` 实现 per-agent 隔离的物理基础。AVM 在启动 `claude` 进程时注入这些 env 变量，Claude Code 内部所有 subprocess（包括 stdio MCP server、bash tool 命令）都能读到。这条不用 AVM 显式做什么，但要知道隔离能生效靠的是它。
 
 ---
 
@@ -377,19 +344,16 @@ PRD 明说"不管 memory"，这里重点提醒它**不是被动 context**：
 
 6. **隔离目录**：如果 AVM 选择 per-agent home 实现 PRD 4.6 的 memory isolation，不存在单一 env 开关。要同时设 `CLAUDE_CONFIG_DIR` + `CLAUDE_CODE_PLUGIN_CACHE_DIR` + `CLAUDE_CODE_TMPDIR` + `CLAUDE_CODE_DEBUG_LOGS_DIR`，由 `avm run --runtime` 注入。`avm doctor`（PRD 4.1）要把这几个状态都扫一下才能判断 runtime 就绪。
 
-7. **隔离能力的 round-trip**：Claude Code 的隔离是四维（permission rules + path classifier + external sandbox + subprocess）。PRD 当前 Agent schema 没有 sandbox 字段，所以这条不阻塞。但 AVM adapter 想在 preview 里展示"本次运行的 permission 状态"时，要至少读 settings 里的 `permissions.*` 和 `sandbox.enabled`，不能只看一个字段。
+7. **凭据存储**：非 macOS 平台 secure storage fallback 到明文 `~/.claude/.credentials.json`。AVM 想做"agent 隔离凭据"必须用独立 `CLAUDE_CONFIG_DIR`，不能依赖 secure storage 自身做隔离。
 
-8. **凭据存储**：非 macOS 平台 secure storage fallback 到明文 `~/.claude/.credentials.json`。AVM 想做"agent 隔离凭据"必须用独立 `CLAUDE_CONFIG_DIR`，不能依赖 secure storage 自身做隔离。
-
-9. **入口范围**：Claude Code 还有 daemon / remote-control / bridge / background-session / Chrome MCP 等多种早期入口（`cli.tsx:95-247`），AVM 当前覆盖 interactive / headless 两种就够。这是范围提醒，不是 PRD 风险。
+8. **入口范围**：Claude Code 还有 daemon / remote-control / bridge / background-session / Chrome MCP 等多种早期入口（`cli.tsx:95-247`），AVM 当前覆盖 interactive / headless 两种就够。这是范围提醒，不是 PRD 风险。
 
 ---
 
 ## 十一、未验证项
 
 - 该 framework 快照**没有 `package.json` / lockfile / Makefile / built executable**，所有结论都来自 TypeScript 源码追踪，没有跑过 `--help`、build 或 test。
-- `@anthropic-ai/sandbox-runtime` 的具体 OS 级保证不在仓库里，本调研只能验证 Claude Code **何时调用** sandbox adapter，无法验证外部 sandbox 的真实行为。
+- 外部 `@anthropic-ai/sandbox-runtime` / 内置 permission rules 不在 AVM 当前 scope，未深入调研。
 - Build-time feature flag 影响 TeamMem、Buddy、Kairos、bundled skills 和若干 remote 行为；准确的 production feature 集合不能仅从静态源码推导。
 - Claude.ai connector config 在 startup 异步获取，server-side connector 选择与 policy 不在快照里。
-- 部分注释描述 Ant 内部 build 与 sandbox 要求；不确认 build macros 与 distribution settings 之前，这些路径不一定适用于 public 版本。
 - Worktree 共享 auto-memory 这一点**未实测**——结论来自 `memdir/paths.ts:198` 的 canonical git root 逻辑。AVM 真要依赖隔离边界，建议先写一个最小可重现实验。
