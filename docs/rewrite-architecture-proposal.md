@@ -156,11 +156,104 @@ CLI 模块负责用户交互和文本输出。
 
 这些模块可以按三条主要路径组织。
 
+从整体层次上看，CLI 只负责表现和交互；产品语义层表达用户对象；runtime 边界层承接底层工具差异；执行编排层把一次 run 组织起来；Store 和 Diagnostics 作为横向支撑能力被多个路径复用。
+
+```mermaid
+flowchart TB
+    CLI["CLI 模块<br/>命令、交互、输出"]
+
+    subgraph Product["产品语义层"]
+        Agent["Agent 模块<br/>用户主对象"]
+        Capability["Capability Discovery<br/>skills / MCP 全量发现"]
+        Package["Package 模块<br/>分发与安装"]
+    end
+
+    subgraph Runtime["runtime 边界层"]
+        RuntimeFacts["Runtime Facts<br/>runtime 能力事实"]
+        Boundary["Boundary 模块<br/>隔离边界与 env"]
+        Adapter["Adapter 模块<br/>runtime 映射与 render plan"]
+    end
+
+    subgraph Orchestration["执行编排层"]
+        Planning["Planning 模块<br/>运行计划与 preview"]
+        Materialize["Materialize 模块<br/>managed config 写入"]
+        Run["Run 模块<br/>命令级运行生命周期"]
+        Reconcile["Reconcile 模块<br/>drift 检查与对齐"]
+    end
+
+    Store["Store 模块<br/>AVM home / state / run log"]
+    Diagnostics["Diagnostics 模块<br/>doctor / status / warnings"]
+    RuntimeProcess["底层 runtime 进程<br/>Codex / Claude Code / OpenClaw"]
+
+    CLI --> Agent
+    CLI --> Package
+    CLI --> Run
+    CLI --> Diagnostics
+
+    Agent --> Store
+    Capability --> Store
+    Package --> Store
+
+    Run --> Planning
+    Planning --> Agent
+    Planning --> Capability
+    Planning --> RuntimeFacts
+    Planning --> Boundary
+    Planning --> Adapter
+    Planning --> Diagnostics
+
+    Run --> Materialize
+    Materialize --> Adapter
+    Materialize --> Store
+
+    Run --> RuntimeProcess
+    Run --> Reconcile
+    Reconcile --> Store
+    Reconcile --> Adapter
+    Diagnostics --> Store
+    Diagnostics --> RuntimeFacts
+    Diagnostics --> Boundary
+```
+
 创建和编辑路径从 CLI 进入 Agent 模块。CLI 请求 Capability Discovery 提供实时候选能力，再让 Agent 模块保存用户确认后的 Agent 定义。这个路径不写 runtime config，也不启动 runtime。
 
 运行路径从 CLI 进入 Run 模块。Run 模块读取 Agent，交给 Planning 模块解析 runtime、capability、boundary 和 adapter mapping。Planning 生成可解释的运行计划后，Materialize 模块负责写入 managed config。写入完成后，Run 模块注入 boundary run env 并启动 runtime。进程退出后，Run 模块触发 Reconcile 检查差异并记录 run log。
 
 打包路径从 CLI 进入 Package 模块。Package 模块读取 Agent 和用户选择携带的能力，生成可检查、可安装的分发文件。安装 Package 时只写入 Agent 和可选能力元数据，不改变当前运行状态，也不生成 runtime managed config。
+
+三条主路径可以这样理解：
+
+```mermaid
+flowchart LR
+    subgraph CreateEdit["创建 / 编辑 Agent"]
+        CE1["CLI"]
+        CE2["Capability Discovery<br/>展示候选能力和来源"]
+        CE3["Agent 模块<br/>生成或更新 Agent 定义"]
+        CE4["Store<br/>保存 Agent"]
+        CE1 --> CE2 --> CE3 --> CE4
+    end
+
+    subgraph RunPath["运行 Agent"]
+        R1["CLI"]
+        R2["Run 模块"]
+        R3["Planning<br/>组合 Agent / runtime / capability / boundary / adapter"]
+        R4["Materialize<br/>写入 managed config"]
+        R5["runtime 进程"]
+        R6["Reconcile<br/>退出后检查 drift"]
+        R7["Store<br/>记录 run log 和 materialize 结果"]
+        R1 --> R2 --> R3 --> R4 --> R5 --> R6 --> R7
+        R3 --> R7
+        R4 --> R7
+    end
+
+    subgraph PackagePath["打包 / 安装"]
+        P1["CLI"]
+        P2["Package 模块"]
+        P3["Agent / Capability 数据"]
+        P4["Store<br/>写入或读取分发内容"]
+        P1 --> P2 --> P3 --> P4
+    end
+```
 
 从层次上看，Agent、Capability Discovery、Package 是产品语义层；Runtime Facts、Boundary、Adapter 是 runtime 边界层；Planning、Materialize、Run、Reconcile 是执行编排层；Store 和 Diagnostics 是横向支撑层；CLI 是最外层表现层。
 
