@@ -329,4 +329,3 @@ Doctor 和 status 是解释系统状态的入口，不是普通用户运行 Agen
 当前草案还没有展开以下细节：
 
 - managed config 与 Agent 定义 drift 的具体对齐机制。
-- 从旧 activation/sync/environment 模型迁移到新模型的兼容路径。
