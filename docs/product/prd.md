@@ -1,6 +1,6 @@
 # Agent VM — 产品需求文档（PRD）
 
-> 最后更新：2026-05-06（v22 — 能力来源要求降级为基础原则）
+> 最后更新：2026-05-07（v23 — run 路径新增 Agent 定义与 managed config 的对齐原则）
 
 ## 1. 产品定位
 
@@ -323,6 +323,7 @@ avm run <agent> --runtime <runtime>
 - 产品主线不提供先切换再运行的长期状态模式。
 - 每次运行都必须能解释所选 Agent、runtime、managed paths、memory isolation boundary 和 warnings。
 - adapter mapping 必须在 preview 或 run 输出中清楚展示 unsupported / rendered-as-instructions。
+- AVM Agent 定义和 runtime 实际 managed config 是最终一致的，不是强一致。runtime 自身或用户可能在 AVM 之外修改 managed config（例如 runtime 自动写入依赖、用户直接编辑配置文件）。AVM 必须在 `run` 的启动和退出路径上核对两者差异，并让用户对每一项差异做决定（合并进 Agent 定义 / 丢弃 / 本次保留）。非交互模式下采取默认保留并写入 run log。具体对齐机制的实现方式后续再定。
 
 ### 4.5 Package 管理
 
