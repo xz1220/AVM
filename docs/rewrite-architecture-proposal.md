@@ -323,9 +323,3 @@ Doctor 和 status 是解释系统状态的入口，不是普通用户运行 Agen
 10. 每层都应通过明确接口表达对上层暴露的能力边界。
 11. Runtime Integration 层应以 RuntimeDriver 作为每个 runtime 的统一聚合入口。
 12. 核心调用方向保持单向，避免 CLI、adapter、store 互相承载业务逻辑。
-
-## 10. 后续需要继续讨论的问题
-
-当前草案还没有展开以下细节：
-
-- managed config 与 Agent 定义 drift 的具体对齐机制。
