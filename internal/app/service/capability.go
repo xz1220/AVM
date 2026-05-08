@@ -27,6 +27,15 @@ type CapabilityService interface {
 	// runtime currently exposes. Single failures land in
 	// BootstrapCapabilitiesResult.Skipped and never abort the run.
 	Bootstrap(ctx context.Context, req model.BootstrapCapabilitiesRequest) (*model.BootstrapCapabilitiesResult, error)
+
+	// List returns every record currently held in the AVM capability
+	// store. Unlike Discover, this never calls into runtime drivers;
+	// it is meant for hot UI paths that resolve Agent capability IDs
+	// to display metadata (name, source, version, import_from).
+	List(ctx context.Context) ([]model.CapabilityRecord, error)
+	// Get returns a single record by ID. Returns a typed
+	// CAPABILITY_NOT_FOUND error if the ID is unknown.
+	Get(ctx context.Context, id model.CapabilityID) (*model.CapabilityRecord, error)
 }
 
 // Capabilities is the default CapabilityService.
@@ -391,6 +400,42 @@ func markImported(cands []model.CapabilityCandidate) {
 			cands[i].Imported = true
 		}
 	}
+}
+
+// List returns capstore records sorted by ID (capstore.List ordering).
+// It does not consult runtime drivers, so it is safe for hot UI paths.
+func (s *Capabilities) List(ctx context.Context) ([]model.CapabilityRecord, error) {
+	if s.Store == nil {
+		return nil, errors.New("capabilities: missing store")
+	}
+	recs, err := s.Store.List()
+	if err != nil {
+		return nil, WrapError(CodeIOFailure, err,
+			"list capability store: "+err.Error(), nil)
+	}
+	return recs, nil
+}
+
+// Get returns a single capstore record by ID.
+func (s *Capabilities) Get(ctx context.Context, id model.CapabilityID) (*model.CapabilityRecord, error) {
+	if s.Store == nil {
+		return nil, errors.New("capabilities: missing store")
+	}
+	if id == "" {
+		return nil, MissingInputError("id", "capability id is required")
+	}
+	rec, err := s.Store.Get(id)
+	if err != nil {
+		if errors.Is(err, capstore.ErrNotFound) {
+			return nil, NewError(CodeCapabilityNotFound,
+				fmt.Sprintf("capability %q not found", id),
+				map[string]any{"id": string(id)})
+		}
+		return nil, WrapError(CodeIOFailure, err,
+			"get capability: "+err.Error(),
+			map[string]any{"id": string(id)})
+	}
+	return &rec, nil
 }
 
 // markConflicts marks every candidate that shares (kind,name) with at

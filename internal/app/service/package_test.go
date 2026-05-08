@@ -55,6 +55,9 @@ func TestPackages_Install_RoundTrip(t *testing.T) {
 	skill := []byte("# skill content\n")
 	agentYAML := []byte(`identity:
   name: alpha
+runtimes:
+  - runtime: codex
+    default: true
 skills:
   - id: demo-skill
     kind: skill
@@ -121,7 +124,7 @@ skills:
 	}
 }
 
-func TestPackages_Install_ConflictAskNonInteractive(t *testing.T) {
+func TestPackages_Install_RequiresRuntime(t *testing.T) {
 	dir := t.TempDir()
 	manifest := &model.PackageManifest{
 		SchemaVersion: "1", Name: "demo", Version: "0",
@@ -129,6 +132,33 @@ func TestPackages_Install_ConflictAskNonInteractive(t *testing.T) {
 	}
 	pkgPath := buildTestPkg(t, dir, manifest, map[string][]byte{
 		"agents/alpha.yaml": []byte("identity:\n  name: alpha\n"),
+	})
+	agents := agentstore.New(t.TempDir())
+	pkgs := NewPackages(agents, capstore.New(t.TempDir()), packageio.New())
+	_, err := pkgs.Install(context.Background(), model.InstallRequest{Source: pkgPath})
+	if err == nil {
+		t.Fatal("expected MISSING_INPUT for package agent with no runtimes")
+	}
+	se := AsError(err)
+	if se == nil || se.Code != CodeMissingInput {
+		t.Fatalf("expected MISSING_INPUT, got %T %v", err, err)
+	}
+	if got, _ := se.Details["field"].(string); got != "runtime" {
+		t.Fatalf("details.field=%v want runtime", se.Details["field"])
+	}
+	if agents.Exists("alpha") {
+		t.Fatal("agent should not be persisted on validation failure")
+	}
+}
+
+func TestPackages_Install_ConflictAskNonInteractive(t *testing.T) {
+	dir := t.TempDir()
+	manifest := &model.PackageManifest{
+		SchemaVersion: "1", Name: "demo", Version: "0",
+		Agents: []model.PackageAgentRef{{Name: "alpha", Path: "agents/alpha.yaml"}},
+	}
+	pkgPath := buildTestPkg(t, dir, manifest, map[string][]byte{
+		"agents/alpha.yaml": []byte("identity:\n  name: alpha\nruntimes:\n  - runtime: codex\n"),
 	})
 	agents := agentstore.New(t.TempDir())
 	if err := agents.Save(&model.Agent{Identity: model.Identity{Name: "alpha"}}); err != nil {
@@ -151,7 +181,7 @@ func TestPackages_Install_ConflictRename(t *testing.T) {
 		Agents: []model.PackageAgentRef{{Name: "alpha", Path: "agents/alpha.yaml"}},
 	}
 	pkgPath := buildTestPkg(t, dir, manifest, map[string][]byte{
-		"agents/alpha.yaml": []byte("identity:\n  name: alpha\n"),
+		"agents/alpha.yaml": []byte("identity:\n  name: alpha\nruntimes:\n  - runtime: codex\n"),
 	})
 	agents := agentstore.New(t.TempDir())
 	if err := agents.Save(&model.Agent{Identity: model.Identity{Name: "alpha"}}); err != nil {
@@ -180,7 +210,7 @@ func TestPackages_Install_ConflictSkip(t *testing.T) {
 		Agents: []model.PackageAgentRef{{Name: "alpha", Path: "agents/alpha.yaml"}},
 	}
 	pkgPath := buildTestPkg(t, dir, manifest, map[string][]byte{
-		"agents/alpha.yaml": []byte("identity:\n  name: alpha\n  description: pkg\n"),
+		"agents/alpha.yaml": []byte("identity:\n  name: alpha\n  description: pkg\nruntimes:\n  - runtime: codex\n"),
 	})
 	agents := agentstore.New(t.TempDir())
 	if err := agents.Save(&model.Agent{Identity: model.Identity{Name: "alpha", Description: "original"}}); err != nil {
@@ -213,7 +243,7 @@ func TestPackages_Install_ConflictOverwrite(t *testing.T) {
 		Agents: []model.PackageAgentRef{{Name: "alpha", Path: "agents/alpha.yaml"}},
 	}
 	pkgPath := buildTestPkg(t, dir, manifest, map[string][]byte{
-		"agents/alpha.yaml": []byte("identity:\n  name: alpha\n  description: pkg\n"),
+		"agents/alpha.yaml": []byte("identity:\n  name: alpha\n  description: pkg\nruntimes:\n  - runtime: codex\n"),
 	})
 	agents := agentstore.New(t.TempDir())
 	if err := agents.Save(&model.Agent{Identity: model.Identity{Name: "alpha", Description: "original"}}); err != nil {

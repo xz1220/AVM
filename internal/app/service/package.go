@@ -214,6 +214,10 @@ func (s *Packages) Install(ctx context.Context, req model.InstallRequest) (*mode
 				result.Skipped = append(result.Skipped, target)
 				continue
 			case model.ResolveOverwrite:
+				if err := requireRuntimePrefs(agent.Runtimes,
+					fmt.Sprintf("package agent %q has no runtime preferences", target)); err != nil {
+					return result, err
+				}
 				if err := withOverwrite(s.Agents, true, func() error { return s.Agents.Save(&agent) }); err != nil {
 					return result, WrapError(CodeIOFailure, err,
 						fmt.Sprintf("save agent %q (overwrite): %v", target, err),
@@ -226,6 +230,10 @@ func (s *Packages) Install(ctx context.Context, req model.InstallRequest) (*mode
 				agent.Identity.Name = newName
 				if err := agent.Validate(); err != nil {
 					return result, validationError(newName, err)
+				}
+				if err := requireRuntimePrefs(agent.Runtimes,
+					fmt.Sprintf("package agent %q has no runtime preferences", target)); err != nil {
+					return result, err
 				}
 				if err := s.Agents.Save(&agent); err != nil {
 					return result, WrapError(CodeIOFailure, err,
@@ -244,6 +252,10 @@ func (s *Packages) Install(ctx context.Context, req model.InstallRequest) (*mode
 
 		if err := agent.Validate(); err != nil {
 			return result, validationError(target, err)
+		}
+		if err := requireRuntimePrefs(agent.Runtimes,
+			fmt.Sprintf("package agent %q has no runtime preferences", target)); err != nil {
+			return result, err
 		}
 		if err := s.Agents.Save(&agent); err != nil {
 			return result, WrapError(CodeIOFailure, err,

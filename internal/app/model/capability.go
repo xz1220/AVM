@@ -33,8 +33,8 @@ const (
 // Empty Format keeps backward compatibility with pre-import records
 // and means "use the capability Name as the filename".
 const (
-	PayloadFormatSkillMD     = "skill_md"        // a single SKILL.md file (skills)
-	PayloadFormatMCPConfigV1 = "mcp_config_v1"   // canonical AVM MCP JSON (see runtime drivers)
+	PayloadFormatSkillMD     = "skill_md"      // a single SKILL.md file (skills)
+	PayloadFormatMCPConfigV1 = "mcp_config_v1" // canonical AVM MCP JSON (see runtime drivers)
 )
 
 // CapabilityRecord is an entry in the AVM capability store.

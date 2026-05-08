@@ -314,6 +314,42 @@ func RenderDoctor(w io.Writer, r *model.DoctorReport) error {
 	return nil
 }
 
+// RenderRuntimeList renders a list of runtime probes as a human table.
+// Same payload `avm doctor` uses, minus the surrounding doctor checks.
+func RenderRuntimeList(w io.Writer, items []model.RuntimeCheck) error {
+	if len(items) == 0 {
+		return render.Linef(w, "(no runtimes registered)")
+	}
+	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(tw, "NAME\tAVAILABLE\tBINARY\tVERSION")
+	for _, rc := range items {
+		avail := "no"
+		if rc.Available {
+			avail = "yes"
+		}
+		bin := rc.Binary
+		if bin == "" {
+			bin = "-"
+		}
+		ver := rc.Version
+		if ver == "" {
+			ver = "-"
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", rc.Runtime, avail, bin, ver)
+	}
+	tw.Flush()
+	for _, rc := range items {
+		if len(rc.Issues) == 0 {
+			continue
+		}
+		fmt.Fprintf(w, "%s issues:\n", rc.Runtime)
+		for _, iss := range rc.Issues {
+			fmt.Fprintf(w, "  - %s\n", iss)
+		}
+	}
+	return nil
+}
+
 func checkLine(c model.CheckResult) string {
 	tag := "FAIL"
 	if c.OK {
@@ -353,6 +389,58 @@ func RenderCapabilityList(w io.Writer, items []model.CapabilityCandidate) error 
 			c.Kind, c.Name, c.Source, status, idOrPath)
 	}
 	return tw.Flush()
+}
+
+// RenderCapabilityRecords renders capstore-only records as a column table.
+func RenderCapabilityRecords(w io.Writer, items []model.CapabilityRecord) error {
+	if len(items) == 0 {
+		return render.Linef(w, "(capability store empty)")
+	}
+	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(tw, "ID\tKIND\tNAME\tSOURCE\tVERSION\tIMPORT_FROM")
+	for _, r := range items {
+		ver := r.Version
+		if ver == "" {
+			ver = "-"
+		}
+		src := string(r.Source)
+		if src == "" {
+			src = "-"
+		}
+		from := r.ImportFrom
+		if from == "" {
+			from = "-"
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n",
+			r.ID, r.Kind, r.Name, src, ver, from)
+	}
+	return tw.Flush()
+}
+
+// RenderCapabilityRecord renders a single record as a key:value block.
+func RenderCapabilityRecord(w io.Writer, r *model.CapabilityRecord) error {
+	if r == nil {
+		return render.Linef(w, "(no capability)")
+	}
+	fmt.Fprintf(w, "ID:          %s\n", r.ID)
+	fmt.Fprintf(w, "Kind:        %s\n", r.Kind)
+	fmt.Fprintf(w, "Name:        %s\n", r.Name)
+	if r.Version != "" {
+		fmt.Fprintf(w, "Version:     %s\n", r.Version)
+	}
+	if r.Source != "" {
+		fmt.Fprintf(w, "Source:      %s\n", r.Source)
+	}
+	if r.Checksum != "" {
+		fmt.Fprintf(w, "Checksum:    %s\n", r.Checksum)
+	}
+	if r.ImportFrom != "" {
+		fmt.Fprintf(w, "Import from: %s\n", r.ImportFrom)
+	}
+	if r.Format != "" {
+		fmt.Fprintf(w, "Format:      %s\n", r.Format)
+	}
+	return nil
 }
 
 // RenderImportResult renders the outcome of a single capability import.

@@ -122,7 +122,10 @@ func TestAgents_Create_AndList(t *testing.T) {
 func TestAgents_Create_ConflictAsk(t *testing.T) {
 	repo := agentstore.New(t.TempDir())
 	s := NewAgents(repo, runtime.NewRegistry())
-	req := model.CreateAgentRequest{Name: "alpha"}
+	req := model.CreateAgentRequest{
+		Name:     "alpha",
+		Runtimes: []model.RuntimePref{{Runtime: "fake"}},
+	}
 	if _, err := s.Create(context.Background(), req); err != nil {
 		t.Fatalf("Create #1: %v", err)
 	}
@@ -135,18 +138,42 @@ func TestAgents_Create_ConflictAsk(t *testing.T) {
 	}
 }
 
+func TestAgents_Create_RequiresRuntime(t *testing.T) {
+	repo := agentstore.New(t.TempDir())
+	s := NewAgents(repo, runtime.NewRegistry())
+	_, err := s.Create(context.Background(), model.CreateAgentRequest{Name: "alpha"})
+	if err == nil {
+		t.Fatal("expected MISSING_INPUT for empty runtimes")
+	}
+	se, ok := err.(*Error)
+	if !ok {
+		t.Fatalf("expected *service.Error, got %T", err)
+	}
+	if se.Code != CodeMissingInput {
+		t.Fatalf("code=%s want %s", se.Code, CodeMissingInput)
+	}
+	if got, _ := se.Details["field"].(string); got != "runtime" {
+		t.Fatalf("details.field=%v want runtime", se.Details["field"])
+	}
+	if repo.Exists("alpha") {
+		t.Fatal("agent should not be persisted on validation failure")
+	}
+}
+
 func TestAgents_Create_Overwrite(t *testing.T) {
 	repo := agentstore.New(t.TempDir())
 	s := NewAgents(repo, runtime.NewRegistry())
 	if _, err := s.Create(context.Background(), model.CreateAgentRequest{
 		Name:        "alpha",
 		Description: "v1",
+		Runtimes:    []model.RuntimePref{{Runtime: "fake"}},
 	}); err != nil {
 		t.Fatalf("Create #1: %v", err)
 	}
 	a, err := s.Create(context.Background(), model.CreateAgentRequest{
 		Name:        "alpha",
 		Description: "v2",
+		Runtimes:    []model.RuntimePref{{Runtime: "fake"}},
 		OnConflict:  model.ResolveOverwrite,
 	})
 	if err != nil {
@@ -233,6 +260,7 @@ func TestAgents_Edit(t *testing.T) {
 	if _, err := s.Create(context.Background(), model.CreateAgentRequest{
 		Name:        "alpha",
 		Description: "v1",
+		Runtimes:    []model.RuntimePref{{Runtime: "fake"}},
 	}); err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -249,6 +277,29 @@ func TestAgents_Edit(t *testing.T) {
 	}
 }
 
+func TestAgents_Edit_CannotDropAllRuntimes(t *testing.T) {
+	repo := agentstore.New(t.TempDir())
+	s := NewAgents(repo, runtime.NewRegistry())
+	if _, err := s.Create(context.Background(), model.CreateAgentRequest{
+		Name:     "alpha",
+		Runtimes: []model.RuntimePref{{Runtime: "fake"}},
+	}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	empty := []model.RuntimePref{}
+	_, err := s.Edit(context.Background(), model.EditAgentRequest{
+		Name:     "alpha",
+		Runtimes: &empty,
+	})
+	if err == nil {
+		t.Fatal("expected error when edit replaces runtimes with empty list")
+	}
+	se, ok := err.(*Error)
+	if !ok || se.Code != CodeMissingInput {
+		t.Fatalf("expected MISSING_INPUT, got %T %v", err, err)
+	}
+}
+
 func TestAgents_Edit_NonexistentAgent(t *testing.T) {
 	repo := agentstore.New(t.TempDir())
 	s := NewAgents(repo, runtime.NewRegistry())
@@ -261,7 +312,10 @@ func TestAgents_Edit_NonexistentAgent(t *testing.T) {
 func TestAgents_Delete_NonInteractiveRequiresConfirm(t *testing.T) {
 	repo := agentstore.New(t.TempDir())
 	s := NewAgents(repo, runtime.NewRegistry())
-	if _, err := s.Create(context.Background(), model.CreateAgentRequest{Name: "alpha"}); err != nil {
+	if _, err := s.Create(context.Background(), model.CreateAgentRequest{
+		Name:     "alpha",
+		Runtimes: []model.RuntimePref{{Runtime: "fake"}},
+	}); err != nil {
 		t.Fatalf("create: %v", err)
 	}
 	err := s.Delete(context.Background(), model.DeleteAgentRequest{
@@ -287,6 +341,7 @@ func TestAgents_Clone(t *testing.T) {
 	if _, err := s.Create(context.Background(), model.CreateAgentRequest{
 		Name:        "alpha",
 		Description: "v1",
+		Runtimes:    []model.RuntimePref{{Runtime: "fake"}},
 	}); err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -306,10 +361,16 @@ func TestAgents_Clone(t *testing.T) {
 func TestAgents_Rename(t *testing.T) {
 	repo := agentstore.New(t.TempDir())
 	s := NewAgents(repo, runtime.NewRegistry())
-	if _, err := s.Create(context.Background(), model.CreateAgentRequest{Name: "alpha"}); err != nil {
+	if _, err := s.Create(context.Background(), model.CreateAgentRequest{
+		Name:     "alpha",
+		Runtimes: []model.RuntimePref{{Runtime: "fake"}},
+	}); err != nil {
 		t.Fatalf("create alpha: %v", err)
 	}
-	if _, err := s.Create(context.Background(), model.CreateAgentRequest{Name: "beta"}); err != nil {
+	if _, err := s.Create(context.Background(), model.CreateAgentRequest{
+		Name:     "beta",
+		Runtimes: []model.RuntimePref{{Runtime: "fake"}},
+	}); err != nil {
 		t.Fatalf("create beta: %v", err)
 	}
 	// Renaming to existing fails without touching old.

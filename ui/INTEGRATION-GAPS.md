@@ -1,48 +1,47 @@
 # AVM UI Integration Gaps
 
-This file records UI-facing protocol gaps found while scaffolding `avm-ui`.
-The TUI keeps these behind `AvmClient` mocks so the UI can be built before the
-Go protocol is complete.
+This file records UI-facing protocol gaps found while building `avm-ui`.
+Items are removed once the Go CLI publishes a stable JSON command for
+them. The TUI mocks the missing surface behind `AvmClient` so UI work
+can proceed in parallel with backend work.
 
-## Capability discovery
+## Resolved (already shipped)
 
-Application code already has `CapabilityService.Discover`, but the Cobra tree
-does not expose a user-facing JSON command for it.
+These were listed earlier as missing but are now provided by the Go CLI:
 
-Needed shape:
+- `avm capability discover --json [--kind ...] [--runtime ...]` →
+  `[]CapabilityCandidate`. Implemented at
+  `internal/presentation/cli/capability.go`.
+- `avm capability import --runtime ... --kind ... --name ... --json` →
+  `ImportCapabilityResult`. Conflict path returns `CAPABILITY_CONFLICT`
+  envelope; UI re-issues with `--on-conflict skip|overwrite|cancel`.
+- `avm capability list --json` and `avm capability show <id> --json` →
+  capstore-only resolution path so UIs can render names/sources for the
+  capability IDs an Agent already references without paying the cost of
+  a full runtime probe.
+- `avm runtime list --json` → `[]RuntimeCheck`. Use this for the
+  runtime picker in create/edit; do not parse `avm doctor`.
+- `agent create`/`edit` enforce at least one runtime in the application
+  layer. UIs can rely on `MISSING_INPUT` with `details.field="runtime"`
+  if a draft is submitted with zero runtimes.
+- `agent delete --json` returns the literal JSON value `null` (no human
+  success line). UIs can `JSON.parse(stdout)` uniformly.
 
-```bash
-avm capability discover --kind skill --kind mcp --runtime codex --json
-```
+## Open
 
-Expected payload: `[]CapabilityCandidate`, using the model already documented
-in `docs/api/cli-protocol.md`.
+(none — Phase 1 protocol surface complete.)
 
-## Runtime-global capability import
+## Deferred to Phase 2
 
-`CapabilityCandidate` can point at runtime-global skills/MCP, but `Agent`
-stores only AVM capability IDs. The UI needs a protocol to import a selected
-runtime-global candidate into the AVM capability store before `agent create` or
-`agent edit` persists the reference.
+These are recorded as future work, not blockers:
 
-Possible shape:
-
-```bash
-avm capability import --runtime codex --kind skill --name repo-map --json
-```
-
-Expected payload: `CapabilityRecord` or an import result containing the new ID.
-
-## Runtime requirement
-
-`avm agent create --help` says at least one `--runtime` is required. The UI
-enforces that, but the Go service/model currently allow an Agent with no
-runtime. The backend should enforce the same invariant so scripts and UI behave
-the same way.
-
-## Delete JSON success
-
-`docs/api/cli-protocol.md` says `agent delete` returns `null` in JSON mode.
-The current command prints a human success line even with `--json`. The UI uses
-a void command path for now, but this should be aligned before strict protocol
-tests are added for the TUI.
+- **Agent draft preview / validate** before save. Phase 1 UI should do
+  `agent create` followed by `agent show` if it needs the runtime
+  mapping; this keeps the public command surface small.
+- **JSON stdin** for `agent create`/`agent edit` (e.g. `--input -`).
+  Worth doing once `Instructions.Inline` and `Instructions.Files` enter
+  the UI; the public DTO should be a separate `AgentDraftV*` type, not
+  the internal `CreateAgentRequest` struct, to keep service evolution
+  cheap.
+- **`Instructions.Inline` / `Instructions.Files` flags** for
+  `agent create`/`edit`. Will land together with JSON stdin.

@@ -205,5 +205,73 @@ func TestCapabilityBootstrap_PropagatesFlags(t *testing.T) {
 	}
 }
 
+func TestCapabilityList_Empty(t *testing.T) {
+	deps := newTestDeps(nil, nil, nil, &fakeCaps{}, nil)
+	out, _, err := runCmd(t, deps, "capability", "list")
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if !strings.Contains(out, "(capability store empty)") {
+		t.Fatalf("unexpected output: %q", out)
+	}
+}
+
+func TestCapabilityList_JSON(t *testing.T) {
+	caps := &fakeCaps{records: []model.CapabilityRecord{
+		{ID: "cap_a", Kind: model.CapabilityKindSkill, Name: "alpha", Source: model.SourceAVM},
+		{ID: "cap_b", Kind: model.CapabilityKindMCP, Name: "gh", Source: model.SourcePackage,
+			Version: "1.2", ImportFrom: "pkg-x"},
+	}}
+	deps := newTestDeps(nil, nil, nil, caps, nil)
+	out, _, err := runCmd(t, deps, "--json", "capability", "list")
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	var got []model.CapabilityRecord
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("invalid JSON: %v\n%s", err, out)
+	}
+	if len(got) != 2 || got[0].ID != "cap_a" || got[1].ID != "cap_b" {
+		t.Fatalf("unexpected records: %+v", got)
+	}
+}
+
+func TestCapabilityShow_Found(t *testing.T) {
+	caps := &fakeCaps{records: []model.CapabilityRecord{
+		{ID: "cap_a", Kind: model.CapabilityKindSkill, Name: "alpha",
+			Source: model.SourceAVM, Version: "v1", Checksum: "deadbeef"},
+	}}
+	deps := newTestDeps(nil, nil, nil, caps, nil)
+	out, _, err := runCmd(t, deps, "capability", "show", "cap_a")
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	for _, want := range []string{"cap_a", "alpha", "skill", "v1", "deadbeef"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing %q in output: %s", want, out)
+		}
+	}
+}
+
+func TestCapabilityShow_NotFound_Envelope(t *testing.T) {
+	deps := newTestDeps(nil, nil, nil, &fakeCaps{}, nil)
+	out, _, err := runCmd(t, deps, "--json", "capability", "show", "cap_missing")
+	if err == nil {
+		t.Fatal("expected CAPABILITY_NOT_FOUND error")
+	}
+	var env struct {
+		Error *service.Error `json:"error"`
+	}
+	if jerr := json.Unmarshal([]byte(out), &env); jerr != nil {
+		t.Fatalf("invalid envelope: %v\n%s", jerr, out)
+	}
+	if env.Error == nil || env.Error.Code != service.CodeCapabilityNotFound {
+		t.Fatalf("expected CAPABILITY_NOT_FOUND envelope, got %+v", env.Error)
+	}
+	if got, _ := env.Error.Details["id"].(string); got != "cap_missing" {
+		t.Fatalf("expected details.id=cap_missing, got %v", env.Error.Details)
+	}
+}
+
 // guard against the import being lost during edits
 var _ = errors.New

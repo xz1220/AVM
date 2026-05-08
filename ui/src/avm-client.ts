@@ -1,7 +1,12 @@
 import {spawn} from "node:child_process";
-import {AgentDetailSchema, AgentSchema, AgentSummarySchema, AvmErrorEnvelopeSchema, CapabilityCandidateSchema, DoctorReportSchema, type Agent, type AgentDetail, type AgentSummary, type AgentWriteInput, type CapabilityCandidate, type CapabilityKind, type RuntimeCheck} from "./protocol.js";
+import {AgentDetailSchema, AgentSchema, AgentSummarySchema, AvmErrorEnvelopeSchema, CapabilityCandidateSchema, CapabilityRecordSchema, ImportCapabilityResultSchema, RuntimeCheckSchema, type Agent, type AgentDetail, type AgentSummary, type AgentWriteInput, type CapabilityCandidate, type CapabilityKind, type CapabilityRecord, type ImportCapabilityResult, type RuntimeCheck} from "./protocol.js";
 import {mockCapabilityCandidates} from "./mock-capabilities.js";
 import {z} from "zod";
+
+const AgentSummaryListSchema = nullableArray(AgentSummarySchema);
+const RuntimeCheckListSchema = nullableArray(RuntimeCheckSchema);
+const CapabilityCandidateListSchema = nullableArray(CapabilityCandidateSchema);
+const CapabilityRecordListSchema = nullableArray(CapabilityRecordSchema);
 
 export class AvmCommandError extends Error {
   readonly code: string;
@@ -21,7 +26,7 @@ export class AvmClient {
   constructor(readonly binary: string) {}
 
   async listAgents(): Promise<AgentSummary[]> {
-    return this.runJson(["agent", "list"], z.array(AgentSummarySchema));
+    return this.runJson(["agent", "list"], AgentSummaryListSchema);
   }
 
   async showAgent(name: string): Promise<AgentDetail> {
@@ -42,12 +47,9 @@ export class AvmClient {
 
   async listRuntimes(): Promise<RuntimeCheck[]> {
     try {
-      const report = await this.runJson(["doctor"], DoctorReportSchema);
-      if (report.runtimes.length > 0) {
-        return report.runtimes;
-      }
+      return await this.runJson(["runtime", "list"], RuntimeCheckListSchema);
     } catch {
-      // The UI can still scaffold Agent CRUD while doctor is unavailable.
+      // Keep the TUI usable with older avm binaries while the Go protocol rolls forward.
     }
     return [
       {runtime: "codex", available: true, issues: []},
@@ -60,9 +62,39 @@ export class AvmClient {
     kinds?: CapabilityKind[];
     runtimes?: string[];
   }): Promise<CapabilityCandidate[]> {
-    // TODO(ui-integration): replace mock candidates once the Go CLI exposes
-    // `avm capability discover --json` and runtime-global import commands.
+    try {
+      return await this.runJson([
+        "capability", "discover",
+        ...repeatFlag("--kind", input.kinds ?? []),
+        ...repeatFlag("--runtime", input.runtimes ?? [])
+      ], CapabilityCandidateListSchema);
+    } catch (error: unknown) {
+      if (!isLegacySurfaceError(error)) {
+        throw error;
+      }
+    }
     return z.array(CapabilityCandidateSchema).parse(mockCapabilityCandidates(input));
+  }
+
+  async listCapabilities(): Promise<CapabilityRecord[]> {
+    return this.runJson(["capability", "list"], CapabilityRecordListSchema);
+  }
+
+  async showCapability(id: string): Promise<CapabilityRecord> {
+    return this.runJson(["capability", "show", id], CapabilityRecordSchema);
+  }
+
+  async importCapability(input: {
+    runtime: string;
+    kind: CapabilityKind;
+    name: string;
+  }): Promise<ImportCapabilityResult> {
+    return this.runJson([
+      "capability", "import",
+      "--runtime", input.runtime,
+      "--kind", input.kind,
+      "--name", input.name
+    ], ImportCapabilityResultSchema);
   }
 
   private async runVoid(args: string[]): Promise<void> {
@@ -110,6 +142,19 @@ function runtimeArgs(input: AgentWriteInput): string[] {
 
 function capabilityArgs(flag: string, refs: {id: string}[]): string[] {
   return refs.flatMap((ref) => [flag, ref.id]);
+}
+
+function repeatFlag(flag: string, values: readonly string[]): string[] {
+  return values.flatMap((value) => [flag, value]);
+}
+
+function nullableArray<T>(schema: z.ZodType<T>) {
+  return z.array(schema).nullable().transform((items) => items ?? []);
+}
+
+function isLegacySurfaceError(error: unknown): boolean {
+  return error instanceof AvmCommandError &&
+    (error.code === "SPAWN_FAILED" || error.code.startsWith("EXIT_"));
 }
 
 async function run<T>(binary: string, args: string[], schema: z.ZodType<T> | undefined): Promise<T> {

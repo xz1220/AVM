@@ -38,6 +38,41 @@ export function AgentEditor(props: {
   const [capabilities, setCapabilities] = useState<CapabilityCandidate[]>([]);
 
   const selectedRuntimeNames = draft.runtimes.map((runtime) => runtime.runtime);
+  const toggleCapability = async (
+    kind: CapabilityKind,
+    selected: CapabilityRef[],
+    setSelected: (refs: CapabilityRef[]) => void,
+    candidate: CapabilityCandidate
+  ) => {
+    const recordID = candidate.record?.id;
+    if (recordID) {
+      const exists = selected.some((ref) => ref.id === recordID);
+      setSelected(exists
+        ? selected.filter((ref) => ref.id !== recordID)
+        : [...selected, {id: recordID, kind}]
+      );
+      return;
+    }
+    if (!candidate.global) return;
+
+    setStatus(`importing ${candidate.name} from ${candidate.global.runtime}`);
+    try {
+      const imported = await props.client.importCapability({
+        runtime: candidate.global.runtime,
+        kind,
+        name: candidate.name
+      });
+      const exists = selected.some((ref) => ref.id === imported.id);
+      setSelected(exists
+        ? selected.filter((ref) => ref.id !== imported.id)
+        : [...selected, {id: imported.id, kind}]
+      );
+      setCapabilities((current) => upsertImportedCandidate(current, candidate, imported.id, imported.source));
+      setStatus(undefined);
+    } catch (error: unknown) {
+      setStatus(error instanceof Error ? error.message : String(error));
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -120,7 +155,7 @@ export function AgentEditor(props: {
               kind="skill"
               selected={draft.skills}
               candidates={capabilities.filter((candidate) => candidate.kind === "skill")}
-              setSelected={(skills) => setDraft({...draft, skills})}
+              onToggle={(candidate) => toggleCapability("skill", draft.skills, (skills) => setDraft({...draft, skills}), candidate)}
               onNext={next}
             />
           ) : null}
@@ -129,7 +164,7 @@ export function AgentEditor(props: {
               kind="mcp"
               selected={draft.mcp}
               candidates={capabilities.filter((candidate) => candidate.kind === "mcp")}
-              setSelected={(mcp) => setDraft({...draft, mcp})}
+              onToggle={(candidate) => toggleCapability("mcp", draft.mcp, (mcp) => setDraft({...draft, mcp}), candidate)}
               onNext={next}
             />
           ) : null}
@@ -265,7 +300,7 @@ function CapabilityStep(props: {
   kind: CapabilityKind;
   selected: CapabilityRef[];
   candidates: CapabilityCandidate[];
-  setSelected: (refs: CapabilityRef[]) => void;
+  onToggle: (candidate: CapabilityCandidate) => void;
   onNext: () => void;
 }) {
   const [query, setQuery] = useState("");
@@ -294,12 +329,7 @@ function CapabilityStep(props: {
     } else if (input === " ") {
       const candidate = filtered[cursor];
       if (!candidate) return;
-      const id = capabilityRefID(candidate);
-      const exists = selectedIDs.has(id);
-      props.setSelected(exists
-        ? props.selected.filter((ref) => ref.id !== id)
-        : [...props.selected, {id, kind: props.kind}]
-      );
+      props.onToggle(candidate);
     } else if (key.return) {
       props.onNext();
     } else if (input.length === 1 && !key.ctrl && !key.meta) {
@@ -332,6 +362,30 @@ function CapabilityStep(props: {
       {filtered.length === 0 ? <Muted>no candidates</Muted> : null}
     </Box>
   );
+}
+
+function upsertImportedCandidate(
+  candidates: CapabilityCandidate[],
+  candidate: CapabilityCandidate,
+  id: string,
+  importFrom?: string
+): CapabilityCandidate[] {
+  if (candidates.some((item) => item.record?.id === id)) {
+    return candidates;
+  }
+  return [{
+    kind: candidate.kind,
+    name: candidate.name,
+    source: "runtime",
+    record: {
+      id,
+      kind: candidate.kind,
+      name: candidate.name,
+      version: candidate.global?.version,
+      source: "runtime",
+      import_from: importFrom
+    }
+  }, ...candidates];
 }
 
 function ReviewStep(props: {

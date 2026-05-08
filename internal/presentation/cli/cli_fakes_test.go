@@ -41,6 +41,10 @@ func (f *fakeAgents) Create(ctx context.Context, req model.CreateAgentRequest) (
 		}
 		return nil, service.NewError(code, err.Error(), map[string]any{"name": req.Name})
 	}
+	if len(req.Runtimes) == 0 {
+		return nil, service.MissingInputError("runtime",
+			"at least one runtime preference is required")
+	}
 	if _, exists := f.agents[req.Name]; exists {
 		switch req.OnConflict {
 		case model.ResolveOverwrite:
@@ -250,14 +254,19 @@ func (f *fakePackages) Inspect(ctx context.Context, file string) (*model.Package
 
 // fakeCaps is a test-only CapabilityService.
 type fakeCaps struct {
-	cands       []model.CapabilityCandidate
-	err         error
-	importRes   *model.ImportCapabilityResult
-	importErr   error
-	importReqs  []model.ImportCapabilityRequest
-	bootRes     *model.BootstrapCapabilitiesResult
-	bootErr     error
-	bootReqs    []model.BootstrapCapabilitiesRequest
+	cands      []model.CapabilityCandidate
+	err        error
+	importRes  *model.ImportCapabilityResult
+	importErr  error
+	importReqs []model.ImportCapabilityRequest
+	bootRes    *model.BootstrapCapabilitiesResult
+	bootErr    error
+	bootReqs   []model.BootstrapCapabilitiesRequest
+	records    []model.CapabilityRecord
+	listErr    error
+	getErr     error
+	getResp    *model.CapabilityRecord
+	getReqs    []model.CapabilityID
 }
 
 func (f *fakeCaps) Discover(ctx context.Context, req model.DiscoverRequest) ([]model.CapabilityCandidate, error) {
@@ -287,12 +296,34 @@ func (f *fakeCaps) Bootstrap(ctx context.Context, req model.BootstrapCapabilitie
 	}
 	return &model.BootstrapCapabilitiesResult{}, nil
 }
+func (f *fakeCaps) List(ctx context.Context) ([]model.CapabilityRecord, error) {
+	return f.records, f.listErr
+}
+func (f *fakeCaps) Get(ctx context.Context, id model.CapabilityID) (*model.CapabilityRecord, error) {
+	f.getReqs = append(f.getReqs, id)
+	if f.getErr != nil {
+		return nil, f.getErr
+	}
+	if f.getResp != nil {
+		return f.getResp, nil
+	}
+	for i := range f.records {
+		if f.records[i].ID == id {
+			rec := f.records[i]
+			return &rec, nil
+		}
+	}
+	return nil, service.NewError(service.CodeCapabilityNotFound,
+		"capability \""+string(id)+"\" not found",
+		map[string]any{"id": string(id)})
+}
 
 // fakeDiagnostics is a test-only DiagnosticsService.
 type fakeDiagnostics struct {
-	doctor *model.DoctorReport
-	status *model.StatusReport
-	err    error
+	doctor   *model.DoctorReport
+	status   *model.StatusReport
+	runtimes []model.RuntimeCheck
+	err      error
 }
 
 func (f *fakeDiagnostics) Doctor(ctx context.Context) (*model.DoctorReport, error) {
@@ -321,4 +352,22 @@ func (f *fakeDiagnostics) Status(ctx context.Context, agent string) (*model.Stat
 		return f.status, nil
 	}
 	return &model.StatusReport{}, nil
+}
+
+func (f *fakeDiagnostics) Runtimes(ctx context.Context) ([]model.RuntimeCheck, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	if f.runtimes != nil {
+		return f.runtimes, nil
+	}
+	// Default mirrors the Doctor fake so tests that don't set runtimes
+	// explicitly still have a sensible payload.
+	if f.doctor != nil {
+		return f.doctor.Runtimes, nil
+	}
+	return []model.RuntimeCheck{
+		{Runtime: "codex", Available: true, Binary: "/usr/bin/codex", Version: "1.0"},
+		{Runtime: "claudecode", Available: false, Issues: []string{"binary not found"}},
+	}, nil
 }

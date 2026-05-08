@@ -140,6 +140,26 @@ func TestAgentCreate_RequiresName(t *testing.T) {
 	}
 }
 
+func TestAgentCreate_RequiresRuntime_Envelope(t *testing.T) {
+	deps := newTestDeps(nil, nil, nil, nil, nil)
+	out, _, err := runCmd(t, deps, "--json", "agent", "create", "--name", "alpha")
+	if err == nil {
+		t.Fatal("expected MISSING_INPUT error without --runtime")
+	}
+	var env struct {
+		Error *service.Error `json:"error"`
+	}
+	if jerr := json.Unmarshal([]byte(out), &env); jerr != nil {
+		t.Fatalf("invalid envelope: %v\n%s", jerr, out)
+	}
+	if env.Error == nil || env.Error.Code != service.CodeMissingInput {
+		t.Fatalf("expected MISSING_INPUT envelope, got %+v", env.Error)
+	}
+	if got, _ := env.Error.Details["field"].(string); got != "runtime" {
+		t.Fatalf("expected details.field=runtime, got %v", env.Error.Details)
+	}
+}
+
 func TestAgentCreate_NonInteractive_OK(t *testing.T) {
 	agents := newFakeAgents()
 	deps := newTestDeps(agents, nil, nil, nil, nil)
@@ -184,6 +204,22 @@ func TestAgentDelete_NonInteractive_OK(t *testing.T) {
 	}
 	if !strings.Contains(out, `Deleted agent "alpha"`) {
 		t.Fatalf("unexpected output: %q", out)
+	}
+	if len(agents.deleted) != 1 || agents.deleted[0] != "alpha" {
+		t.Fatalf("expected agent deleted, got %v", agents.deleted)
+	}
+}
+
+func TestAgentDelete_JSON_EmitsNull(t *testing.T) {
+	agents := newFakeAgents()
+	agents.put(model.Agent{Identity: model.Identity{Name: "alpha"}})
+	deps := newTestDeps(agents, nil, nil, nil, nil)
+	out, _, err := runCmd(t, deps, "--json", "agent", "delete", "alpha", "--yes")
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if out != "null\n" {
+		t.Fatalf("expected literal \"null\\n\" in JSON mode, got %q", out)
 	}
 	if len(agents.deleted) != 1 || agents.deleted[0] != "alpha" {
 		t.Fatalf("expected agent deleted, got %v", agents.deleted)

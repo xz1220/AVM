@@ -279,6 +279,10 @@ func newAgentDeleteCmd(deps Deps) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if globalFlags(c).JSON {
+				// Protocol contract: agent delete success -> JSON `null`.
+				return jsonWrite(c.OutOrStdout(), nil)
+			}
 			fmt.Fprintf(c.OutOrStdout(), "Deleted agent %q\n", args[0])
 			return nil
 		},

@@ -14,7 +14,55 @@ func newCapabilityCmd(deps Deps) *cobra.Command {
 	cmd.AddCommand(newCapabilityDiscoverCmd(deps))
 	cmd.AddCommand(newCapabilityImportCmd(deps))
 	cmd.AddCommand(newCapabilityBootstrapCmd(deps))
+	cmd.AddCommand(newCapabilityListCmd(deps))
+	cmd.AddCommand(newCapabilityShowCmd(deps))
 	return cmd
+}
+
+// ----------------------------------------------------------------------------
+// avm capability list  /  avm capability show <id>
+//
+// Capstore-only resolution path. Unlike `discover`, these commands do
+// NOT call into runtime drivers — they answer "what does this stored
+// capability ID mean?" cheaply, which UIs need when rendering an
+// Agent's referenced skills/MCP.
+// ----------------------------------------------------------------------------
+
+func newCapabilityListCmd(deps Deps) *cobra.Command {
+	return &cobra.Command{
+		Use:   "list",
+		Short: "List records held in the AVM capability store",
+		Long: `List every record currently in the AVM capability store. This is
+a pure capstore read: it does not probe runtime binaries.`,
+		RunE: func(c *cobra.Command, args []string) error {
+			recs, err := deps.Services.Capabilities.List(c.Context())
+			if err != nil {
+				return err
+			}
+			if globalFlags(c).JSON {
+				return jsonWrite(c.OutOrStdout(), recs)
+			}
+			return RenderCapabilityRecords(c.OutOrStdout(), recs)
+		},
+	}
+}
+
+func newCapabilityShowCmd(deps Deps) *cobra.Command {
+	return &cobra.Command{
+		Use:   "show <id>",
+		Short: "Show one capability record by ID",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(c *cobra.Command, args []string) error {
+			rec, err := deps.Services.Capabilities.Get(c.Context(), model.CapabilityID(args[0]))
+			if err != nil {
+				return err
+			}
+			if globalFlags(c).JSON {
+				return jsonWrite(c.OutOrStdout(), rec)
+			}
+			return RenderCapabilityRecord(c.OutOrStdout(), rec)
+		},
+	}
 }
 
 // ----------------------------------------------------------------------------

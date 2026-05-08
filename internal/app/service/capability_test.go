@@ -479,5 +479,64 @@ func TestCapabilities_Bootstrap_RuntimeNotFound(t *testing.T) {
 	}
 }
 
+func TestCapabilities_List_PureCapstore(t *testing.T) {
+	store := capstore.New(t.TempDir())
+	if _, err := store.Add(model.CapabilityRecord{
+		Kind: model.CapabilityKindSkill, Name: "alpha",
+	}, bytes.NewReader([]byte("a"))); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	// Driver with a global discovery — must NOT appear in List.
+	driver := &fakeDriver{
+		name: "fake",
+		globals: []model.GlobalCapability{
+			{Runtime: "fake", Kind: model.CapabilityKindMCP, Name: "global-only"},
+		},
+	}
+	reg := registryWith(t, driver)
+	s := NewCapabilities(store, reg)
+	recs, err := s.List(context.Background())
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(recs) != 1 || recs[0].Name != "alpha" {
+		t.Fatalf("List should only see capstore records, got %+v", recs)
+	}
+}
+
+func TestCapabilities_Get_NotFound(t *testing.T) {
+	store := capstore.New(t.TempDir())
+	s := NewCapabilities(store, runtime.NewRegistry())
+	_, err := s.Get(context.Background(), model.CapabilityID("cap_missing"))
+	if err == nil {
+		t.Fatal("expected CAPABILITY_NOT_FOUND error")
+	}
+	se := AsError(err)
+	if se == nil || se.Code != CodeCapabilityNotFound {
+		t.Fatalf("expected CodeCapabilityNotFound, got %+v", err)
+	}
+	if got, _ := se.Details["id"].(string); got != "cap_missing" {
+		t.Fatalf("expected details.id=cap_missing, got %v", se.Details)
+	}
+}
+
+func TestCapabilities_Get_Success(t *testing.T) {
+	store := capstore.New(t.TempDir())
+	id, err := store.Add(model.CapabilityRecord{
+		Kind: model.CapabilityKindSkill, Name: "alpha",
+	}, bytes.NewReader([]byte("a")))
+	if err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	s := NewCapabilities(store, runtime.NewRegistry())
+	got, err := s.Get(context.Background(), id)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got == nil || got.ID != id || got.Name != "alpha" {
+		t.Fatalf("unexpected record: %+v", got)
+	}
+}
+
 // asserts the unused error import is still used; goimports-style guard.
 var _ = errors.New

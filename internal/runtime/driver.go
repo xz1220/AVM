@@ -79,7 +79,7 @@ var ErrGlobalCapabilityNotFound = errors.New("runtime: global capability not fou
 // doesn't yet cover, so we don't lose information across an import →
 // export cycle. v2 may promote stable Extra keys to first-class fields.
 type MCPConfigV1 struct {
-	Kind    string            `json:"kind"`              // always "mcp"
+	Kind    string            `json:"kind"` // always "mcp"
 	Name    string            `json:"name"`
 	Command string            `json:"command,omitempty"`
 	Args    []string          `json:"args,omitempty"`

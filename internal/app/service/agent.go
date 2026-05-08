@@ -66,6 +66,13 @@ func validationError(name string, err error) *Error {
 	return WrapError(CodeValidation, err, err.Error(), nil)
 }
 
+func requireRuntimePrefs(prefs []model.RuntimePref, hint string) error {
+	if len(prefs) == 0 {
+		return MissingInputError("runtime", hint)
+	}
+	return nil
+}
+
 // Create implements PRD §4.2: explicit conflict resolution; never an
 // implicit overwrite.
 func (s *Agents) Create(ctx context.Context, req model.CreateAgentRequest) (*model.Agent, error) {
@@ -85,6 +92,9 @@ func (s *Agents) Create(ctx context.Context, req model.CreateAgentRequest) (*mod
 	}
 	if err := agent.Validate(); err != nil {
 		return nil, validationError(req.Name, err)
+	}
+	if err := requireRuntimePrefs(agent.Runtimes, "at least one runtime preference is required"); err != nil {
+		return nil, err
 	}
 
 	target := req.Name
@@ -236,6 +246,9 @@ func (s *Agents) Edit(ctx context.Context, req model.EditAgentRequest) (*model.A
 	if err := agent.Validate(); err != nil {
 		return nil, validationError(req.Name, err)
 	}
+	if err := requireRuntimePrefs(agent.Runtimes, "at least one runtime preference is required"); err != nil {
+		return nil, err
+	}
 	if err := withOverwrite(s.Repo, true, func() error { return s.Repo.Save(agent) }); err != nil {
 		return nil, WrapError(CodeIOFailure, err, "save agent: "+err.Error(),
 			map[string]any{"name": req.Name})
@@ -294,6 +307,9 @@ func (s *Agents) Clone(ctx context.Context, name, newName string) (*model.Agent,
 	if err := dst.Validate(); err != nil {
 		return nil, validationError(newName, err)
 	}
+	if err := requireRuntimePrefs(dst.Runtimes, "source agent has no runtime preferences; edit it before cloning"); err != nil {
+		return nil, err
+	}
 	if err := s.Repo.Save(&dst); err != nil {
 		return nil, WrapError(CodeIOFailure, err, "save clone: "+err.Error(),
 			map[string]any{"name": newName})
@@ -333,6 +349,9 @@ func (s *Agents) Rename(ctx context.Context, oldName, newName string) (*model.Ag
 	dst.Identity.Name = newName
 	if err := dst.Validate(); err != nil {
 		return nil, validationError(newName, err)
+	}
+	if err := requireRuntimePrefs(dst.Runtimes, "source agent has no runtime preferences; edit it before renaming"); err != nil {
+		return nil, err
 	}
 	if err := s.Repo.Save(&dst); err != nil {
 		return nil, WrapError(CodeIOFailure, err, "save renamed agent: "+err.Error(),

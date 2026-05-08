@@ -38,13 +38,20 @@ Every command emits the corresponding `internal/app/model` value as a
 JSON object. Field names are `snake_case`. Empty optional fields are
 omitted (`omitempty`).
 
+> **Empty list payloads:** when a command's success type is a slice
+> (`[]AgentSummary`, `[]CapabilityRecord`, `[]RuntimeCheck`, ...) and
+> there are zero items, the JSON value may be either `[]` or `null`.
+> Existing stores generally emit `[]`; missing/uninitialized backing
+> directories may surface Go's nil slice as `null`. Consumers must handle
+> both as an empty list.
+
 | Command | Success payload |
 | --- | --- |
 | `avm agent create` | `Agent` |
 | `avm agent list` | `[]AgentSummary` |
 | `avm agent show <name>` | `AgentDetail` |
 | `avm agent edit <name>` | `Agent` |
-| `avm agent delete <name>` | `null` (no body) |
+| `avm agent delete <name>` | literal `null` |
 | `avm agent clone <name> --name <new>` | `Agent` |
 | `avm agent rename <old> <new>` | `Agent` |
 | `avm run <agent> --preview` | `RunPreview` |
@@ -52,12 +59,15 @@ omitted (`omitempty`).
 | `avm package list` | `[]PackageSummary` |
 | `avm package show <name>` | `PackageDetail` |
 | `avm package install <file>` | `InstallResult` |
-| `avm package uninstall <name>` | `null` |
+| `avm package uninstall <name>` | literal `null` |
 | `avm package export <agent>` | `ExportResult` |
 | `avm package inspect <file>` | `PackageDetail` |
 | `avm capability discover` | `[]CapabilityCandidate` |
+| `avm capability list` | `[]CapabilityRecord` |
+| `avm capability show <id>` | `CapabilityRecord` |
 | `avm capability import` | `ImportCapabilityResult` |
 | `avm capability bootstrap` | `BootstrapCapabilitiesResult` |
+| `avm runtime list` | `[]RuntimeCheck` |
 | `avm doctor` | `DoctorReport` |
 | `avm status [agent]` | `StatusReport` |
 | `avm init` | `InitResult` (currently human-only; JSON support TBD) |
@@ -117,7 +127,7 @@ Human mode prints `avm: <message>` to stderr instead.
 | `PACKAGE_CHECKSUM_MISMATCH` | reserved | `{"file": string, "want": string, "got": string}` | Capability blob checksum did not match manifest. |
 | `CAPABILITY_NOT_FOUND` | `package export`, `capability import` | `{"id": string}` for export; `{"runtime": string, "kind": string, "name": string}` for import | The referenced capability ID / (runtime,kind,name) is unknown. |
 | `CAPABILITY_CONFLICT` | `capability import` | `{"kind": string, "name": string, "existing_id": string, "existing_checksum": string}` | A different-content capability with the same `(kind,name)` already lives in capstore. UI: present existing record and prompt for `--on-conflict skip|overwrite`. Same `(kind,name)` across multiple discovery sources is also reflected by the `Conflict: true` flag on `Discover` results. |
-| `MISSING_INPUT` | many; common for missing `--name`, `--yes`, `--shell` | `{"field": string, "hint": string}` | A required input was absent. UI: surface `hint` and re-issue with the field set. |
+| `MISSING_INPUT` | many; common for missing `--name`, `--runtime`, `--yes`, `--shell` | `{"field": string, "hint": string}` | A required input was absent. UI: surface `hint` and re-issue with the field set. `agent create`/`edit` raise this with `field="runtime"` when an Agent would have zero runtime preferences. |
 | `VALIDATION` | several; e.g. unknown `--on-conflict` value | varies | Generic validation failure not fitting a narrower code. |
 | `IO_FAILURE` | many | varies | Underlying filesystem / zip / network IO failed. |
 | `INTERNAL_ERROR` | catch-all | varies | An error the CLI/service does not recognise; treat as bug. |
@@ -162,6 +172,24 @@ avm run <agent> --runtime <r> --drift keep
 avm package inspect <file> --json     # show what will be written
 avm package install <file>            # default fails on AGENT_CONFLICT
 avm package install <file> --on-conflict {rename|skip|overwrite|cancel}
+```
+
+### Capability resolve flow (UI: render IDs an Agent already references)
+
+```
+# Cheap capstore-only read. Does not call into runtime drivers, so it is
+# safe for hot UI paths like "show me the names behind these IDs".
+avm capability list --json                      # []CapabilityRecord
+avm capability show <id> --json                 # CapabilityRecord
+  → CAPABILITY_NOT_FOUND { "id": <id> } if unknown
+```
+
+### Runtime picker flow (UI: pick a runtime when creating an Agent)
+
+```
+# Non-diagnostic runtime listing. Same per-runtime payload Doctor uses
+# (RuntimeCheck), without home/PATH/shell-integration noise.
+avm runtime list --json                         # []RuntimeCheck
 ```
 
 ### Capability discover / import flow

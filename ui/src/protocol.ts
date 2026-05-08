@@ -72,7 +72,8 @@ export const CapabilityRecordSchema = z.object({
   version: z.string().optional(),
   source: CapabilitySourceSchema,
   checksum: z.string().optional(),
-  import_from: z.string().optional()
+  import_from: z.string().optional(),
+  format: z.string().optional()
 });
 export type CapabilityRecord = z.infer<typeof CapabilityRecordSchema>;
 
@@ -91,9 +92,18 @@ export const CapabilityCandidateSchema = z.object({
   source: CapabilitySourceSchema,
   record: CapabilityRecordSchema.optional(),
   global: GlobalCapabilitySchema.optional(),
-  conflict: z.boolean().optional()
+  conflict: z.boolean().optional(),
+  imported: z.boolean().optional()
 });
 export type CapabilityCandidate = z.infer<typeof CapabilityCandidateSchema>;
+
+export const ImportCapabilityResultSchema = z.object({
+  id: z.string(),
+  created: z.boolean(),
+  replaced: z.boolean().optional(),
+  source: z.string().optional()
+});
+export type ImportCapabilityResult = z.infer<typeof ImportCapabilityResultSchema>;
 
 export const RuntimeCheckSchema = z.object({
   runtime: z.string(),

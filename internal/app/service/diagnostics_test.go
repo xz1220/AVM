@@ -47,6 +47,48 @@ func TestDiagnostics_Doctor_RuntimesProjected(t *testing.T) {
 	}
 }
 
+func TestDiagnostics_Runtimes_MatchesDoctor(t *testing.T) {
+	t.Setenv("AVM_HOME", t.TempDir())
+	driver := &fakeDriver{
+		name: "fake",
+		facts: runtime.Facts{
+			Name:       "fake",
+			Available:  true,
+			BinaryPath: "/usr/bin/fake",
+			Version:    "1.2.3",
+			Risks:      []runtime.Risk{{Code: "fake.risk", Message: "test risk"}},
+		},
+	}
+	d := NewDiagnostics(nil, registryWith(t, driver), nil)
+
+	got, err := d.Runtimes(context.Background())
+	if err != nil {
+		t.Fatalf("Runtimes: %v", err)
+	}
+	if len(got) != 1 || got[0].Runtime != "fake" || !got[0].Available {
+		t.Fatalf("Runtimes payload = %+v", got)
+	}
+
+	// Asserting Runtimes does not drift from Doctor.Runtimes, which is the
+	// point of having a shared probeRuntimes helper.
+	rep, err := d.Doctor(context.Background())
+	if err != nil {
+		t.Fatalf("Doctor: %v", err)
+	}
+	if len(rep.Runtimes) != len(got) {
+		t.Fatalf("Doctor=%+v Runtimes=%+v", rep.Runtimes, got)
+	}
+	for i := range got {
+		if got[i].Runtime != rep.Runtimes[i].Runtime ||
+			got[i].Available != rep.Runtimes[i].Available ||
+			got[i].Binary != rep.Runtimes[i].Binary ||
+			got[i].Version != rep.Runtimes[i].Version {
+			t.Fatalf("drift at %d: doctor=%+v runtimes=%+v",
+				i, rep.Runtimes[i], got[i])
+		}
+	}
+}
+
 func TestDiagnostics_Status(t *testing.T) {
 	t.Setenv("AVM_HOME", t.TempDir())
 	repo := agentstore.New(t.TempDir())

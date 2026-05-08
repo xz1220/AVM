@@ -250,10 +250,10 @@ func TestExportGlobal_MCP(t *testing.T) {
 	cfg := map[string]any{
 		"mcpServers": map[string]any{
 			"gh": map[string]any{
-				"command":      "npx",
-				"args":         []any{"-y", "@modelcontextprotocol/server-github"},
-				"env":          map[string]any{"GITHUB_TOKEN": "stub"},
-				"weird_extra":  42.0,
+				"command":     "npx",
+				"args":        []any{"-y", "@modelcontextprotocol/server-github"},
+				"env":         map[string]any{"GITHUB_TOKEN": "stub"},
+				"weird_extra": 42.0,
 			},
 		},
 	}
