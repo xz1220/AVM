@@ -58,7 +58,7 @@ type ImportCapabilityRequest struct {
 // ImportCapabilityResult describes the outcome of a single import.
 type ImportCapabilityResult struct {
 	ID       CapabilityID `json:"id"`
-	Created  bool         `json:"created,omitempty"`  // false = dedup or skipped
+	Created  bool         `json:"created"`            // false = dedup or skipped
 	Replaced bool         `json:"replaced,omitempty"` // true = OnConflict=overwrite kicked in
 	Source   string       `json:"source,omitempty"`   // "<runtime>:<original-path>"
 }

@@ -99,7 +99,7 @@ export type CapabilityCandidate = z.infer<typeof CapabilityCandidateSchema>;
 
 export const ImportCapabilityResultSchema = z.object({
   id: z.string(),
-  created: z.boolean(),
+  created: z.boolean().optional().default(false),
   replaced: z.boolean().optional(),
   source: z.string().optional()
 });

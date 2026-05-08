@@ -2,13 +2,14 @@ import React, {useEffect, useMemo, useState} from "react";
 import {Box, Text, useInput} from "ink";
 import TextInput from "ink-text-input";
 import Fuse from "fuse.js";
-import type {AgentDetail, AgentSummary} from "./protocol.js";
+import type {AgentDetail, AgentSummary, CapabilityRecord, CapabilityRef} from "./protocol.js";
 import {ErrorText, Frame, Muted, Pill, SectionTitle, truncate} from "./components.js";
 import {theme} from "./theme.js";
 
 export function AgentBrowser(props: {
   agents: AgentSummary[];
   detail?: AgentDetail;
+  capabilities: CapabilityRecord[];
   selectedName?: string;
   loading: boolean;
   error?: string;
@@ -113,14 +114,14 @@ export function AgentBrowser(props: {
               );
             })}
           </Box>
-          <AgentDetailPanel detail={props.detail} />
+          <AgentDetailPanel detail={props.detail} capabilities={props.capabilities} />
         </Box>
       </Box>
     </Frame>
   );
 }
 
-function AgentDetailPanel(props: {detail?: AgentDetail}) {
+function AgentDetailPanel(props: {detail?: AgentDetail; capabilities: CapabilityRecord[]}) {
   if (!props.detail) {
     return (
       <Box flexGrow={1} borderStyle="single" borderColor={theme.muted} paddingX={1}>
@@ -129,6 +130,7 @@ function AgentDetailPanel(props: {detail?: AgentDetail}) {
     );
   }
   const agent = props.detail.agent;
+  const byID = new Map(props.capabilities.map((capability) => [capability.id, capability]));
   return (
     <Box flexGrow={1} borderStyle="single" borderColor={theme.muted} flexDirection="column" paddingX={1}>
       <Box justifyContent="space-between">
@@ -145,15 +147,11 @@ function AgentDetailPanel(props: {detail?: AgentDetail}) {
       <Box marginTop={1}>
         <Box width="50%" flexDirection="column">
           <SectionTitle>Skills</SectionTitle>
-          {agent.skills.length === 0 ? <Muted>none</Muted> : agent.skills.map((skill) => (
-            <Text key={skill.id}>{skill.id}</Text>
-          ))}
+          <CapabilityRefs refs={agent.skills} capabilities={byID} />
         </Box>
         <Box flexGrow={1} flexDirection="column">
           <SectionTitle>MCP</SectionTitle>
-          {agent.mcp.length === 0 ? <Muted>none</Muted> : agent.mcp.map((mcp) => (
-            <Text key={mcp.id}>{mcp.id}</Text>
-          ))}
+          <CapabilityRefs refs={agent.mcp} capabilities={byID} />
         </Box>
       </Box>
       <Box marginTop={1} flexDirection="column">
@@ -173,5 +171,36 @@ function AgentDetailPanel(props: {detail?: AgentDetail}) {
         ))}
       </Box>
     </Box>
+  );
+}
+
+function CapabilityRefs(props: {
+  refs: CapabilityRef[];
+  capabilities: Map<string, CapabilityRecord>;
+}) {
+  if (props.refs.length === 0) {
+    return <Muted>none</Muted>;
+  }
+  return (
+    <>
+      {props.refs.map((ref) => {
+        const record = props.capabilities.get(ref.id);
+        return (
+          <Box key={ref.id} flexDirection="column">
+            <Text>
+              {truncate(record?.name ?? ref.id, 36)}{" "}
+              <Pill color={record?.source === "runtime" ? theme.warn : theme.ok}>
+                {record?.source ?? ref.kind}
+              </Pill>
+            </Text>
+            {record ? (
+              <Text color={theme.muted}>
+                {truncate(ref.id, 36)}{record.version ? ` v${record.version}` : ""}
+              </Text>
+            ) : null}
+          </Box>
+        );
+      })}
+    </>
   );
 }

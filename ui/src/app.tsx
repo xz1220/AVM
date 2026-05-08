@@ -1,7 +1,7 @@
 import React, {useCallback, useEffect, useMemo, useState} from "react";
 import {useApp} from "ink";
 import type {AvmClient} from "./avm-client.js";
-import type {AgentDetail, AgentSummary, RuntimeCheck} from "./protocol.js";
+import type {AgentDetail, AgentSummary, CapabilityRecord, RuntimeCheck} from "./protocol.js";
 import {AgentBrowser} from "./browse.js";
 import {AgentEditor, DeleteConfirm} from "./editor.js";
 
@@ -18,6 +18,7 @@ export function App(props: {client: AvmClient}) {
   const [selectedName, setSelectedName] = useState<string | undefined>();
   const [detail, setDetail] = useState<AgentDetail | undefined>();
   const [runtimes, setRuntimes] = useState<RuntimeCheck[]>([]);
+  const [capabilities, setCapabilities] = useState<CapabilityRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | undefined>();
 
@@ -29,14 +30,16 @@ export function App(props: {client: AvmClient}) {
     setLoading(true);
     setError(undefined);
     try {
-      const [nextAgents, nextRuntimes] = await Promise.all([
+      const [nextAgents, nextRuntimes, nextCapabilities] = await Promise.all([
         props.client.listAgents(),
-        props.client.listRuntimes()
+        props.client.listRuntimes(),
+        props.client.listCapabilities()
       ]);
       setAgents(nextAgents);
       const nextName = preferredName ?? selectedName ?? nextAgents[0]?.name;
       setSelectedName(nextName);
       setRuntimes(nextRuntimes);
+      setCapabilities(nextCapabilities);
     } catch (nextError: unknown) {
       setError(nextError instanceof Error ? nextError.message : String(nextError));
     } finally {
@@ -115,6 +118,7 @@ export function App(props: {client: AvmClient}) {
     <AgentBrowser
       agents={agents}
       detail={detail}
+      capabilities={capabilities}
       selectedName={selectedSummary?.name}
       loading={loading}
       error={error}

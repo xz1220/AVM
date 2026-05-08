@@ -370,8 +370,13 @@ function upsertImportedCandidate(
   id: string,
   importFrom?: string
 ): CapabilityCandidate[] {
-  if (candidates.some((item) => item.record?.id === id)) {
-    return candidates;
+  const withoutSameGlobal = candidates.filter((item) => {
+    return !(item.kind === candidate.kind &&
+      item.name === candidate.name &&
+      item.global?.runtime === candidate.global?.runtime);
+  });
+  if (withoutSameGlobal.some((item) => item.record?.id === id)) {
+    return withoutSameGlobal;
   }
   return [{
     kind: candidate.kind,

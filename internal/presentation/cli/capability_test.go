@@ -121,6 +121,32 @@ func TestCapabilityImport_JSONReplaced(t *testing.T) {
 	}
 }
 
+func TestCapabilityImport_JSONEmitsCreatedFalse(t *testing.T) {
+	caps := &fakeCaps{
+		importRes: &model.ImportCapabilityResult{
+			ID:      model.CapabilityID("cap_existing"),
+			Created: false,
+			Source:  "codex:/home/x/.codex/skills/hello",
+		},
+	}
+	deps := newTestDeps(nil, nil, nil, caps, nil)
+	out, _, err := runCmd(t, deps, "--json",
+		"capability", "import",
+		"--runtime", "codex", "--kind", "skill", "--name", "hello",
+	)
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	var raw map[string]any
+	if err := json.Unmarshal([]byte(out), &raw); err != nil {
+		t.Fatalf("invalid JSON: %v\n%s", err, out)
+	}
+	got, ok := raw["created"].(bool)
+	if !ok || got {
+		t.Fatalf("expected created=false to be emitted, got %v in %s", raw["created"], out)
+	}
+}
+
 func TestCapabilityImport_ConflictEnvelope(t *testing.T) {
 	caps := &fakeCaps{
 		importErr: service.NewError(service.CodeCapabilityConflict,
