@@ -84,6 +84,9 @@ func TestBoundary_UsesAVMHome(t *testing.T) {
 	if v := b.Env[EnvHome]; v != want {
 		t.Fatalf("env[%s]=%q want %q", EnvHome, v, want)
 	}
+	if v := b.Env["HOME"]; v != want {
+		t.Fatalf("env[HOME]=%q want %q", v, want)
+	}
 }
 
 func TestBoundary_RejectsEmptyName(t *testing.T) {
@@ -294,13 +297,16 @@ func TestLaunchSpec_PopulatesEnv(t *testing.T) {
 	if _, ok := spec.Env[EnvHome]; !ok {
 		t.Fatalf("expected %s in env, got %+v", EnvHome, spec.Env)
 	}
+	if _, ok := spec.Env["HOME"]; !ok {
+		t.Fatalf("expected HOME in env, got %+v", spec.Env)
+	}
 }
 
 // Codex on npm/nvm installs is a `#!/usr/bin/env node` shebang, so the
 // spawned child needs PATH (and other parent vars) to resolve `node`.
-// Regression for the e2e bug where `Exit 127 / 'node': No such file`
-// was caused by Env containing only CODEX_HOME.
-func TestLaunchSpec_InheritsParentEnvAndOverridesCodexHome(t *testing.T) {
+// Runtime-owned env vars are still forced to the boundary so user-global
+// Codex state does not leak into the Agent run.
+func TestLaunchSpec_InheritsParentEnvAndOverridesBoundaryVars(t *testing.T) {
 	dir := t.TempDir()
 	bin := filepath.Join(dir, "codex")
 	if err := os.WriteFile(bin, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
@@ -310,6 +316,7 @@ func TestLaunchSpec_InheritsParentEnvAndOverridesCodexHome(t *testing.T) {
 	t.Setenv("PATH", dir)
 	t.Setenv("AVM_HOME", avmHome)
 	t.Setenv(EnvHome, "/should/be/overridden") // simulate user shell already setting CODEX_HOME
+	t.Setenv("HOME", "/user/home/should/not/leak")
 
 	d := New(nil)
 	a := &model.Agent{Identity: model.Identity{Name: "demo"}}
@@ -325,6 +332,11 @@ func TestLaunchSpec_InheritsParentEnvAndOverridesCodexHome(t *testing.T) {
 	wantBoundary := filepath.Join(avmHome, "boundaries", Name, "demo")
 	if got := spec.Env[EnvHome]; got != wantBoundary {
 		t.Errorf("expected %s=%q (boundary override), got %q", EnvHome, wantBoundary, got)
+	}
+	// HOME must be isolated too because Codex scans ~/.agents/skills in
+	// addition to CODEX_HOME/skills.
+	if got := spec.Env["HOME"]; got != wantBoundary {
+		t.Errorf("expected HOME=%q (boundary override), got %q", wantBoundary, got)
 	}
 }
 

@@ -76,7 +76,7 @@ func (d *Driver) Facts(ctx context.Context) (runtime.Facts, error) {
 		Risks: []runtime.Risk{
 			{Code: "codex.auth-fork", Message: "per-Agent CODEX_HOME does not share auth.json with user home; first run may require re-login unless auth.json is copied in."},
 			{Code: "codex.memory-subsystem", Message: "Codex memory subsystem writes artifacts and runs background jobs under CODEX_HOME/memories; isolated per Agent but still occupies disk."},
-			{Code: "codex.skill-mcp-deps", Message: "Skill-declared MCP dependencies can mutate the user-level config.toml outside AVM's view."},
+			{Code: "codex.skill-mcp-deps", Message: "Skill-declared MCP dependencies can mutate the boundary config.toml outside AVM's view."},
 			{Code: "codex.approval-not-durable", Message: "Approval decisions are session-scoped and not persisted across runs."},
 		},
 	}, nil
@@ -477,6 +477,7 @@ func (d *Driver) Boundary(ctx context.Context, agent *model.Agent) (runtime.Boun
 		StateDir: root,
 		Env: map[string]string{
 			EnvHome: root,
+			"HOME":  root,
 		},
 	}, nil
 }
@@ -488,7 +489,9 @@ func (d *Driver) Boundary(ctx context.Context, agent *model.Agent) (runtime.Boun
 // resolve `node`. process.Runner replaces the child env wholesale when
 // spec.Env is non-empty, so we explicitly inherit the parent process
 // environment first and then override with our per-Agent boundary
-// values (chiefly CODEX_HOME).
+// values. HOME is intentionally isolated too: current Codex builds also
+// scan ~/.agents/skills, so CODEX_HOME alone would still leak user-global
+// skills into an AVM Agent run.
 func (d *Driver) LaunchSpec(ctx context.Context, agent *model.Agent, plan *runtime.Plan) (runtime.LaunchSpec, error) {
 	facts, err := d.Facts(ctx)
 	if err != nil {
