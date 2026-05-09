@@ -3,8 +3,10 @@ import {Box, Text, useInput} from "ink";
 import TextInput from "ink-text-input";
 import Fuse from "fuse.js";
 import type {AgentDetail, AgentSummary, CapabilityRecord, CapabilityRef} from "./protocol.js";
-import {ErrorText, Frame, Muted, Pill, SectionTitle, truncate} from "./components.js";
+import {ErrorText, Frame, Muted, Pill, SectionTitle, truncate, windowSlice} from "./components.js";
 import {theme} from "./theme.js";
+
+const AGENT_PAGE = 6;
 
 export function AgentBrowser(props: {
   agents: AgentSummary[];
@@ -97,22 +99,34 @@ export function AgentBrowser(props: {
             <SectionTitle>Agents</SectionTitle>
             {props.loading ? <Muted>loading...</Muted> : null}
             {!props.loading && filtered.length === 0 ? <Muted>no agents</Muted> : null}
-            {filtered.slice(0, 18).map((agent) => {
-              const selected = agent.name === props.selectedName;
+            {(() => {
+              const window = windowSlice(filtered, Math.max(0, selectedIndex), AGENT_PAGE);
               return (
-                <Box key={agent.name} flexDirection="column">
-                  <Text color={selected ? theme.accent : undefined} bold={selected}>
-                    {selected ? "> " : "  "}{agent.name}
-                  </Text>
-                  <Text color={theme.muted}>
-                    {"  "}{truncate(agent.description, 42) || "-"}
-                  </Text>
-                  <Text color={theme.muted}>
-                    {"  "}{agent.runtimes.length > 0 ? agent.runtimes.join(", ") : "no runtime"}
-                  </Text>
-                </Box>
+                <>
+                  {window.before > 0 ? <Muted>↑ {window.before} more</Muted> : null}
+                  {window.visible.map((agent) => {
+                    const selected = agent.name === props.selectedName;
+                    return (
+                      <Box key={agent.name} flexDirection="column">
+                        <Text color={selected ? theme.accent : undefined} bold={selected}>
+                          {selected ? "> " : "  "}{agent.name}
+                        </Text>
+                        <Text color={theme.muted}>
+                          {"  "}{truncate(agent.description, 42) || "-"}
+                        </Text>
+                        <Text color={theme.muted}>
+                          {"  "}{agent.runtimes.length > 0 ? agent.runtimes.join(", ") : "no runtime"}
+                        </Text>
+                      </Box>
+                    );
+                  })}
+                  {window.after > 0 ? <Muted>↓ {window.after} more</Muted> : null}
+                  {filtered.length > 0
+                    ? <Muted>{Math.max(1, selectedIndex + 1)}/{filtered.length}</Muted>
+                    : null}
+                </>
               );
-            })}
+            })()}
           </Box>
           <AgentDetailPanel detail={props.detail} capabilities={props.capabilities} />
         </Box>

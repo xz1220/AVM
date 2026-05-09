@@ -69,3 +69,23 @@ export function truncate(value: string | undefined, max: number): string {
   }
   return `${text.slice(0, Math.max(0, max - 3))}...`;
 }
+
+export function windowSlice<T>(items: T[], cursor: number, page: number): {
+  visible: T[];
+  start: number;
+  before: number;
+  after: number;
+} {
+  if (items.length <= page) {
+    return {visible: items, start: 0, before: 0, after: 0};
+  }
+  const half = Math.floor(page / 2);
+  const start = Math.max(0, Math.min(items.length - page, cursor - half));
+  const visible = items.slice(start, start + page);
+  return {
+    visible,
+    start,
+    before: start,
+    after: items.length - (start + visible.length)
+  };
+}

@@ -5,7 +5,7 @@ import Fuse from "fuse.js";
 import type {AvmClient} from "./avm-client.js";
 import type {AgentDetail, AgentWriteInput, CapabilityCandidate, CapabilityKind, CapabilityRef, RuntimeCheck, RuntimePref} from "./protocol.js";
 import {capabilityRefID} from "./mock-capabilities.js";
-import {ErrorText, Frame, Muted, Pill, SectionTitle, truncate} from "./components.js";
+import {ErrorText, Frame, Muted, Pill, SectionTitle, truncate, windowSlice} from "./components.js";
 import {theme} from "./theme.js";
 
 type EditorMode = "create" | "edit";
@@ -93,15 +93,9 @@ export function AgentEditor(props: {
   const next = () => setStep(steps[Math.min(steps.length - 1, stepIndex + 1)] ?? "review");
   const previous = () => setStep(steps[Math.max(0, stepIndex - 1)] ?? "basic");
 
-  useInput((input, key) => {
+  useInput((_input, key) => {
     if (key.escape) {
       props.onCancel();
-    } else if (key.leftArrow && step !== "basic") {
-      previous();
-    } else if (key.rightArrow && step !== "review") {
-      next();
-    } else if (input >= "1" && input <= String(steps.length)) {
-      setStep(steps[Number(input) - 1] ?? step);
     }
   });
 
@@ -132,9 +126,8 @@ export function AgentEditor(props: {
       subtitle="Agent CRUD"
       status={status}
       actions={[
-        ["1-6", "section"],
-        ["left/right", "move"],
         ["enter", "accept"],
+        ["left/right", "prev/next"],
         ["esc", "cancel"]
       ]}
     >
@@ -148,7 +141,7 @@ export function AgentEditor(props: {
         </Box>
         <Box flexGrow={1} borderStyle="single" borderColor={theme.muted} paddingX={1} flexDirection="column">
           {step === "basic" ? <BasicStep mode={props.mode} draft={draft} setDraft={setDraft} onNext={next} /> : null}
-          {step === "runtime" ? <RuntimeStep draft={draft} setDraft={setDraft} runtimes={props.runtimes} onNext={next} /> : null}
+          {step === "runtime" ? <RuntimeStep draft={draft} setDraft={setDraft} runtimes={props.runtimes} onNext={next} onPrev={previous} /> : null}
           {step === "instructions" ? <InstructionsStep draft={draft} setDraft={setDraft} onNext={next} /> : null}
           {step === "skills" ? (
             <CapabilityStep
@@ -157,6 +150,7 @@ export function AgentEditor(props: {
               candidates={capabilities.filter((candidate) => candidate.kind === "skill")}
               onToggle={(candidate) => toggleCapability("skill", draft.skills, (skills) => setDraft({...draft, skills}), candidate)}
               onNext={next}
+              onPrev={previous}
             />
           ) : null}
           {step === "mcp" ? (
@@ -166,9 +160,10 @@ export function AgentEditor(props: {
               candidates={capabilities.filter((candidate) => candidate.kind === "mcp")}
               onToggle={(candidate) => toggleCapability("mcp", draft.mcp, (mcp) => setDraft({...draft, mcp}), candidate)}
               onNext={next}
+              onPrev={previous}
             />
           ) : null}
-          {step === "review" ? <ReviewStep draft={draft} saving={saving} onSave={save} /> : null}
+          {step === "review" ? <ReviewStep draft={draft} saving={saving} onSave={save} onPrev={previous} /> : null}
         </Box>
       </Box>
     </Frame>
@@ -225,6 +220,7 @@ function RuntimeStep(props: {
   setDraft: (draft: Draft) => void;
   runtimes: RuntimeCheck[];
   onNext: () => void;
+  onPrev: () => void;
 }) {
   const [cursor, setCursor] = useState(0);
   const options = props.runtimes.length > 0 ? props.runtimes : [{runtime: "codex", available: true, issues: []}];
@@ -252,8 +248,10 @@ function RuntimeStep(props: {
           default: runtime.runtime === option.runtime
         }))
       });
-    } else if (key.return) {
+    } else if (key.return || key.rightArrow) {
       props.onNext();
+    } else if (key.leftArrow) {
+      props.onPrev();
     }
   });
 
@@ -296,12 +294,15 @@ function InstructionsStep(props: {
   );
 }
 
+const CAPABILITY_PAGE = 12;
+
 function CapabilityStep(props: {
   kind: CapabilityKind;
   selected: CapabilityRef[];
   candidates: CapabilityCandidate[];
   onToggle: (candidate: CapabilityCandidate) => void;
   onNext: () => void;
+  onPrev: () => void;
 }) {
   const [query, setQuery] = useState("");
   const [cursor, setCursor] = useState(0);
@@ -319,24 +320,30 @@ function CapabilityStep(props: {
   const selectedIDs = new Set(props.selected.map((ref) => ref.id));
 
   useInput((input, key) => {
-    if (key.downArrow || input === "j") {
+    if (key.downArrow) {
       setCursor(Math.min(filtered.length - 1, cursor + 1));
-    } else if (key.upArrow || input === "k") {
+    } else if (key.upArrow) {
       setCursor(Math.max(0, cursor - 1));
     } else if (key.backspace || key.delete) {
       setQuery(query.slice(0, -1));
       setCursor(0);
-    } else if (input === " ") {
+    } else if (key.tab) {
       const candidate = filtered[cursor];
       if (!candidate) return;
       props.onToggle(candidate);
     } else if (key.return) {
       props.onNext();
+    } else if (key.rightArrow) {
+      props.onNext();
+    } else if (key.leftArrow) {
+      props.onPrev();
     } else if (input.length === 1 && !key.ctrl && !key.meta) {
       setQuery(`${query}${input}`);
       setCursor(0);
     }
   });
+
+  const {visible, start, before, after} = windowSlice(filtered, cursor, CAPABILITY_PAGE);
 
   return (
     <Box flexDirection="column">
@@ -345,8 +352,10 @@ function CapabilityStep(props: {
         <Text color={theme.accent}>filter: </Text>
         <Text>{query || "-"}</Text>
       </Box>
-      <Muted>{props.selected.length} selected, type to filter, backspace clears, space toggles</Muted>
-      {filtered.slice(0, 14).map((candidate, index) => {
+      <Muted>{props.selected.length} selected · type to filter · tab toggles · enter / → next · ← prev</Muted>
+      {before > 0 ? <Muted>↑ {before} more</Muted> : null}
+      {visible.map((candidate, offset) => {
+        const index = start + offset;
         const id = capabilityRefID(candidate);
         const selected = selectedIDs.has(id);
         return (
@@ -359,7 +368,10 @@ function CapabilityStep(props: {
           </Text>
         );
       })}
-      {filtered.length === 0 ? <Muted>no candidates</Muted> : null}
+      {after > 0 ? <Muted>↓ {after} more</Muted> : null}
+      {filtered.length === 0
+        ? <Muted>no candidates</Muted>
+        : <Muted>{cursor + 1}/{filtered.length}</Muted>}
     </Box>
   );
 }
@@ -397,9 +409,12 @@ function ReviewStep(props: {
   draft: Draft;
   saving: boolean;
   onSave: () => void;
+  onPrev: () => void;
 }) {
   useInput((input, key) => {
-    if (key.return || input === "s") {
+    if (key.leftArrow) {
+      props.onPrev();
+    } else if (key.return || input === "s") {
       void props.onSave();
     }
   });
