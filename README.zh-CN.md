@@ -7,7 +7,7 @@
   <img src="https://img.shields.io/badge/status-early_preview-0f766e" alt="状态：早期预览">
   <img src="https://img.shields.io/badge/runtime-Codex%20%7C%20Claude%20Code%20%7C%20OpenCode-1d4ed8" alt="目标 Runtime">
   <img src="https://img.shields.io/badge/lang-Go%20%2B%20TypeScript-00ADD8" alt="开发语言">
-  <img src="https://img.shields.io/badge/license-PolyForm--NC%20(proposed)-6b21a8" alt="License: PolyForm Noncommercial（建议中）">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-PolyForm--NC%201.0.0-6b21a8" alt="License: PolyForm Noncommercial 1.0.0"></a>
 </p>
 
 [English](README.md) | 简体中文
@@ -175,12 +175,31 @@ Agent 的每个字段标记为 `native`、`rendered_as_instructions`、`ignored`
 
 ## License
 
-项目还没有正式选定开源协议，因此目前代码处于 source-available 状态，
-不被授予转分发权利。
+AVM 采用 [PolyForm Noncommercial License 1.0.0](LICENSE) 协议。
 
-**建议：[PolyForm Noncommercial 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0/)。**
-它是为源码量身设计的非商用许可证，刚好匹配项目意图——任何人都可以
-为非商业目的复制、修改、分发以及学习这套代码；商用需另行获取授权。
+简单来说：
 
-其他考虑过的方案：CC BY-NC 4.0（不是为代码设计），BUSL（适合"延迟开源"
-但运营复杂）。在确定商用授权策略之前，PolyForm-NC 是更直接的选择。
+- 你可以以**非商业**目的复制、修改、分发、学习这套代码——个人项目、
+  研究、教育、评估、爱好开发、非营利组织使用都在允许范围内。
+- **商用需要单独授权**，请联系项目维护者。
+- 软件按 "as is" 提供，不附带任何担保。
+
+如果你希望商用 AVM，请开 issue 或联系维护者。
+
+## Contributors
+
+感谢每一位为 AVM 做出贡献的开发者。
+
+<a href="https://github.com/xz1220/Agent-VM/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=xz1220/Agent-VM" alt="Contributors" />
+</a>
+
+## Star History
+
+<a href="https://star-history.com/#xz1220/Agent-VM&Date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=xz1220/Agent-VM&type=Date&theme=dark" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=xz1220/Agent-VM&type=Date" />
+    <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=xz1220/Agent-VM&type=Date" />
+  </picture>
+</a>

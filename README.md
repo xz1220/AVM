@@ -7,7 +7,7 @@
   <img src="https://img.shields.io/badge/status-early_preview-0f766e" alt="Status: early preview">
   <img src="https://img.shields.io/badge/runtime-Codex%20%7C%20Claude%20Code%20%7C%20OpenCode-1d4ed8" alt="Supported runtime targets">
   <img src="https://img.shields.io/badge/lang-Go%20%2B%20TypeScript-00ADD8" alt="Languages">
-  <img src="https://img.shields.io/badge/license-PolyForm--NC%20(proposed)-6b21a8" alt="License: PolyForm Noncommercial (proposed)">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-PolyForm--NC%201.0.0-6b21a8" alt="License: PolyForm Noncommercial 1.0.0"></a>
 </p>
 
 English | [简体中文](README.zh-CN.md)
@@ -179,14 +179,33 @@ the full mapping.
 
 ## License
 
-No license has been chosen yet, so the code is currently source-available
-but not licensed for redistribution.
+AVM is released under the [PolyForm Noncommercial License 1.0.0](LICENSE).
 
-**Proposed:** [PolyForm Noncommercial 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0/).
-It is purpose-built for source code and matches the project's intent —
-allow anyone to copy, modify, distribute, and learn from the code for
-non-commercial purposes; commercial use requires a separate license.
+In plain language:
 
-Alternatives considered: CC BY-NC 4.0 (not designed for code), BUSL (good
-for delayed open-source but more complex to operate). PolyForm-NC is the
-clearer fit until commercial-licensing requirements are decided.
+- You may copy, modify, distribute, and learn from this code for any
+  **non-commercial** purpose — personal projects, research, education,
+  evaluation, hobby use, and use by non-profit organizations.
+- **Commercial use requires a separate license** from the project owner.
+- The software is provided "as is", without warranty.
+
+If you'd like to use AVM commercially, open an issue or contact the
+maintainer.
+
+## Contributors
+
+Thanks to everyone who has helped build AVM.
+
+<a href="https://github.com/xz1220/Agent-VM/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=xz1220/Agent-VM" alt="Contributors" />
+</a>
+
+## Star History
+
+<a href="https://star-history.com/#xz1220/Agent-VM&Date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=xz1220/Agent-VM&type=Date&theme=dark" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=xz1220/Agent-VM&type=Date" />
+    <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=xz1220/Agent-VM&type=Date" />
+  </picture>
+</a>
