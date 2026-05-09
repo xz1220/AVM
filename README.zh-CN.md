@@ -38,29 +38,27 @@ AVM 由两个互相配套的二进制组成：
 
 ## 架构
 
-```
-   avm-ui  (TypeScript, Ink TUI)        avm  (Go, --json plumbing)
-   交互式编辑与浏览              ───▶  脚本、CI、程序化集成
-                                              │
-                                              │   单一 CLI 契约
-                                              ▼
-                                   ┌──────────────────────┐
-                                   │ Application Services │
-                                   │ Agent · Run · Package│
-                                   │ Capability · System  │
-                                   └──────────┬───────────┘
-                                              │
-                              ┌───────────────┴───────────────┐
-                              ▼                               ▼
-                    ┌──────────────────┐            ┌──────────────────┐
-                    │ Runtime Drivers  │            │ Infrastructure   │
-                    │  codex           │            │  home, agentstore│
-                    │  claude-code     │            │  capstore, runlog│
-                    │  opencode        │            │  managedfile, …  │
-                    └────────┬─────────┘            └──────────────────┘
-                             ▼
-              Codex · Claude Code · OpenCode · …
-              （managed config 写入 + 启动）
+```mermaid
+flowchart TD
+    UI["<b>avm-ui</b><br/>TypeScript · Ink TUI<br/><sub>交互式编辑与浏览</sub>"]
+    CLI["<b>avm</b><br/>Go · --json plumbing<br/><sub>脚本 · CI · 程序化集成</sub>"]
+    APP["<b>应用服务</b><br/>Agent · Run · Package<br/>Capability · System"]
+    RT["<b>Runtime Drivers</b><br/>codex · claude-code · opencode"]
+    INFRA["<b>基础设施</b><br/>home · agentstore · capstore<br/>managedfile · runlog · packageio"]
+    EXT["Codex · Claude Code · OpenCode · …<br/><sub>managed config 写入 + 启动</sub>"]
+
+    UI -->|spawn + JSON 契约| CLI
+    CLI --> APP
+    APP --> RT
+    APP --> INFRA
+    RT --> EXT
+
+    style UI fill:#dbeafe,stroke:#1d4ed8,color:#1e3a8a
+    style CLI fill:#dbeafe,stroke:#1d4ed8,color:#1e3a8a
+    style APP fill:#ccfbf1,stroke:#0d9488,color:#134e4a
+    style RT fill:#ede9fe,stroke:#7c3aed,color:#3b0764
+    style INFRA fill:#fed7aa,stroke:#ea580c,color:#7c2d12
+    style EXT fill:#e5e7eb,stroke:#374151,color:#111827
 ```
 
 详细的层 / 包对应关系见

@@ -40,29 +40,27 @@ AVM ships as two binaries that pair together:
 
 ## Architecture
 
-```
-   avm-ui  (TypeScript, Ink TUI)        avm  (Go, --json plumbing)
-   interactive editing & browsing  ───▶  scripts, CI, programmatic use
-                                              │
-                                              │   one CLI contract
-                                              ▼
-                                   ┌──────────────────────┐
-                                   │ Application Services │
-                                   │ Agent · Run · Package│
-                                   │ Capability · System  │
-                                   └──────────┬───────────┘
-                                              │
-                              ┌───────────────┴───────────────┐
-                              ▼                               ▼
-                    ┌──────────────────┐            ┌──────────────────┐
-                    │ Runtime Drivers  │            │ Infrastructure   │
-                    │  codex           │            │  home, agentstore│
-                    │  claude-code     │            │  capstore, runlog│
-                    │  opencode        │            │  managedfile, …  │
-                    └────────┬─────────┘            └──────────────────┘
-                             ▼
-              Codex · Claude Code · OpenCode · …
-              (managed config + launch)
+```mermaid
+flowchart TD
+    UI["<b>avm-ui</b><br/>TypeScript · Ink TUI<br/><sub>interactive editing &amp; browsing</sub>"]
+    CLI["<b>avm</b><br/>Go · --json plumbing<br/><sub>scripts · CI · programmatic use</sub>"]
+    APP["<b>Application Services</b><br/>Agent · Run · Package<br/>Capability · System"]
+    RT["<b>Runtime Drivers</b><br/>codex · claude-code · opencode"]
+    INFRA["<b>Infrastructure</b><br/>home · agentstore · capstore<br/>managedfile · runlog · packageio"]
+    EXT["Codex · Claude Code · OpenCode · …<br/><sub>managed config + launch</sub>"]
+
+    UI -->|spawn + JSON contract| CLI
+    CLI --> APP
+    APP --> RT
+    APP --> INFRA
+    RT --> EXT
+
+    style UI fill:#dbeafe,stroke:#1d4ed8,color:#1e3a8a
+    style CLI fill:#dbeafe,stroke:#1d4ed8,color:#1e3a8a
+    style APP fill:#ccfbf1,stroke:#0d9488,color:#134e4a
+    style RT fill:#ede9fe,stroke:#7c3aed,color:#3b0764
+    style INFRA fill:#fed7aa,stroke:#ea580c,color:#7c2d12
+    style EXT fill:#e5e7eb,stroke:#374151,color:#111827
 ```
 
 The detailed mapping between this picture and the source tree lives in
