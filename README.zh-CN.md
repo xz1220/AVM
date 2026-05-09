@@ -38,30 +38,7 @@ AVM 由两个互相配套的二进制组成：
 
 ## 架构
 
-```
-   avm-ui  (TypeScript, Ink TUI)        avm  (Go, --json plumbing)
-   交互式编辑与浏览              ───▶  脚本、CI、程序化集成
-                                              │
-                                              │   单一 CLI 契约
-                                              ▼
-                                   ┌──────────────────────┐
-                                   │ Application Services │
-                                   │ Agent · Run · Package│
-                                   │ Capability · System  │
-                                   └──────────┬───────────┘
-                                              │
-                              ┌───────────────┴───────────────┐
-                              ▼                               ▼
-                    ┌──────────────────┐            ┌──────────────────┐
-                    │ Runtime Drivers  │            │ Infrastructure   │
-                    │  codex           │            │  home, agentstore│
-                    │  claude-code     │            │  capstore, runlog│
-                    │  opencode        │            │  managedfile, …  │
-                    └────────┬─────────┘            └──────────────────┘
-                             ▼
-              Codex · Claude Code · OpenCode · …
-              （managed config 写入 + 启动）
-```
+![AVM 架构图](assets/architecture.png)
 
 详细的层 / 包对应关系见
 [`docs/engineering/architecture-overview.md`](docs/engineering/architecture-overview.md)。

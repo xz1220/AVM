@@ -40,30 +40,7 @@ AVM ships as two binaries that pair together:
 
 ## Architecture
 
-```
-   avm-ui  (TypeScript, Ink TUI)        avm  (Go, --json plumbing)
-   interactive editing & browsing  ───▶  scripts, CI, programmatic use
-                                              │
-                                              │   one CLI contract
-                                              ▼
-                                   ┌──────────────────────┐
-                                   │ Application Services │
-                                   │ Agent · Run · Package│
-                                   │ Capability · System  │
-                                   └──────────┬───────────┘
-                                              │
-                              ┌───────────────┴───────────────┐
-                              ▼                               ▼
-                    ┌──────────────────┐            ┌──────────────────┐
-                    │ Runtime Drivers  │            │ Infrastructure   │
-                    │  codex           │            │  home, agentstore│
-                    │  claude-code     │            │  capstore, runlog│
-                    │  opencode        │            │  managedfile, …  │
-                    └────────┬─────────┘            └──────────────────┘
-                             ▼
-              Codex · Claude Code · OpenCode · …
-              (managed config + launch)
-```
+![AVM architecture diagram](assets/architecture.png)
 
 The detailed mapping between this picture and the source tree lives in
 [`docs/engineering/architecture-overview.md`](docs/engineering/architecture-overview.md).
