@@ -2,6 +2,8 @@
 
 > Agent VM — define an AI coding agent once, run it on any runtime.
 
+![AVM mascot routing one Agent config to multiple coding runtimes](assets/avm-mascot-hero.png)
+
 <p>
   <a href="https://github.com/xz1220/AVM/actions/workflows/ci.yml"><img src="https://github.com/xz1220/AVM/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <img src="https://img.shields.io/badge/status-early_preview-0f766e" alt="Status: early preview">
