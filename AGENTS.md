@@ -9,7 +9,7 @@ Agent VM is a Go CLI project. `cmd/avm/main.go` is the only composition root: it
 - `internal/infra/{home,agentstore,capstore,packageio,runlog,process,managedfile,fsutil}` — filesystem and process side effects.
 - `internal/presentation/{cli,render}` — cobra commands, huh-powered interactive flows, and rendering helpers.
 
-Long-form documentation lives in `docs/`, with engineering details in `docs/engineering/`. `docs/legacy-architecture.md` is historical and not maintained. Use `fixtures/` for realistic sample AVM homes and runtime layouts, and `testdata/` for stable inputs and expected outputs. Visual README assets are in `assets/`; developer scripts are in `scripts/`.
+Long-form documentation lives in `docs/`, with engineering details in `docs/engineering/`. The CLI/UI contract is in `docs/api/cli-protocol.md`. `docs/legacy-architecture.md` is historical and not maintained. Visual README assets are in `assets/`; developer scripts are in `scripts/`. Tests construct their own fixtures with `t.TempDir()` and inline payloads — there is no shared `fixtures/` or `testdata/` directory.
 
 ## Build, Test, and Development Commands
 
@@ -32,7 +32,7 @@ Prefer the correct long-term abstraction over the smallest local patch. When a c
 
 Do not use "minimum change", "short-term workaround", or "temporary compatibility path" as the primary solution for architectural work. A compatibility bridge is acceptable only when it preserves existing user data or staged migrations, and it must be explicitly documented as compatibility rather than the target design.
 
-Implementation plans should name the owning abstraction, the data boundary, and the long-term behavior before listing code edits. If the existing code shape makes the correct design harder, adjust the abstraction instead of spreading special cases across CLI, sync, adapter, and config layers.
+Implementation plans should name the owning abstraction, the data boundary, and the long-term behavior before listing code edits. If the existing code shape makes the correct design harder, adjust the abstraction instead of spreading special cases across the presentation, application service, runtime driver, and infrastructure layers.
 
 ## Communication Discipline
 
@@ -42,7 +42,7 @@ that expose assumptions, constraints, tradeoffs, or decision criteria.
 
 ## Testing Guidelines
 
-Tests use the standard Go `testing` package and live beside implementation files as `*_test.go`. Prefer table-driven tests for validation, parsing, rendering, and CLI behavior. Put reusable golden inputs in `testdata/`; put human-readable scenario fixtures in `fixtures/`. Add tests for behavior changes, especially adapter mapping, config resolution, activation, sync, import/export, and error handling.
+Tests use the standard Go `testing` package and live beside implementation files as `*_test.go`. Prefer table-driven tests for validation, parsing, rendering, and CLI behavior. Construct fixtures inline with `t.TempDir()` and `t.Setenv` — keep tests self-contained rather than depending on shared on-disk fixtures. Add tests for behavior changes, especially runtime driver mapping (Plan/Boundary/LaunchSpec), capability discovery and import, agent CRUD, package install/export, and the JSON error envelope.
 
 ## Commit & Pull Request Guidelines
 
@@ -52,4 +52,4 @@ PRs should include a summary, testing results, and any notes about docs, secrets
 
 ## Security & Configuration Notes
 
-Treat `~/.avm` as the source of truth. `avm init` must not modify runtime config files, and runtime writes should go through adapter-owned managed paths. Reference secrets rather than copying them into portable profiles.
+Treat `~/.avm` as the source of truth. `avm init` must not modify runtime config files, and runtime writes go through driver-owned managed paths under `~/.avm/boundaries/<runtime>/<agent>/`. Reference secrets rather than copying them into portable profiles.

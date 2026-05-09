@@ -32,9 +32,8 @@ make build
 
 ## Good First Contributions
 
-- Add or improve runtime mapping notes.
-- Add fixtures for real Codex, Claude Code, OpenCode, Cline, or Cursor configs.
-- Add tests around CLI output and validation errors.
+- Add or improve runtime mapping notes for Codex, Claude Code, or OpenCode.
+- Add tests around CLI output and JSON error envelope (`docs/api/cli-protocol.md`).
 - Improve docs for a real multi-agent workflow.
 - Report confusing behavior with exact commands and outputs.
 
@@ -42,8 +41,8 @@ make build
 
 - `~/.avm` is the AVM source of truth.
 - `avm init` must not modify runtime config files.
-- Runtime writes must go through adapter-owned managed paths.
-- Unsupported runtime fields must be reported, not silently dropped.
+- Runtime writes go through driver-owned managed paths under `~/.avm/boundaries/<runtime>/<agent>/`.
+- Unsupported runtime fields must be reported via `MappingStatus`, not silently dropped.
 - Runtime-native memory import/export is not part of the current AVM model.
   Do not add it without a separate design review.
 - Secrets should be referenced, not serialized into portable profiles.
