@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/xz1220/agent-vm/internal/app/model"
+	"github.com/xz1220/agent-vm/internal/infra/capstore"
 	"github.com/xz1220/agent-vm/internal/runtime"
 )
 
@@ -38,10 +39,18 @@ const (
 )
 
 // Driver is the Claude Code runtime adapter.
-type Driver struct{}
+//
+// Caps is consulted by Plan to materialize Agent-referenced skill / MCP
+// capability payloads into the boundary directory. Tests that exercise
+// only Facts / DiscoverGlobal / ExportGlobal / Boundary / LaunchSpec may
+// pass nil; Plan with non-empty refs requires it.
+type Driver struct {
+	Caps capstore.Store
+}
 
-// New returns a Claude Code driver.
-func New() *Driver { return &Driver{} }
+// New returns a Claude Code driver bound to the given capability store.
+// caps may be nil if the driver is only used for facts/discovery.
+func New(caps capstore.Store) *Driver { return &Driver{Caps: caps} }
 
 // Name reports the canonical registry key.
 func (d *Driver) Name() string { return Name }
@@ -76,17 +85,42 @@ func (d *Driver) Facts(ctx context.Context) (runtime.Facts, error) {
 }
 
 // DiscoverGlobal scans Claude Code's user-level skill and MCP roots.
+//
+// Skill sources:
+//   - <home>/skills/<name>/SKILL.md            (top-level user skills)
+//   - <home>/plugins/*/skills/<name>/SKILL.md  (plugin-bundled skills)
+//
+// MCP sources:
+//   - <home>/.claude.json's mcpServers         (primary user config)
+//   - <home>/managed-settings.json's mcpServers (enterprise/admin push)
+//
+// Each source is best-effort; a missing or malformed file silently
+// contributes zero candidates rather than failing the whole call.
 func (d *Driver) DiscoverGlobal(ctx context.Context) ([]model.GlobalCapability, error) {
 	out := []model.GlobalCapability{}
+	seen := map[string]struct{}{}
+	add := func(items []model.GlobalCapability) {
+		for _, c := range items {
+			key := string(c.Kind) + "\x00" + c.Name + "\x00" + c.Path
+			if _, dup := seen[key]; dup {
+				continue
+			}
+			seen[key] = struct{}{}
+			out = append(out, c)
+		}
+	}
 
 	homes := userClaudeHomes()
 	for _, root := range homes {
-		out = append(out, scanSkillDir(filepath.Join(root, "skills"))...)
+		add(scanSkillDir(filepath.Join(root, "skills")))
+		add(scanPluginSkillDirs(filepath.Join(root, "plugins")))
 	}
 
-	// Global MCP lives in ~/.claude.json (or $CLAUDE_CONFIG_DIR/.claude.json).
 	for _, jsonPath := range globalConfigPaths() {
-		out = append(out, scanMCPFromGlobalConfig(jsonPath)...)
+		add(scanMCPFromGlobalConfig(jsonPath))
+	}
+	for _, root := range homes {
+		add(scanMCPFromGlobalConfig(filepath.Join(root, "managed-settings.json")))
 	}
 	return out, nil
 }
@@ -250,6 +284,14 @@ func (d *Driver) Plan(ctx context.Context, agent *model.Agent) (*runtime.Plan, e
 		return nil, err
 	}
 
+	// Resolve all MCP capability content from capstore upfront so
+	// renderSettings can emit complete mcpServers entries (command/args/env)
+	// keyed by the capability name (not the opaque cap_xxx ID).
+	mcps, err := d.resolveMCPConfigs(agent.MCP)
+	if err != nil {
+		return nil, err
+	}
+
 	plan := &runtime.Plan{}
 
 	// CLAUDE.md is the native instructions slot.
@@ -260,17 +302,47 @@ func (d *Driver) Plan(ctx context.Context, agent *model.Agent) (*runtime.Plan, e
 		Contents: []byte(renderInstructions(agent)),
 	})
 
-	// settings.json is the native runtime config slot.
-	settingsPath := filepath.Join(bnd.StateDir, "settings.json")
-	settingsBytes, err := renderSettings(agent)
+	// settings.json: user defaults (model/theme/permissions/...) merged
+	// with AVM-owned mcpServers. See renderSettings doc.
+	settingsBytes, settingsWarn, err := renderSettings(mcps)
 	if err != nil {
 		return nil, fmt.Errorf("claude-code: render settings: %w", err)
 	}
 	plan.Files = append(plan.Files, runtime.ManagedFile{
-		Path:     settingsPath,
+		Path:     filepath.Join(bnd.StateDir, "settings.json"),
 		Mode:     0o600,
 		Contents: settingsBytes,
 	})
+	if settingsWarn != nil {
+		plan.Warnings = append(plan.Warnings, *settingsWarn)
+	}
+
+	// settings.local.json: best-effort copy of user-level allow/deny
+	// permission overlay so users keep their Bash allowances per Agent.
+	if localFile, warning := readUserLocalSettings(bnd.StateDir); localFile != nil {
+		plan.Files = append(plan.Files, *localFile)
+	} else if warning != nil {
+		plan.Warnings = append(plan.Warnings, *warning)
+	}
+
+	// Skills: materialize each capstore-resident SKILL.md into the
+	// boundary at skills/<name>/SKILL.md so Claude Code's user-scope
+	// loader picks it up under CLAUDE_CONFIG_DIR.
+	skillFiles, err := d.materializeSkills(bnd.StateDir, agent.Skills)
+	if err != nil {
+		return nil, err
+	}
+	plan.Files = append(plan.Files, skillFiles...)
+
+	// .credentials.json: best-effort copy from the user-level Claude
+	// Code credentials so per-Agent CLAUDE_CONFIG_DIR doesn't force a
+	// fresh OAuth round on every Agent. Missing source is silent;
+	// real IO errors become a Plan warning.
+	if credFile, warning := readUserCredentials(bnd.StateDir); credFile != nil {
+		plan.Files = append(plan.Files, *credFile)
+	} else if warning != nil {
+		plan.Warnings = append(plan.Warnings, *warning)
+	}
 
 	plan.Mappings = append(plan.Mappings,
 		runtime.FieldMapping{
@@ -295,13 +367,13 @@ func (d *Driver) Plan(ctx context.Context, agent *model.Agent) (*runtime.Plan, e
 	if len(agent.Skills) > 0 {
 		plan.Mappings = append(plan.Mappings, runtime.FieldMapping{
 			Field: "skills", Status: model.MappingNative,
-			Note: "AVM materializes skills under <CLAUDE_CONFIG_DIR>/skills/<id>/SKILL.md.",
+			Note: "materialized as <CLAUDE_CONFIG_DIR>/skills/<name>/SKILL.md for Claude Code's user-scope loader.",
 		})
 	}
 	if len(agent.MCP) > 0 {
 		plan.Mappings = append(plan.Mappings, runtime.FieldMapping{
 			Field: "mcp", Status: model.MappingNative,
-			Note: "rendered into settings.json mcpServers; infra wires command/env per capability.",
+			Note: "rendered into settings.json mcpServers with full command/args/env.",
 		})
 	}
 	if len(agent.Runtimes) > 0 {
@@ -323,6 +395,143 @@ func (d *Driver) Plan(ctx context.Context, agent *model.Agent) (*runtime.Plan, e
 	return plan, nil
 }
 
+// resolvedMCP pairs an MCP capability's logical name with its parsed
+// MCPConfigV1 payload, mirroring the codex driver's helper.
+type resolvedMCP struct {
+	Name string
+	Cfg  runtime.MCPConfigV1
+}
+
+// resolveMCPConfigs reads each MCP capability from capstore and parses
+// the payload as MCPConfigV1. Two refs resolving to the same logical
+// name are rejected since they would collide as JSON keys.
+func (d *Driver) resolveMCPConfigs(refs []model.CapabilityRef) ([]resolvedMCP, error) {
+	if len(refs) == 0 {
+		return nil, nil
+	}
+	if d.Caps == nil {
+		return nil, errors.New("claude-code: capability store not configured")
+	}
+	seen := map[string]struct{}{}
+	out := make([]resolvedMCP, 0, len(refs))
+	for _, ref := range refs {
+		rec, err := d.Caps.Get(ref.ID)
+		if err != nil {
+			return nil, fmt.Errorf("claude-code: mcp %s: %w", ref.ID, err)
+		}
+		if _, dup := seen[rec.Name]; dup {
+			return nil, fmt.Errorf("claude-code: agent has multiple MCPs named %q; pick one", rec.Name)
+		}
+		seen[rec.Name] = struct{}{}
+		body, err := d.Caps.ReadPayload(ref.ID)
+		if err != nil {
+			return nil, fmt.Errorf("claude-code: read mcp %s payload: %w", ref.ID, err)
+		}
+		var cfg runtime.MCPConfigV1
+		if err := json.Unmarshal(body, &cfg); err != nil {
+			return nil, fmt.Errorf("claude-code: parse mcp_config_v1 for %s: %w", rec.Name, err)
+		}
+		if cfg.Name == "" {
+			cfg.Name = rec.Name
+		}
+		out = append(out, resolvedMCP{Name: rec.Name, Cfg: cfg})
+	}
+	return out, nil
+}
+
+// materializeSkills returns one ManagedFile per skill ref placing the
+// capstore payload at <boundary>/skills/<name>/SKILL.md. Same shape as
+// the codex driver, only the parent dir layout matches Claude Code's
+// user-scope skill loader (CLAUDE_CONFIG_DIR/skills/...).
+func (d *Driver) materializeSkills(boundary string, refs []model.CapabilityRef) ([]runtime.ManagedFile, error) {
+	if len(refs) == 0 {
+		return nil, nil
+	}
+	if d.Caps == nil {
+		return nil, errors.New("claude-code: capability store not configured")
+	}
+	seen := map[string]struct{}{}
+	out := make([]runtime.ManagedFile, 0, len(refs))
+	for _, ref := range refs {
+		rec, err := d.Caps.Get(ref.ID)
+		if err != nil {
+			return nil, fmt.Errorf("claude-code: skill %s: %w", ref.ID, err)
+		}
+		if _, dup := seen[rec.Name]; dup {
+			return nil, fmt.Errorf("claude-code: agent has multiple skills named %q; pick one", rec.Name)
+		}
+		seen[rec.Name] = struct{}{}
+		body, err := d.Caps.ReadPayload(ref.ID)
+		if err != nil {
+			return nil, fmt.Errorf("claude-code: read skill %s payload: %w", ref.ID, err)
+		}
+		out = append(out, runtime.ManagedFile{
+			Path:     filepath.Join(boundary, "skills", rec.Name, "SKILL.md"),
+			Mode:     0o644,
+			Contents: body,
+		})
+	}
+	return out, nil
+}
+
+// readUserLocalSettings copies ~/.claude/settings.local.json into the
+// boundary so users keep their per-allow Bash permissions across
+// Agents. settings.local.json is a user-edited overlay (allow / deny /
+// ask lists); rebuilding it from scratch on every Agent would be
+// painful. Same best-effort semantics as readUserCredentials.
+func readUserLocalSettings(boundary string) (*runtime.ManagedFile, *model.Warning) {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return nil, nil
+	}
+	src := filepath.Join(home, ".claude", "settings.local.json")
+	data, err := os.ReadFile(src)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, &model.Warning{
+			Code:    "claude.local-settings-read-failed",
+			Message: "could not read user-level settings.local.json: " + err.Error(),
+		}
+	}
+	return &runtime.ManagedFile{
+		Path:     filepath.Join(boundary, "settings.local.json"),
+		Mode:     0o600,
+		Contents: data,
+	}, nil
+}
+
+// readUserCredentials copies the user-level Claude Code credentials
+// (~/.claude/.credentials.json) into the boundary so per-Agent
+// CLAUDE_CONFIG_DIR doesn't require a fresh OAuth round. The platform
+// risk note (claude.plain-creds) already covers the security trade-off.
+//
+// Missing source returns (nil, nil); real IO failures return
+// (nil, &Warning) so Plan still proceeds.
+func readUserCredentials(boundary string) (*runtime.ManagedFile, *model.Warning) {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return nil, nil
+	}
+	src := filepath.Join(home, ".claude", ".credentials.json")
+	data, err := os.ReadFile(src)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, &model.Warning{
+			Code:    "claude.creds-read-failed",
+			Message: "could not read user-level .credentials.json: " + err.Error(),
+		}
+	}
+	return &runtime.ManagedFile{
+		Path:     filepath.Join(boundary, ".credentials.json"),
+		Mode:     0o600,
+		Contents: data,
+	}, nil
+}
+
 // Boundary returns the per-Agent state dir and the env vars Claude Code
 // honors to relocate its state. PRD §3.4 requires per-(Agent, runtime)
 // isolation; Claude Code splits state across multiple env vars so we
@@ -341,6 +550,13 @@ func (d *Driver) Boundary(ctx context.Context, agent *model.Agent) (runtime.Boun
 	return runtime.Boundary{
 		StateDir: root,
 		Env: map[string]string{
+			// HOME is isolated alongside CLAUDE_CONFIG_DIR because Claude
+			// Code persists significant runtime state to ~/.claude.json
+			// (oauthAccount, projects, skillUsage, onboarding flags),
+			// which lives under HOME — not under CLAUDE_CONFIG_DIR. With
+			// HOME unset Agents would share that state and the per-Agent
+			// boundary would only hold for files under CLAUDE_CONFIG_DIR.
+			"HOME":         root,
 			EnvConfigDir:   root,
 			EnvPluginCache: filepath.Join(root, "plugins"),
 			EnvTmp:         filepath.Join(root, "tmp"),
@@ -350,6 +566,14 @@ func (d *Driver) Boundary(ctx context.Context, agent *model.Agent) (runtime.Boun
 }
 
 // LaunchSpec describes how to spawn `claude`.
+//
+// process.Runner replaces the child env wholesale when spec.Env is
+// non-empty (see internal/infra/process/runner.go). Claude Code on
+// Node-based installs (npm / nvm / volta) starts via a `#!/usr/bin/env
+// node` shebang, so the spawned process needs PATH (and friends) to
+// resolve `node`. We inherit the parent process environment first and
+// then overlay the per-Agent boundary values so the four
+// CLAUDE_CONFIG_DIR / plugin-cache / tmp / debug vars take precedence.
 func (d *Driver) LaunchSpec(ctx context.Context, agent *model.Agent, plan *runtime.Plan) (runtime.LaunchSpec, error) {
 	facts, err := d.Facts(ctx)
 	if err != nil {
@@ -362,7 +586,7 @@ func (d *Driver) LaunchSpec(ctx context.Context, agent *model.Agent, plan *runti
 	if err != nil {
 		return runtime.LaunchSpec{}, err
 	}
-	env := map[string]string{}
+	env := inheritEnviron(os.Environ())
 	for k, v := range bnd.Env {
 		env[k] = v
 	}
@@ -372,6 +596,20 @@ func (d *Driver) LaunchSpec(ctx context.Context, agent *model.Agent, plan *runti
 		Env:   env,
 		Stdin: true,
 	}, nil
+}
+
+// inheritEnviron parses an os.Environ() slice into a map. Mirrors the
+// codex driver's helper; kept local so each driver stays self-contained.
+func inheritEnviron(parent []string) map[string]string {
+	out := make(map[string]string, len(parent))
+	for _, e := range parent {
+		i := strings.IndexByte(e, '=')
+		if i <= 0 {
+			continue
+		}
+		out[e[:i]] = e[i+1:]
+	}
+	return out
 }
 
 // boundaryStateDir mirrors the layout in internal/infra/home so the
@@ -435,14 +673,19 @@ func scanSkillDir(root string) []model.GlobalCapability {
 		return out
 	}
 	for _, e := range entries {
-		if !e.IsDir() {
-			continue
-		}
 		name := e.Name()
 		if strings.HasPrefix(name, ".") {
 			continue
 		}
 		skillDir := filepath.Join(root, name)
+		// Follow symlinks: ~/.claude/skills/<name> is commonly a symlink
+		// pointing into ~/.agents/skills/<name>. e.IsDir() returns false
+		// for symlinks (their mode is ModeSymlink, not ModeDir), so we
+		// must Stat the path to resolve through the link before deciding.
+		info, err := os.Stat(skillDir)
+		if err != nil || !info.IsDir() {
+			continue
+		}
 		manifest := filepath.Join(skillDir, "SKILL.md")
 		if _, err := os.Stat(manifest); err != nil {
 			continue
@@ -456,6 +699,29 @@ func scanSkillDir(root string) []model.GlobalCapability {
 		})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
+}
+
+// scanPluginSkillDirs walks a plugins root (e.g. ~/.claude/plugins) and
+// collects every <plugin>/skills/<name>/SKILL.md it finds. Plugin
+// authors are free to ship skills alongside other assets, so we treat
+// each plugin's "skills" subdir as a normal skill root.
+func scanPluginSkillDirs(root string) []model.GlobalCapability {
+	out := []model.GlobalCapability{}
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return out
+	}
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		if strings.HasPrefix(name, ".") {
+			continue
+		}
+		out = append(out, scanSkillDir(filepath.Join(root, name, "skills"))...)
+	}
 	return out
 }
 
@@ -538,26 +804,67 @@ func renderInstructions(a *model.Agent) string {
 	return b.String()
 }
 
-// renderSettings emits a minimal Claude Code settings.json. Per PRD §6
-// AVM never writes user-owned keys it doesn't understand; we declare
-// the keys we own and leave the rest to Claude Code defaults.
-func renderSettings(a *model.Agent) ([]byte, error) {
-	type mcpEntry struct {
-		// Empty body — actual command/args/env wiring is a job for the
-		// infra layer once it materializes the capability. This driver
-		// owns the layout, not the per-server transport details.
+// renderSettings emits Claude Code settings.json with the user's own
+// settings preserved and AVM-owned `mcpServers` overlaid on top.
+//
+// Per PRD §6, AVM only writes the keys it owns. AVM owns `mcpServers`
+// (it knows command/args/env from the canonical MCPConfigV1 payload).
+// Everything else — model, theme, permissions, effortLevel, hooks etc.
+// — is read from the user's `~/.claude/settings.json` so per-Agent
+// boundaries inherit the user's defaults instead of starting blank.
+//
+// The returned warning is non-nil only when a user settings.json was
+// present but unparseable; missing-file is silent. Plan promotes the
+// warning to plan.Warnings so the user sees why their settings aren't
+// being inherited.
+func renderSettings(mcps []resolvedMCP) ([]byte, *model.Warning, error) {
+	base := map[string]any{}
+	var warning *model.Warning
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		path := filepath.Join(home, ".claude", "settings.json")
+		if data, rerr := os.ReadFile(path); rerr == nil {
+			if jerr := json.Unmarshal(data, &base); jerr != nil {
+				warning = &model.Warning{
+					Code:    "claude.settings-parse-failed",
+					Message: "could not parse user-level settings.json (falling back to AVM-only keys): " + jerr.Error(),
+				}
+				base = map[string]any{}
+			}
+		}
+		// rerr non-nil + !IsNotExist would also be a warning, but the
+		// best-effort contract is "only complain about parse errors";
+		// genuine IO failure on a settings file is rare and Claude Code
+		// itself will surface it on launch.
 	}
-	type settings struct {
-		MCPServers map[string]mcpEntry `json:"mcpServers,omitempty"`
+
+	if len(mcps) > 0 {
+		servers := map[string]map[string]any{}
+		for _, m := range mcps {
+			obj := map[string]any{}
+			if m.Cfg.Command != "" {
+				obj["command"] = m.Cfg.Command
+			}
+			if len(m.Cfg.Args) > 0 {
+				obj["args"] = m.Cfg.Args
+			}
+			if len(m.Cfg.Env) > 0 {
+				obj["env"] = m.Cfg.Env
+			}
+			for k, v := range m.Cfg.Extra {
+				obj[k] = v
+			}
+			servers[m.Name] = obj
+		}
+		// AVM owns mcpServers fully — replace whatever the user had.
+		base["mcpServers"] = servers
+	} else {
+		// No Agent MCP refs: drop any inherited mcpServers so the user
+		// doesn't get user-global servers leaking into the boundary.
+		delete(base, "mcpServers")
 	}
-	s := settings{MCPServers: map[string]mcpEntry{}}
-	for _, m := range a.MCP {
-		s.MCPServers[string(m.ID)] = mcpEntry{}
-	}
-	if len(s.MCPServers) == 0 {
-		s.MCPServers = nil
-	}
-	return json.MarshalIndent(s, "", "  ")
+
+	body, err := json.MarshalIndent(base, "", "  ")
+	return body, warning, err
 }
 
 func probeVersion(ctx context.Context, bin string) string {

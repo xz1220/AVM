@@ -68,7 +68,7 @@ func buildDeps() (cli.Deps, error) {
 	registry := runtime.NewRegistry()
 	for _, d := range []runtime.Driver{
 		codex.New(caps),
-		claudecode.New(),
+		claudecode.New(caps),
 		opencode.New(),
 	} {
 		if err := registry.Register(d); err != nil {
