@@ -51,18 +51,31 @@ The detailed mapping between this picture and the source tree lives in
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/xz1220/AVM/main/scripts/install.sh | sh
-avm init
-avm shell install            # optional: bash/zsh/fish completion
 ```
 
-The installer drops `avm` into `$HOME/.local/bin` and initializes `~/.avm`
-unless you pass `AVM_SKIP_INIT=1`.
+The installer is the one-command first-run path. It installs `avm` and
+`avm-ui` into `$HOME/.local/bin`, runs `avm setup` to initialize `~/.avm`
+and import existing runtime capabilities, and installs shell integration
+for bash, zsh, or fish when it can detect your shell.
+
+Installer options:
+
+```bash
+AVM_INSTALL_DIR="$HOME/.local/bin"          # binary install directory
+AVM_INSTALL_UI=0                            # CLI-only install
+AVM_SKIP_SETUP=1                            # install binaries only
+AVM_INSTALL_SHELL_INTEGRATION=0             # do not edit shell rc files
+AVM_SETUP_ARGS="--runtime codex"            # forwarded to avm setup
+```
+
+`avm-ui` currently requires Node.js 22 or newer. Set `AVM_INSTALL_UI=0`
+for a CLI-only install.
 
 To build from source:
 
 ```bash
 make build         # bin/avm
-make build-ui      # dist/avm-ui.js (interactive TUI)
+make build-ui      # ui/dist/avm-ui.js (interactive TUI)
 make build-all
 ```
 

@@ -25,6 +25,12 @@ import (
 	"github.com/xz1220/agent-vm/internal/runtime/opencode"
 )
 
+var (
+	version = "0.0.0-dev"
+	commit  = "unknown"
+	date    = "unknown"
+)
+
 func main() {
 	os.Exit(run())
 }
@@ -88,5 +94,12 @@ func buildDeps() (cli.Deps, error) {
 		Diagnostics:  service.NewDiagnostics(agents, registry, log),
 		System:       service.NewSystem(layout),
 	}
-	return cli.Deps{Services: container}, nil
+	return cli.Deps{
+		Services: container,
+		Build: cli.BuildInfo{
+			Version: version,
+			Commit:  commit,
+			Date:    date,
+		},
+	}, nil
 }

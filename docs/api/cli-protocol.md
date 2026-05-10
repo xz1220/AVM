@@ -71,6 +71,7 @@ omitted (`omitempty`).
 | `avm doctor` | `DoctorReport` |
 | `avm status [agent]` | `StatusReport` |
 | `avm init` | `InitResult` (currently human-only; JSON support TBD) |
+| `avm setup` | `SetupResult` |
 | `avm uninstall --yes` | `UninstallResult` (TBD as above) |
 
 The model types live in `internal/app/model/`. JSON tags on the Go
@@ -82,7 +83,7 @@ structs are the source of truth for field names. See:
 - `package.go` — `PackageManifest`, `PackageSummary`, `PackageDetail`, `InstallRequest`/`Result`, `ExportRequest`/`Result`, `ConflictResolution`
 - `requests.go` — `ImportCapabilityRequest`/`Result`, `BootstrapCapabilitiesRequest`/`Result`, `SkippedCapability`
 - `diagnostics.go` — `DoctorReport`, `StatusReport`, `RuntimeCheck`, `CheckResult`
-- `system.go` — `InitResult`, `UninstallResult`
+- `system.go` — `InitResult`, `SetupResult`, `SetupRuntimeResult`, `UninstallResult`
 
 ## 4. Error envelope (JSON mode)
 
@@ -191,6 +192,29 @@ avm capability show <id> --json                 # CapabilityRecord
 # (RuntimeCheck), without home/PATH/shell-integration noise.
 avm runtime list --json                         # []RuntimeCheck
 ```
+
+### First-run setup flow
+
+```
+# Product-level onboarding command used by scripts/install.sh.
+avm setup --json
+  → SetupResult {
+      init,
+      runtimes: [
+        { runtime, available, binary, version, imported, skipped, issues }
+      ],
+      next_steps
+    }
+
+# Limit capability import to one runtime, or skip it entirely.
+avm setup --runtime codex
+avm setup --no-capabilities
+```
+
+`setup` is idempotent. It calls `init`, probes runtimes, and bootstraps
+runtime-global capabilities for available runtimes. Unavailable runtimes and
+per-capability import failures are reported in `issues` / `skipped`; they do
+not abort setup.
 
 ### Capability discover / import flow
 

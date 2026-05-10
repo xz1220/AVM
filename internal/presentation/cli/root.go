@@ -20,6 +20,31 @@ import (
 // Deps is the wiring presentation needs from the composition root.
 type Deps struct {
 	Services service.Container
+	Build    BuildInfo
+}
+
+// BuildInfo is injected by the composition root so Cobra's --version
+// output reflects the binary the user actually installed.
+type BuildInfo struct {
+	Version string
+	Commit  string
+	Date    string
+}
+
+func (b BuildInfo) String() string {
+	version := b.Version
+	if version == "" {
+		version = "0.0.0-dev"
+	}
+	commit := b.Commit
+	if commit == "" {
+		commit = "unknown"
+	}
+	date := b.Date
+	if date == "" {
+		date = "unknown"
+	}
+	return fmt.Sprintf("%s (%s, %s)", version, commit, date)
 }
 
 // Root persistent-flag names. Constants live here so subcommands can
@@ -38,7 +63,9 @@ func NewRoot(deps Deps) *cobra.Command {
 		// output and unhelpful usage dumps on application errors.
 		SilenceUsage:  true,
 		SilenceErrors: true,
+		Version:       deps.Build.String(),
 	}
+	root.SetVersionTemplate("avm {{.Version}}\n")
 
 	root.PersistentFlags().Bool(flagJSON, false, "render results and errors as JSON for programmatic consumers")
 
@@ -48,6 +75,7 @@ func NewRoot(deps Deps) *cobra.Command {
 	root.AddCommand(newCapabilityCmd(deps))
 	root.AddCommand(newRuntimeCmd(deps))
 	root.AddCommand(newInitCmd(deps))
+	root.AddCommand(newSetupCmd(deps))
 	root.AddCommand(newDoctorCmd(deps))
 	root.AddCommand(newStatusCmd(deps))
 	root.AddCommand(newUninstallCmd(deps))

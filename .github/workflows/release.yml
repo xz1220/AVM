@@ -16,9 +16,17 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.23"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: ui/package-lock.json
+      - run: cd ui && npm ci && npm run typecheck && npm run build
       - run: |
           set -eu
           mkdir -p dist
+          commit="$(git rev-parse --short HEAD)"
+          build_date="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           for target in darwin/arm64 darwin/amd64 linux/arm64 linux/amd64; do
             os="${target%/*}"
             arch="${target#*/}"
@@ -28,8 +36,10 @@ jobs:
             fi
             work="dist/avm_${os}_${asset_arch}"
             mkdir -p "$work"
-            GOOS="$os" GOARCH="$arch" go build -trimpath -ldflags="-s -w" -o "$work/avm" ./cmd/avm
-            tar -C "$work" -czf "dist/avm_${os}_${asset_arch}.tar.gz" avm
+            GOOS="$os" GOARCH="$arch" go build -trimpath -ldflags="-s -w -X main.version=${GITHUB_REF_NAME} -X main.commit=${commit} -X main.date=${build_date}" -o "$work/avm" ./cmd/avm
+            cp ui/dist/avm-ui.js "$work/avm-ui"
+            chmod +x "$work/avm-ui"
+            tar -C "$work" -czf "dist/avm_${os}_${asset_arch}.tar.gz" avm avm-ui
           done
           cd dist
           sha256sum *.tar.gz > checksums.txt

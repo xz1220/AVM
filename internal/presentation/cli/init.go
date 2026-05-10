@@ -21,12 +21,14 @@ func newInitCmd(deps Deps) *cobra.Command {
 			}
 			if res.AlreadyExists {
 				fmt.Fprintf(c.OutOrStdout(), "already initialized at %s\n", res.Root)
+				fmt.Fprintln(c.OutOrStdout(), "\nNext:\n  avm setup")
 				return nil
 			}
 			fmt.Fprintln(c.OutOrStdout(), "Created:")
 			for _, p := range res.CreatedPaths {
 				fmt.Fprintf(c.OutOrStdout(), "  %s\n", p)
 			}
+			fmt.Fprintln(c.OutOrStdout(), "\nNext:\n  avm setup")
 			return nil
 		},
 	}

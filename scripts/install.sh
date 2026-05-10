@@ -6,6 +6,8 @@ version="${AVM_VERSION:-latest}"
 install_dir="${AVM_INSTALL_DIR:-$HOME/.local/bin}"
 source_dir="${AVM_INSTALL_SOURCE_DIR:-}"
 shell_integration="${AVM_INSTALL_SHELL_INTEGRATION:-1}"
+install_ui="${AVM_INSTALL_UI:-1}"
+skip_setup="${AVM_SKIP_SETUP:-${AVM_SKIP_INIT:-0}}"
 
 need_cmd() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -54,6 +56,21 @@ sha256_check() {
   fi
 }
 
+check_node_for_ui() {
+  if [ "$install_ui" = "0" ]; then
+    return 0
+  fi
+  if ! command -v node >/dev/null 2>&1; then
+    printf 'avm install: avm-ui requires Node.js >= 22 (set AVM_INSTALL_UI=0 for CLI-only install)\n' >&2
+    exit 1
+  fi
+  node_major="$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || printf '0')"
+  if [ "$node_major" -lt 22 ] 2>/dev/null; then
+    printf 'avm install: avm-ui requires Node.js >= 22 (found %s; set AVM_INSTALL_UI=0 for CLI-only install)\n' "$(node --version 2>/dev/null || printf unknown)" >&2
+    exit 1
+  fi
+}
+
 case "$(uname -s)" in
   Darwin) os="darwin" ;;
   Linux) os="linux" ;;
@@ -76,13 +93,22 @@ tmp="${TMPDIR:-/tmp}/avm-install.$$"
 mkdir -p "$tmp"
 trap 'rm -rf "$tmp"' EXIT INT TERM
 
+check_node_for_ui
+
 if [ -n "$source_dir" ]; then
+  need_cmd make
   need_cmd go
   build_home="${AVM_BUILD_HOME:-${AVM_REAL_HOME:-}}"
   if [ -n "$build_home" ]; then
-    (cd "$source_dir" && HOME="$build_home" go build -o "$tmp/avm" ./cmd/avm)
+    (cd "$source_dir" && HOME="$build_home" make build BIN="$tmp/avm")
   else
-    (cd "$source_dir" && go build -o "$tmp/avm" ./cmd/avm)
+    (cd "$source_dir" && make build BIN="$tmp/avm")
+  fi
+  if [ "$install_ui" != "0" ]; then
+    need_cmd npm
+    (cd "$source_dir/ui" && npm ci && npm run typecheck && npm run build)
+    cp "$source_dir/ui/dist/avm-ui.js" "$tmp/avm-ui"
+    chmod +x "$tmp/avm-ui"
   fi
 else
   need_cmd tar
@@ -102,8 +128,16 @@ fi
 
 mkdir -p "$install_dir"
 install "$tmp/avm" "$install_dir/avm"
-
 printf 'installed avm to %s/avm\n' "$install_dir"
+
+if [ "$install_ui" != "0" ]; then
+  if [ ! -f "$tmp/avm-ui" ]; then
+    printf 'avm install: release artifact did not include avm-ui (set AVM_INSTALL_UI=0 for CLI-only install)\n' >&2
+    exit 1
+  fi
+  install "$tmp/avm-ui" "$install_dir/avm-ui"
+  printf 'installed avm-ui to %s/avm-ui\n' "$install_dir"
+fi
 
 install_shell_integration() {
   shell_name="${AVM_INSTALL_SHELL:-}"
@@ -114,22 +148,22 @@ install_shell_integration() {
   case "$shell_name" in
     zsh)
       rc="${AVM_INSTALL_SHELL_RC:-$HOME/.zshrc}"
-      init_cmd='eval "$(avm shell init zsh)"'
       ;;
     bash)
       rc="${AVM_INSTALL_SHELL_RC:-$HOME/.bashrc}"
-      init_cmd='eval "$(avm shell init bash)"'
       ;;
     fish)
       rc="${AVM_INSTALL_SHELL_RC:-$HOME/.config/fish/config.fish}"
-      init_cmd='avm shell init fish | source'
       ;;
     *)
       printf 'avm install: shell integration skipped for unsupported shell: %s\n' "${shell_name:-unknown}" >&2
-      printf 'run manually: eval "$(%s/avm shell init zsh)"\n' "$install_dir" >&2
+      printf 'add %s to PATH and run: avm shell install --shell zsh\n' "$install_dir" >&2
       return 0
       ;;
   esac
+
+  "$install_dir/avm" shell install --shell "$shell_name" >/dev/null
+  completion_path="${AVM_HOME:-$HOME/.avm}/shell/avm-completion.$shell_name"
 
   mkdir -p "$(dirname "$rc")"
   touch "$rc"
@@ -139,6 +173,7 @@ install_shell_integration() {
   fi
 
   quoted_install_dir="$(shell_quote "$install_dir")"
+  quoted_completion_path="$(shell_quote "$completion_path")"
   {
     printf '\n# >>> avm shell integration >>>\n'
     if [ "$shell_name" = "fish" ]; then
@@ -146,7 +181,10 @@ install_shell_integration() {
       printf 'if not contains -- $avm_install_dir $PATH\n'
       printf '    set -gx PATH $avm_install_dir $PATH\n'
       printf 'end\n'
-      printf '%s\n' "$init_cmd"
+      printf 'set -l avm_completion_path %s\n' "$quoted_completion_path"
+      printf 'if test -f $avm_completion_path\n'
+      printf '    source $avm_completion_path\n'
+      printf 'end\n'
     else
       printf 'AVM_INSTALL_DIR=%s\n' "$quoted_install_dir"
       printf 'case ":$PATH:" in\n'
@@ -154,7 +192,9 @@ install_shell_integration() {
       printf '  *) export PATH="$AVM_INSTALL_DIR:$PATH" ;;\n'
       printf 'esac\n'
       printf 'unset AVM_INSTALL_DIR\n'
-      printf '%s\n' "$init_cmd"
+      printf 'if [ -f %s ]; then\n' "$quoted_completion_path"
+      printf '  . %s\n' "$quoted_completion_path"
+      printf 'fi\n'
     fi
     printf '# <<< avm shell integration <<<\n'
   } >> "$rc"
@@ -162,6 +202,12 @@ install_shell_integration() {
   printf 'installed shell integration to %s\n' "$rc"
   printf 'restart your shell or run: . %s\n' "$rc"
 }
+
+if [ "$skip_setup" != "1" ]; then
+  "$install_dir/avm" setup ${AVM_SETUP_ARGS:-}
+else
+  printf 'skipped AVM setup\n'
+fi
 
 if [ "$shell_integration" != "0" ]; then
   install_shell_integration
@@ -172,11 +218,12 @@ else
   esac
 fi
 
-if [ "${AVM_SKIP_INIT:-0}" != "1" ]; then
-  "$install_dir/avm" init --yes >/dev/null
-  printf 'initialized AVM home\n'
+if [ "$skip_setup" = "1" ]; then
+  printf 'next:\n'
+  printf '  avm setup\n'
+  if [ "$install_ui" != "0" ]; then
+    printf '  avm-ui\n'
+  fi
+  printf '  avm agent create --name backend-coder --runtime <runtime>\n'
+  printf '  avm run backend-coder\n'
 fi
-
-printf 'next:\n'
-printf '  avm create\n'
-printf '  avm use <agent-name>\n'

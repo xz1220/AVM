@@ -47,18 +47,31 @@ AVM 由两个互相配套的二进制组成：
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/xz1220/AVM/main/scripts/install.sh | sh
-avm init
-avm shell install            # 可选：为 bash/zsh/fish 安装补全
 ```
 
-安装脚本默认把 `avm` 放到 `$HOME/.local/bin`，并初始化 `~/.avm`。如果
-只想安装二进制，设置 `AVM_SKIP_INIT=1` 即可。
+安装脚本是一条命令的首次使用路径。它会把 `avm` 和 `avm-ui` 安装到
+`$HOME/.local/bin`，运行 `avm setup` 初始化 `~/.avm` 并导入已有 runtime
+capability；如果能识别当前 shell，还会为 bash、zsh 或 fish 安装 shell
+integration。
+
+安装选项：
+
+```bash
+AVM_INSTALL_DIR="$HOME/.local/bin"          # 二进制安装目录
+AVM_INSTALL_UI=0                            # 只安装 CLI
+AVM_SKIP_SETUP=1                            # 只安装二进制，不跑 setup
+AVM_INSTALL_SHELL_INTEGRATION=0             # 不修改 shell rc 文件
+AVM_SETUP_ARGS="--runtime codex"            # 透传给 avm setup
+```
+
+`avm-ui` 当前需要 Node.js 22 或更新版本。如果只想安装 CLI，设置
+`AVM_INSTALL_UI=0`。
 
 源码构建：
 
 ```bash
 make build         # bin/avm
-make build-ui      # dist/avm-ui.js（交互式 TUI）
+make build-ui      # ui/dist/avm-ui.js（交互式 TUI）
 make build-all
 ```
 
