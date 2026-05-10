@@ -2,8 +2,8 @@ BIN ?= bin/avm
 VERSION ?= 0.0.0-dev
 COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
-NPM ?= npm
-NPM_INSTALL_FLAGS ?= --no-audit --no-fund --progress=false --ignore-scripts
+PNPM ?= corepack pnpm
+PNPM_INSTALL_FLAGS ?= --frozen-lockfile --ignore-scripts
 LDFLAGS := -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)
 
 .PHONY: build build-ui build-all test fmt vet clean
@@ -12,7 +12,9 @@ build:
 	go build -ldflags "$(LDFLAGS)" -o $(BIN) ./cmd/avm
 
 build-ui:
-	cd ui && ($(NPM) install $(NPM_INSTALL_FLAGS) || (rm -rf node_modules && $(NPM) cache verify && $(NPM) install $(NPM_INSTALL_FLAGS))) && $(NPM) run typecheck && $(NPM) run build
+	$(PNPM) --dir ui install $(PNPM_INSTALL_FLAGS)
+	$(PNPM) --dir ui run typecheck
+	$(PNPM) --dir ui run build
 
 build-all: build build-ui
 

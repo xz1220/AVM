@@ -2,6 +2,7 @@
   "name": "@agent-vm/ui",
   "version": "0.0.0",
   "private": true,
+  "packageManager": "pnpm@11.0.9",
   "type": "module",
   "bin": {
     "avm-ui": "dist/avm-ui.js"

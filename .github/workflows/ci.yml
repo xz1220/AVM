@@ -17,8 +17,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22.22.0"
-          cache: "npm"
-          cache-dependency-path: ui/package-lock.json
       - run: go build ./...
       - run: go vet ./...
       - run: test -z "$(gofmt -l .)"
