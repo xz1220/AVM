@@ -33,6 +33,8 @@ const Name = "codex"
 // EnvHome is the env var Codex honors to relocate its state directory.
 const EnvHome = "CODEX_HOME"
 
+const workspaceDirName = "workspace"
+
 // Driver is the Codex runtime adapter. Construction is via New so we
 // can later inject filesystem helpers, env probes, etc.
 //
@@ -269,10 +271,13 @@ func (d *Driver) Plan(ctx context.Context, agent *model.Agent) (*runtime.Plan, e
 	}
 
 	// Build instructions text: AVM Agent identity & instructions become
-	// developer instructions in AGENTS.md (Codex native loader path).
-	instructions := renderInstructions(agent)
+	// developer instructions in AGENTS.md (Codex native loader path). Codex's
+	// cwd is pinned to an AVM-owned workspace, so include the caller cwd as the
+	// user-authorized project root the model should operate on.
+	callerCWD, _ := os.Getwd()
+	instructions := renderInstructions(agent, callerCWD)
 	plan.Files = append(plan.Files, runtime.ManagedFile{
-		Path:     filepath.Join(bnd.StateDir, "AGENTS.md"),
+		Path:     filepath.Join(boundaryWorkspaceDir(bnd.StateDir), "AGENTS.md"),
 		Mode:     0o600,
 		Contents: []byte(instructions),
 	})
@@ -323,7 +328,7 @@ func (d *Driver) Plan(ctx context.Context, agent *model.Agent) (*runtime.Plan, e
 
 	plan.Mappings = append(plan.Mappings, runtime.FieldMapping{
 		Field: "instructions", Status: model.MappingNative,
-		Note: "written to <CODEX_HOME>/AGENTS.md (developer instructions)",
+		Note: "written to <CODEX_HOME>/workspace/AGENTS.md (developer instructions)",
 	})
 
 	if len(agent.Skills) > 0 {
@@ -353,6 +358,10 @@ func (d *Driver) Plan(ctx context.Context, agent *model.Agent) (*runtime.Plan, e
 	plan.Warnings = append(plan.Warnings, model.Warning{
 		Code:    "codex.memory-side-effects",
 		Message: "Codex memory subsystem will write artifacts under " + filepath.Join(bnd.StateDir, "memories") + " and may run background jobs.",
+	})
+	plan.Warnings = append(plan.Warnings, model.Warning{
+		Code:    "codex.boundary-workspace",
+		Message: "codex --cd is pinned to " + boundaryWorkspaceDir(bnd.StateDir) + " to keep project-local config and skill discovery inside the boundary; caller cwd is exposed via --add-dir.",
 	})
 
 	return plan, nil
@@ -484,24 +493,18 @@ func (d *Driver) Boundary(ctx context.Context, agent *model.Agent) (runtime.Boun
 
 // LaunchSpec describes how to spawn codex.
 //
-// Codex on Node-based installs (npm / nvm) starts via a `#!/usr/bin/env
-// node` shebang, so the spawned process needs PATH (and friends) to
-// resolve `node`. process.Runner replaces the child env wholesale when
-// spec.Env is non-empty, so we explicitly inherit the parent process
-// environment first and then override with our per-Agent boundary
-// values. HOME is intentionally isolated too: current Codex builds also
-// scan ~/.agents/skills, so CODEX_HOME alone would still leak user-global
-// skills into an AVM Agent run.
+// Codex on Node-based installs (npm / nvm) starts via a `#!/usr/bin/env node`
+// shebang, so the spawned process needs PATH (and friends) to resolve `node`.
+// process.Runner replaces the child env wholesale when spec.Env is non-empty,
+// so we explicitly inherit the parent process environment first and then
+// override with our per-Agent boundary values.
 //
-// Process cwd is pinned to the boundary directory because codex loads a
-// project-local config from "<cwd>/.codex/config.toml" — a path that is
-// independent of CODEX_HOME. Without this pin, running `avm run` from
-// the user's home directory makes codex re-read ~/.codex/config.toml as
-// "project-local" config and silently leak user-level model / sandbox /
-// approval settings into the Agent session. The agent's logical working
-// directory (where it reads and writes files) is preserved by passing
-// the caller's cwd through codex's `--cd` flag, which is decoupled from
-// the project-local config scan.
+// CODEX_HOME and HOME are both isolated because current Codex builds scan
+// CODEX_HOME/skills and $HOME/.agents/skills. The Codex cwd is also pinned to
+// an AVM-owned workspace because Codex uses --cd as the discovery root for
+// project-local config, project skills, repo skills, and AGENTS.md. The caller's
+// real cwd is exposed only as an additional writable root, not as a discovery
+// root.
 func (d *Driver) LaunchSpec(ctx context.Context, agent *model.Agent, plan *runtime.Plan) (runtime.LaunchSpec, error) {
 	facts, err := d.Facts(ctx)
 	if err != nil {
@@ -518,15 +521,18 @@ func (d *Driver) LaunchSpec(ctx context.Context, agent *model.Agent, plan *runti
 	for k, v := range bnd.Env {
 		env[k] = v
 	}
-	args := []string{}
+	workspace := boundaryWorkspaceDir(bnd.StateDir)
+	args := []string{"--cd", workspace}
 	if cwd, err := os.Getwd(); err == nil && cwd != "" {
-		args = append(args, "--cd", cwd)
+		if !pathIsSameOrUnder(cwd, bnd.StateDir) {
+			args = append(args, "--add-dir", cwd)
+		}
 	}
 	return runtime.LaunchSpec{
 		Bin:     facts.BinaryPath,
 		Args:    args,
 		Env:     env,
-		Workdir: bnd.StateDir,
+		Workdir: workspace,
 		Stdin:   true,
 	}, nil
 }
@@ -560,6 +566,26 @@ func boundaryStateDir(agentName string) (string, error) {
 		root = filepath.Join(hd, ".avm")
 	}
 	return filepath.Join(root, "boundaries", Name, agentName), nil
+}
+
+func boundaryWorkspaceDir(boundary string) string {
+	return filepath.Join(boundary, workspaceDirName)
+}
+
+func pathIsSameOrUnder(child, parent string) bool {
+	c, err := filepath.EvalSymlinks(child)
+	if err != nil {
+		c = child
+	}
+	p, err := filepath.EvalSymlinks(parent)
+	if err != nil {
+		p = parent
+	}
+	rel, err := filepath.Rel(p, c)
+	if err != nil {
+		return false
+	}
+	return rel == "." || (rel != "" && rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator)))
 }
 
 // codexUserHomes returns the candidate user-level Codex home dirs to scan
@@ -679,9 +705,16 @@ func scanMCPFromConfig(path string) []model.GlobalCapability {
 // renderInstructions builds an AGENTS.md body from the Agent's identity
 // and instructions. It is used both for the native instructions slot
 // and for "rendered_as_instructions" overflow (e.g. role).
-func renderInstructions(a *model.Agent) string {
+func renderInstructions(a *model.Agent, userCWD string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "# %s\n\n", a.Identity.Name)
+	if userCWD != "" {
+		b.WriteString("## AVM Workspace Boundary\n\n")
+		b.WriteString("Codex is launched from an AVM-managed runtime workspace. ")
+		fmt.Fprintf(&b, "The user-authorized working directory is `%s`.\n\n", userCWD)
+		b.WriteString("Use that directory as the root for user project file operations. ")
+		b.WriteString("Do not treat the runtime workspace as the user's project.\n\n")
+	}
 	if a.Identity.Description != "" {
 		fmt.Fprintf(&b, "%s\n\n", a.Identity.Description)
 	}
@@ -704,13 +737,20 @@ func renderInstructions(a *model.Agent) string {
 
 // renderConfigTOML emits a Codex config.toml that:
 //  1. Disables Codex's bundled-with-binary skills (AVM controls skills).
-//  2. Emits a complete [mcp_servers.<name>] section for every Agent MCP,
+//  2. Pins project-root detection to Codex's AVM-owned cwd.
+//  3. Selects Codex's workspace profile so --add-dir roots are writable
+//     without relying on Codex project trust state.
+//  4. Emits a complete [mcp_servers.<name>] section for every Agent MCP,
 //     using the capstore record's Name (not the opaque ID) so codex
 //     surfaces tools as "<name>/<tool>".
 func renderConfigTOML(mcps []resolvedMCP) string {
 	var b strings.Builder
 	b.WriteString("# AVM-managed Codex config.toml\n")
 	b.WriteString("# Do not edit by hand; AVM rewrites this file on each run.\n\n")
+	b.WriteString("# Keep project-local config and skills discovery pinned to Codex's AVM-owned cwd.\n")
+	b.WriteString("project_root_markers = []\n\n")
+	b.WriteString("# Allow the AVM workspace plus explicit --add-dir roots to be writable without Codex trust state.\n")
+	b.WriteString("default_permissions = \":workspace\"\n\n")
 	b.WriteString("[skills.bundled]\n")
 	b.WriteString("enabled = false\n\n")
 	if len(mcps) == 0 {
