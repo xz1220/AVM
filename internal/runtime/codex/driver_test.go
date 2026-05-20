@@ -8,8 +8,11 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
+
+	"github.com/BurntSushi/toml"
 
 	"github.com/xz1220/agent-vm/internal/app/model"
 	"github.com/xz1220/agent-vm/internal/infra/capstore"
@@ -148,6 +151,53 @@ func TestPlan_FieldMappings(t *testing.T) {
 		if !strings.HasPrefix(f.Path, bnd.StateDir) {
 			t.Errorf("managed file %q not inside boundary %q", f.Path, bnd.StateDir)
 		}
+	}
+}
+
+func TestPlan_WritesAgentsMDUnderWorkspace(t *testing.T) {
+	tmp := t.TempDir()
+	callerCwd := t.TempDir()
+	t.Setenv("AVM_HOME", tmp)
+	t.Setenv("HOME", t.TempDir())
+
+	origWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(origWd) })
+	if err := os.Chdir(callerCwd); err != nil {
+		t.Fatalf("Chdir: %v", err)
+	}
+	resolvedCwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd after Chdir: %v", err)
+	}
+
+	d := New(nil)
+	a := &model.Agent{
+		Identity:     model.Identity{Name: "demo"},
+		Instructions: model.Instructions{System: "stay focused"},
+	}
+	plan, err := d.Plan(context.Background(), a)
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+
+	bnd, _ := d.Boundary(context.Background(), a)
+	wantPath := filepath.Join(bnd.StateDir, workspaceDirName, "AGENTS.md")
+	var agentsFile *runtime.ManagedFile
+	for i := range plan.Files {
+		if plan.Files[i].Path == wantPath {
+			agentsFile = &plan.Files[i]
+			break
+		}
+	}
+	if agentsFile == nil {
+		t.Fatalf("AGENTS.md missing at %s; files=%+v", wantPath, plan.Files)
+	}
+	contents := string(agentsFile.Contents)
+	if !strings.Contains(contents, "The user-authorized working directory is `"+resolvedCwd+"`") {
+		t.Fatalf("AGENTS.md missing user cwd %q\n--- AGENTS.md ---\n%s", resolvedCwd, contents)
 	}
 }
 
@@ -340,15 +390,10 @@ func TestLaunchSpec_InheritsParentEnvAndOverridesBoundaryVars(t *testing.T) {
 	}
 }
 
-// Codex loads a project-local config from <process-cwd>/.codex/config.toml
-// — a path that is NOT covered by CODEX_HOME. If the caller runs `avm run`
-// from their home directory, that scan resolves to ~/.codex/config.toml and
-// silently merges user-level model / sandbox / approval settings into the
-// Agent session. LaunchSpec must therefore pin the child's process cwd to
-// the boundary directory and pass the caller's original cwd through
-// codex's `--cd` flag so the agent still operates on the user's intended
-// working directory.
-func TestLaunchSpec_PinsProcessCwdToBoundaryAndForwardsCallerCwd(t *testing.T) {
+// Codex uses --cd as the discovery root for project-local config, project
+// skills, repo skills, and AGENTS.md. LaunchSpec must therefore pin --cd to
+// the AVM-owned workspace and expose the caller cwd only through --add-dir.
+func TestLaunchSpec_CdPinnedToWorkspaceAndUserCwdAsAddDir(t *testing.T) {
 	dir := t.TempDir()
 	bin := filepath.Join(dir, "codex")
 	if err := os.WriteFile(bin, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
@@ -382,12 +427,57 @@ func TestLaunchSpec_PinsProcessCwdToBoundaryAndForwardsCallerCwd(t *testing.T) {
 		t.Fatalf("LaunchSpec: %v", err)
 	}
 
-	wantBoundary := filepath.Join(avmHome, "boundaries", Name, "demo")
-	if spec.Workdir != wantBoundary {
-		t.Errorf("Workdir=%q want %q", spec.Workdir, wantBoundary)
+	wantWorkspace := filepath.Join(avmHome, "boundaries", Name, "demo", workspaceDirName)
+	if spec.Workdir != wantWorkspace {
+		t.Errorf("Workdir=%q want %q", spec.Workdir, wantWorkspace)
 	}
-	if len(spec.Args) < 2 || spec.Args[0] != "--cd" || spec.Args[1] != resolvedCwd {
-		t.Errorf("Args=%v want first two = [--cd %s]", spec.Args, resolvedCwd)
+	if got, ok := argValue(spec.Args, "--cd"); !ok || got != wantWorkspace {
+		t.Fatalf("Args=%v want --cd %s", spec.Args, wantWorkspace)
+	}
+	if got, ok := argValue(spec.Args, "--add-dir"); !ok || got != resolvedCwd {
+		t.Fatalf("Args=%v want --add-dir %s", spec.Args, resolvedCwd)
+	}
+}
+
+func TestLaunchSpec_AddDirOmittedWhenCallerCwdInsideBoundary(t *testing.T) {
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "codex")
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatalf("write fake bin: %v", err)
+	}
+	avmHome := t.TempDir()
+	t.Setenv("PATH", dir)
+	t.Setenv("AVM_HOME", avmHome)
+
+	boundary := filepath.Join(avmHome, "boundaries", Name, "demo")
+	workspace := filepath.Join(boundary, workspaceDirName)
+	if err := os.MkdirAll(workspace, 0o755); err != nil {
+		t.Fatalf("MkdirAll workspace: %v", err)
+	}
+	boundarySubdir := filepath.Join(boundary, "memories", "scratch")
+	if err := os.MkdirAll(boundarySubdir, 0o755); err != nil {
+		t.Fatalf("MkdirAll boundary subdir: %v", err)
+	}
+	origWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(origWd) })
+	if err := os.Chdir(boundarySubdir); err != nil {
+		t.Fatalf("Chdir boundary subdir: %v", err)
+	}
+
+	d := New(nil)
+	a := &model.Agent{Identity: model.Identity{Name: "demo"}}
+	spec, err := d.LaunchSpec(context.Background(), a, &runtime.Plan{})
+	if err != nil {
+		t.Fatalf("LaunchSpec: %v", err)
+	}
+	if got, ok := argValue(spec.Args, "--cd"); !ok || got != workspace {
+		t.Fatalf("Args=%v want --cd %s", spec.Args, workspace)
+	}
+	if _, ok := argValue(spec.Args, "--add-dir"); ok {
+		t.Fatalf("Args=%v should omit --add-dir when caller cwd is inside boundary", spec.Args)
 	}
 }
 
@@ -616,6 +706,174 @@ func TestPlan_MCPRendersFullSection(t *testing.T) {
 	}
 }
 
+func parseBoundaryConfig(t *testing.T, raw string) map[string]any {
+	t.Helper()
+	var doc map[string]any
+	if _, err := toml.Decode(raw, &doc); err != nil {
+		t.Fatalf("parse rendered config.toml: %v\n--- raw ---\n%s", err, raw)
+	}
+	return doc
+}
+
+func TestRenderConfigTOML_PinsEmptyProjectRootMarkersAtTopLevel(t *testing.T) {
+	doc := parseBoundaryConfig(t, renderConfigTOML(nil))
+	v, ok := doc["project_root_markers"]
+	if !ok {
+		t.Fatalf("project_root_markers must be a top-level key; got keys=%v", topLevelKeys(doc))
+	}
+	arr, ok := v.([]any)
+	if !ok {
+		t.Fatalf("project_root_markers must be an array, got %T (%v)", v, v)
+	}
+	if len(arr) != 0 {
+		t.Errorf("project_root_markers must be empty, got %v", arr)
+	}
+}
+
+func TestRenderConfigTOML_PinsDefaultPermissionsAtTopLevel(t *testing.T) {
+	doc := parseBoundaryConfig(t, renderConfigTOML(nil))
+	v, ok := doc["default_permissions"]
+	if !ok {
+		t.Fatalf("default_permissions must be a top-level key; got keys=%v", topLevelKeys(doc))
+	}
+	got, ok := v.(string)
+	if !ok {
+		t.Fatalf("default_permissions must be a string, got %T (%v)", v, v)
+	}
+	if got != ":workspace" {
+		t.Errorf("default_permissions=%q want \":workspace\"", got)
+	}
+}
+
+func TestRenderConfigTOML_TopLevelKeysNotNestedUnderSections(t *testing.T) {
+	doc := parseBoundaryConfig(t, renderConfigTOML(nil))
+	for sectionName, val := range doc {
+		section, ok := val.(map[string]any)
+		if !ok {
+			continue
+		}
+		for _, forbidden := range []string{"project_root_markers", "default_permissions"} {
+			if _, nested := section[forbidden]; nested {
+				t.Errorf("%q must be top-level, found nested under [%s]", forbidden, sectionName)
+			}
+		}
+	}
+}
+
+func topLevelKeys(doc map[string]any) []string {
+	keys := make([]string, 0, len(doc))
+	for k := range doc {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func TestLaunchSpec_DoesNotLeakUserDotCodexDiscovery(t *testing.T) {
+	fakeHome := t.TempDir()
+	leakyCfg := []byte(`model = "leaked-model"
+notify = ["mail"]
+approval_policy = "never"
+`)
+	if err := os.MkdirAll(filepath.Join(fakeHome, ".codex", "skills", "leaky"), 0o755); err != nil {
+		t.Fatalf("mkdir leaky skill: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(fakeHome, ".codex", "config.toml"), leakyCfg, 0o600); err != nil {
+		t.Fatalf("write leaky config: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(fakeHome, ".codex", "skills", "leaky", "SKILL.md"),
+		[]byte("---\nname: leaky\n---\n"), 0o600); err != nil {
+		t.Fatalf("write leaky skill: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(fakeHome, ".agents", "skills", "leaky2"), 0o755); err != nil {
+		t.Fatalf("mkdir leaky2: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(fakeHome, ".agents", "skills", "leaky2", "SKILL.md"),
+		[]byte("---\nname: leaky2\n---\n"), 0o600); err != nil {
+		t.Fatalf("write leaky2 skill: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(fakeHome, ".git"), 0o755); err != nil {
+		t.Fatalf("mkdir .git marker: %v", err)
+	}
+
+	binDir := t.TempDir()
+	bin := filepath.Join(binDir, "codex")
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatalf("write fake bin: %v", err)
+	}
+
+	avmHome := filepath.Join(fakeHome, ".avm")
+	t.Setenv("PATH", binDir)
+	t.Setenv("HOME", fakeHome)
+	t.Setenv("AVM_HOME", avmHome)
+
+	origWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(origWd) })
+	if err := os.Chdir(fakeHome); err != nil {
+		t.Fatalf("Chdir to fakeHome: %v", err)
+	}
+
+	d := New(capstore.New(t.TempDir()))
+	a := &model.Agent{Identity: model.Identity{Name: "mbti"}}
+	plan, err := d.Plan(context.Background(), a)
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+	spec, err := d.LaunchSpec(context.Background(), a, plan)
+	if err != nil {
+		t.Fatalf("LaunchSpec: %v", err)
+	}
+
+	wantBoundary := filepath.Join(avmHome, "boundaries", Name, "mbti")
+	wantWorkspace := filepath.Join(wantBoundary, workspaceDirName)
+	resolvedFakeHome, err := filepath.EvalSymlinks(fakeHome)
+	if err != nil {
+		t.Fatalf("EvalSymlinks fakeHome: %v", err)
+	}
+
+	if got, ok := argValue(spec.Args, "--cd"); !ok || got != wantWorkspace {
+		t.Fatalf("Args=%v want --cd %s", spec.Args, wantWorkspace)
+	}
+	if got, ok := argValue(spec.Args, "--add-dir"); !ok || got != resolvedFakeHome {
+		t.Fatalf("Args=%v want --add-dir %s", spec.Args, resolvedFakeHome)
+	}
+	if spec.Env[EnvHome] != wantBoundary {
+		t.Errorf("%s=%q want %q", EnvHome, spec.Env[EnvHome], wantBoundary)
+	}
+	if spec.Env["HOME"] != wantBoundary {
+		t.Errorf("HOME=%q want %q", spec.Env["HOME"], wantBoundary)
+	}
+
+	agentsPath := filepath.Join(wantWorkspace, "AGENTS.md")
+	cfgPath := filepath.Join(wantBoundary, "config.toml")
+	var cfg string
+	foundAgents := false
+	for _, f := range plan.Files {
+		switch f.Path {
+		case agentsPath:
+			foundAgents = true
+		case cfgPath:
+			cfg = string(f.Contents)
+		}
+	}
+	if !foundAgents {
+		t.Errorf("workspace AGENTS.md not in Plan.Files at %s", agentsPath)
+	}
+	if cfg == "" {
+		t.Fatalf("boundary config.toml not in Plan.Files")
+	}
+	doc := parseBoundaryConfig(t, cfg)
+	if v, ok := doc["project_root_markers"].([]any); !ok || len(v) != 0 {
+		t.Errorf("project_root_markers top-level key missing or non-empty; doc=%+v", doc)
+	}
+	if v, ok := doc["default_permissions"].(string); !ok || v != ":workspace" {
+		t.Errorf("default_permissions top-level key missing or not :workspace; doc=%+v", doc)
+	}
+}
+
 func TestPlan_MCPDuplicateName(t *testing.T) {
 	t.Setenv("AVM_HOME", t.TempDir())
 	t.Setenv("HOME", t.TempDir())
@@ -697,4 +955,13 @@ func TestPlan_AuthJSON_Missing(t *testing.T) {
 			t.Fatalf("auth.json should NOT be in plan when source missing; found %s", f.Path)
 		}
 	}
+}
+
+func argValue(args []string, flag string) (string, bool) {
+	for i := 0; i < len(args)-1; i++ {
+		if args[i] == flag {
+			return args[i+1], true
+		}
+	}
+	return "", false
 }
