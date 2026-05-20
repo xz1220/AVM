@@ -340,6 +340,57 @@ func TestLaunchSpec_InheritsParentEnvAndOverridesBoundaryVars(t *testing.T) {
 	}
 }
 
+// Codex loads a project-local config from <process-cwd>/.codex/config.toml
+// — a path that is NOT covered by CODEX_HOME. If the caller runs `avm run`
+// from their home directory, that scan resolves to ~/.codex/config.toml and
+// silently merges user-level model / sandbox / approval settings into the
+// Agent session. LaunchSpec must therefore pin the child's process cwd to
+// the boundary directory and pass the caller's original cwd through
+// codex's `--cd` flag so the agent still operates on the user's intended
+// working directory.
+func TestLaunchSpec_PinsProcessCwdToBoundaryAndForwardsCallerCwd(t *testing.T) {
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "codex")
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatalf("write fake bin: %v", err)
+	}
+	avmHome := t.TempDir()
+	callerCwd := t.TempDir()
+	t.Setenv("PATH", dir)
+	t.Setenv("AVM_HOME", avmHome)
+
+	origWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(origWd) })
+	if err := os.Chdir(callerCwd); err != nil {
+		t.Fatalf("Chdir: %v", err)
+	}
+	// Resolve symlinks so the comparison matches what os.Getwd returns
+	// inside the driver on platforms (macOS) where TempDir lives under
+	// /var → /private/var.
+	resolvedCwd, err := filepath.EvalSymlinks(callerCwd)
+	if err != nil {
+		t.Fatalf("EvalSymlinks: %v", err)
+	}
+
+	d := New(nil)
+	a := &model.Agent{Identity: model.Identity{Name: "demo"}}
+	spec, err := d.LaunchSpec(context.Background(), a, &runtime.Plan{})
+	if err != nil {
+		t.Fatalf("LaunchSpec: %v", err)
+	}
+
+	wantBoundary := filepath.Join(avmHome, "boundaries", Name, "demo")
+	if spec.Workdir != wantBoundary {
+		t.Errorf("Workdir=%q want %q", spec.Workdir, wantBoundary)
+	}
+	if len(spec.Args) < 2 || spec.Args[0] != "--cd" || spec.Args[1] != resolvedCwd {
+		t.Errorf("Args=%v want first two = [--cd %s]", spec.Args, resolvedCwd)
+	}
+}
+
 func TestExportGlobal_Skill(t *testing.T) {
 	codexHome := t.TempDir()
 	skillDir := filepath.Join(codexHome, "skills", "hello")

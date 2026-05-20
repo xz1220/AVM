@@ -492,6 +492,16 @@ func (d *Driver) Boundary(ctx context.Context, agent *model.Agent) (runtime.Boun
 // values. HOME is intentionally isolated too: current Codex builds also
 // scan ~/.agents/skills, so CODEX_HOME alone would still leak user-global
 // skills into an AVM Agent run.
+//
+// Process cwd is pinned to the boundary directory because codex loads a
+// project-local config from "<cwd>/.codex/config.toml" — a path that is
+// independent of CODEX_HOME. Without this pin, running `avm run` from
+// the user's home directory makes codex re-read ~/.codex/config.toml as
+// "project-local" config and silently leak user-level model / sandbox /
+// approval settings into the Agent session. The agent's logical working
+// directory (where it reads and writes files) is preserved by passing
+// the caller's cwd through codex's `--cd` flag, which is decoupled from
+// the project-local config scan.
 func (d *Driver) LaunchSpec(ctx context.Context, agent *model.Agent, plan *runtime.Plan) (runtime.LaunchSpec, error) {
 	facts, err := d.Facts(ctx)
 	if err != nil {
@@ -508,11 +518,16 @@ func (d *Driver) LaunchSpec(ctx context.Context, agent *model.Agent, plan *runti
 	for k, v := range bnd.Env {
 		env[k] = v
 	}
+	args := []string{}
+	if cwd, err := os.Getwd(); err == nil && cwd != "" {
+		args = append(args, "--cd", cwd)
+	}
 	return runtime.LaunchSpec{
-		Bin:   facts.BinaryPath,
-		Args:  []string{}, // bare `codex` enters the interactive TUI
-		Env:   env,
-		Stdin: true,
+		Bin:     facts.BinaryPath,
+		Args:    args,
+		Env:     env,
+		Workdir: bnd.StateDir,
+		Stdin:   true,
 	}, nil
 }
 
