@@ -17,6 +17,18 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22.22.0"
+      # Pin pnpm to the version declared in ui/package.json's
+      # packageManager field. Recent pnpm releases (>=11.0.10) refuse
+      # to run under corepack when the active corepack-default pnpm
+      # version does not match packageManager, instead of silently
+      # switching. Explicit `corepack prepare --activate` downloads
+      # and activates the pinned version so the build stays
+      # reproducible regardless of which pnpm shipped with the
+      # runner's corepack.
+      - name: Activate pinned pnpm via corepack
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.0.9 --activate
       - run: go build ./...
       - run: go vet ./...
       - run: test -z "$(gofmt -l .)"
